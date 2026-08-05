@@ -33,6 +33,9 @@ yarn-error.log*
 # vercel
 .vercel
 
+# distribution source archive
+docs/Asian-Buffalo-Source-v3.zip
+
 # typescript
 next-env.d.ts
 *.tsbuildinfo

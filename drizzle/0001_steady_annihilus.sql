@@ -1,0 +1,1 @@
+ALTER TABLE `game_rounds` ADD `request_payload` text;

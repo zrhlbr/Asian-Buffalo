@@ -84,6 +84,7 @@ export const gameRounds = sqliteTable(
       .references(() => gameMathVersions.id, { onDelete: "restrict" }),
     idempotencyKey: text("idempotency_key").notNull(),
     requestHash: text("request_hash").notNull(),
+    requestPayload: text("request_payload"),
     resultHash: text("result_hash"),
     status: text("status", { enum: ["PENDING", "SETTLED", "VOID"] })
       .notNull()

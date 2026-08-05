@@ -1,4 +1,4 @@
-export const GAME_VERSION = "afb-prototype-0.1.0";
+export const GAME_VERSION = "asb-prototype-0.1.0";
 export const GRID_COLUMNS = 5;
 export const GRID_ROWS = 4;
 export const PAYLINE_COUNT = 50;

@@ -8,7 +8,7 @@ import {
   SCATTER_PAYOUT,
   type RegularSymbol,
   type SymbolId,
-} from "./game-config";
+} from "./game-config.ts";
 
 export type Grid = SymbolId[][];
 
