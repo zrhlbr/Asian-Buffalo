@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Savanna Buffalo · 50线玩法原型",
-  description: "独立开发的5×4、50线网页老虎机玩法与数学模型原型。",
+  title: "Asian Buffalo · 50线玩法原型",
+  description: "Asian Buffalo独立开发的5×4、50线网页游戏与数学模型原型。",
   other: {
     "codex-preview": "development",
   },

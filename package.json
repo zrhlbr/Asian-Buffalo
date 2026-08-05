@@ -1,5 +1,5 @@
 {
-  "name": "african-buffalo-web",
+  "name": "asian-buffalo-web",
   "version": "0.1.0",
   "private": true,
   "engines": {
@@ -40,5 +40,5 @@
     "wrangler": "4.92.0"
   },
   "type": "module",
-  "displayName": "African Buffalo Web Game"
+  "displayName": "Asian Buffalo Web Game"
 }

@@ -158,8 +158,8 @@ export default function GameClient() {
       <header className="game-topbar">
         <div className="brand-lockup">
           <span className="brand-kicker">INDEPENDENT WEB BUILD · MILESTONE 1</span>
-          <h1>SAVANNA BUFFALO</h1>
-          <span className="brand-note">AFB玩法复刻原型 / 原创美术占位</span>
+          <h1>ASIAN BUFFALO</h1>
+          <span className="brand-note">ASIAN BUFFALO 玩法开发版 / 原创美术占位</span>
         </div>
         <div className="wallet-summary" aria-label="演示钱包">
           <span>演示钱包</span>

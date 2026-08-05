@@ -1,6 +1,7 @@
-# Savanna Buffalo / AFB 独立网页版
+# Asian Buffalo 独立网页版
 
-这是 African Buffalo 玩法的独立网页实现。当前里程碑提供可玩的
+这是以 `Asian Buffalo` 为正式项目名称的独立网页游戏。玩法研究参考目标
+`African Buffalo`，当前里程碑提供可玩的
 5×4、50线演示原型，以及已核验的赔付表、SCATTER、WILD和免费游戏规则。
 
 当前状态：
