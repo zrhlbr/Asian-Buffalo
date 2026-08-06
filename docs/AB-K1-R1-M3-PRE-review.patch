@@ -1,0 +1,1143 @@
+diff --git a/lib/math-config.ts b/lib/math-config.ts
+index 6c19d52..f22fa84 100644
+--- a/lib/math-config.ts
++++ b/lib/math-config.ts
+@@ -26,6 +26,8 @@ import {
+   type SymbolId,
+ } from "./game-config.ts";
+ 
++export type { RegularSymbol, SymbolId } from "./game-config.ts";
++
+ export type MathVersionStatus = "DRAFT" | "FROZEN" | "RETIRED";
+ 
+ export type WildRule = {
+@@ -40,9 +42,9 @@ export type WildRule = {
+ 
+ export type ScatterRule = {
+   appearsOnReelIndexes: readonly number[];
+-  totalBetMultipliers: { readonly [count: number]: number };
+-  baseFreeGames: { readonly [count: number]: number };
+-  retriggerFreeGames: { readonly [count: number]: number };
++  totalBetMultipliers: { readonly [count: number]: number | undefined };
++  baseFreeGames: { readonly [count: number]: number | undefined };
++  retriggerFreeGames: { readonly [count: number]: number | undefined };
+ };
+ 
+ export type ReelWeights = {
+@@ -51,11 +53,17 @@ export type ReelWeights = {
+   note: string;
+ };
+ 
+-export type MaxPayoutRule = {
+-  kind: "candidate";
+-  totalBetMultiplier: number;
+-  note: string;
+-};
++export type MaxPayoutRule =
++  | {
++      kind: "candidate";
++      totalBetMultiplier: number;
++      note: string;
++    }
++  | {
++      kind: "fixed";
++      totalBetMultiplier: number;
++      note: string;
++    };
+ 
+ export type MathVersionConfig = {
+   version: string;
+@@ -74,7 +82,7 @@ export type MathVersionConfig = {
+   }[];
+   paytable: {
+     symbol: RegularSymbol;
+-    payouts: { readonly [count: number]: number };
++    payouts: { readonly [count: number]: number | undefined };
+   }[];
+   scatter: ScatterRule;
+   wild: WildRule;
+@@ -152,7 +160,10 @@ export function validateRealMoneyAllowed(config: MathVersionConfig): void {
+     failures.push(`realMoneyEnabled is ${config.disclosure.realMoneyEnabled}`);
+   }
+ 
+-  if (config.reelWeights.kind === "per-reel" && config.reelWeights.note.toLowerCase().includes("temporary")) {
++  if (
++    config.reelWeights.kind === "per-reel" &&
++    config.reelWeights.note.toLowerCase().includes("temporary")
++  ) {
+     failures.push("reelWeights are marked as temporary/candidate");
+   }
+ 
+@@ -243,6 +254,42 @@ export function buildInitialMathVersion(overrides?: {
+   };
+ }
+ 
++/**
++ * Build a fully FROZEN math version for testing the R1-M3 authority layer.
++ *
++ * This intentionally keeps realMoneyEnabled=false because real-money settlement
++ * is not enabled in this milestone.
++ */
++export function buildFrozenMathVersion(overrides?: {
++  version?: string;
++  gameVersion?: string;
++}): MathVersionConfig {
++  const version = overrides?.version ?? "ab-math-frozen-1.0.0";
++  const base = buildInitialMathVersion({ version, status: "FROZEN" });
++
++  return {
++    ...base,
++    gameVersion: overrides?.gameVersion ?? base.gameVersion,
++    disclosure: {
++      status: "FROZEN",
++      targetRtp: 96.5,
++      originalRtpKnown: false,
++      realMoneyEnabled: false,
++      provisionalNotes: ["Frozen math version for R1-M3-PRE testing."],
++    },
++    reelWeights: {
++      kind: "per-reel",
++      reels: base.reelWeights.reels,
++      note: "Frozen per-reel weights for R1-M3-PRE testing.",
++    },
++    maxPayout: {
++      kind: "fixed",
++      totalBetMultiplier: 2500,
++      note: "Frozen max payout for R1-M3-PRE testing.",
++    },
++  };
++}
++
+ export const INITIAL_MATH_VERSION = buildInitialMathVersion({
+   version: "ab-math-1.0.0",
+   status: "DRAFT",
+diff --git a/lib/math-version-loader.ts b/lib/math-version-loader.ts
+new file mode 100644
+index 0000000..c518afb
+--- /dev/null
++++ b/lib/math-version-loader.ts
+@@ -0,0 +1,390 @@
++/**
++ * Math version runtime loader and FROZEN gate.
++ *
++ * This module is the single authority for converting a persisted math-version
++ * row into a trusted, executable MathVersionConfig. It performs strict runtime
++ * parsing and integrity checks, verifies the stored SHA-256, and refuses to
++ * return any version that is not FROZEN or that fails structural validation.
++ */
++
++import { hashMathVersionConfig } from "./math-config.ts";
++import type { MathVersionConfig, MathVersionStatus } from "./math-config.ts";
++
++export class MathVersionValidationError extends Error {
++  constructor(message: string) {
++    super(message);
++    this.name = "MathVersionValidationError";
++  }
++}
++
++export class MathVersionIntegrityError extends Error {
++  constructor(message: string) {
++    super(message);
++    this.name = "MathVersionIntegrityError";
++  }
++}
++
++export class MathVersionUnavailableError extends Error {
++  constructor(message: string) {
++    super(message);
++    this.name = "MathVersionUnavailableError";
++  }
++}
++
++export type MathVersionRow = {
++  id: string;
++  sha256: string;
++  status: string;
++  configJson: string;
++  activatedAt?: string | null;
++};
++
++function isPlainObject(value: unknown): value is Record<string, unknown> {
++  return typeof value === "object" && value !== null && !Array.isArray(value);
++}
++
++function assert(condition: unknown, message: string): asserts condition {
++  if (!condition) {
++    throw new MathVersionValidationError(message);
++  }
++}
++
++function expectString(value: unknown, path: string): string {
++  assert(typeof value === "string", `${path} must be a string`);
++  return value;
++}
++
++function expectNumber(value: unknown, path: string): number {
++  assert(typeof value === "number" && Number.isFinite(value), `${path} must be a finite number`);
++  return value;
++}
++
++function expectInt(value: unknown, path: string): number {
++  assert(Number.isSafeInteger(value), `${path} must be a safe integer`);
++  return value as number;
++}
++
++function expectPositiveInt(value: unknown, path: string): number {
++  const n = expectInt(value, path);
++  assert(n > 0, `${path} must be a positive integer`);
++  return n;
++}
++
++function expectBoolean(value: unknown, path: string): boolean {
++  assert(typeof value === "boolean", `${path} must be a boolean`);
++  return value;
++}
++
++function expectObject(value: unknown, path: string): Record<string, unknown> {
++  assert(isPlainObject(value), `${path} must be an object`);
++  return value;
++}
++
++function expectArray(value: unknown, path: string): unknown[] {
++  assert(Array.isArray(value), `${path} must be an array`);
++  return value;
++}
++
++function expectNonEmptyNumberArray(value: unknown, path: string): number[] {
++  const arr = expectArray(value, path);
++  assert(arr.length > 0, `${path} must not be empty`);
++  arr.forEach((item, index) => {
++    expectNumber(item, `${path}[${index}]`);
++  });
++  return arr as number[];
++}
++
++function expectPayoutMap(
++  value: unknown,
++  path: string,
++  maxColumns: number,
++  minCount = 2,
++): Record<number, number> {
++  const map = expectObject(value, path);
++  Object.entries(map).forEach(([key, val]) => {
++    const count = Number(key);
++    assert(
++      Number.isSafeInteger(count) && count >= minCount && count <= maxColumns,
++      `${path}[${key}] count must be an integer between ${minCount} and ${maxColumns}`,
++    );
++    const payout = expectNumber(val, `${path}[${key}]`);
++    assert(payout >= 0, `${path}[${key}] payout must be non-negative`);
++  });
++  return map as Record<number, number>;
++}
++
++/**
++ * Strict runtime validation of a MathVersionConfig shape.
++ *
++ * Throws MathVersionValidationError for any structural problem: missing or
++ * malformed fields, out-of-bounds paylines, unknown symbols, inconsistent
++ * reel weights, etc. This is intentionally defensive so that only complete,
++ * internally consistent configs reach the engine.
++ */
++export function validateMathVersionConfig(config: unknown): asserts config is MathVersionConfig {
++  assert(isPlainObject(config), "config must be an object");
++  const c = config as Record<string, unknown>;
++
++  const version = expectString(c.version, "version");
++  assert(version.length > 0 && version.length <= 64, "version must be a non-empty string <= 64 chars");
++
++  const gameVersion = expectString(c.gameVersion, "gameVersion");
++  assert(gameVersion.length > 0, "gameVersion must be a non-empty string");
++
++  const status = expectString(c.status, "status") as MathVersionStatus;
++  assert(["DRAFT", "FROZEN", "RETIRED"].includes(status), "status must be DRAFT, FROZEN, or RETIRED");
++
++  const grid = expectObject(c.grid, "grid");
++  const columns = expectPositiveInt(grid.columns, "grid.columns");
++  const rows = expectPositiveInt(grid.rows, "grid.rows");
++  assert(columns >= 3 && columns <= 7, "grid.columns out of supported range (3-7)");
++  assert(rows >= 3 && rows <= 6, "grid.rows out of supported range (3-6)");
++
++  const paylineCount = expectPositiveInt(c.paylineCount, "paylineCount");
++  const paylines = expectArray(c.paylines, "paylines");
++  assert(paylines.length === paylineCount, `paylineCount ${paylineCount} does not match paylines.length ${paylines.length}`);
++  paylines.forEach((line, lineIndex) => {
++    const lineArray = expectArray(line, `paylines[${lineIndex}]`);
++    assert(
++      lineArray.length === columns,
++      `paylines[${lineIndex}] length ${lineArray.length} must equal grid.columns ${columns}`,
++    );
++    lineArray.forEach((rowValue, reelIndex) => {
++      const row = expectInt(rowValue, `paylines[${lineIndex}][${reelIndex}]`);
++      assert(
++        row >= 0 && row < rows,
++        `paylines[${lineIndex}][${reelIndex}] row ${row} out of bounds (0-${rows - 1})`,
++      );
++    });
++  });
++
++  const symbols = expectArray(c.symbols, "symbols");
++  const symbolIds = new Set<string>();
++  symbols.forEach((symbol, index) => {
++    const s = expectObject(symbol, `symbols[${index}]`);
++    const id = expectString(s.id, `symbols[${index}].id`);
++    assert(!symbolIds.has(id), `duplicate symbol id ${id}`);
++    symbolIds.add(id);
++    expectString(s.label, `symbols[${index}].label`);
++    expectString(s.mark, `symbols[${index}].mark`);
++  });
++  assert(symbolIds.has("scatter"), "symbols must include scatter");
++  assert(symbolIds.has("wild"), "symbols must include wild");
++
++  const paytable = expectArray(c.paytable, "paytable");
++  const regularSymbols = new Set<string>();
++  paytable.forEach((entry, index) => {
++    const e = expectObject(entry, `paytable[${index}]`);
++    const symbol = expectString(e.symbol, `paytable[${index}].symbol`);
++    assert(symbolIds.has(symbol), `paytable[${index}].symbol ${symbol} is not declared in symbols`);
++    assert(symbol !== "scatter" && symbol !== "wild", `paytable[${index}].symbol cannot be scatter or wild`);
++    expectPayoutMap(e.payouts, `paytable[${index}].payouts`, columns);
++    regularSymbols.add(symbol);
++  });
++
++  const scatter = expectObject(c.scatter, "scatter");
++  const scatterReels = expectArray(scatter.appearsOnReelIndexes, "scatter.appearsOnReelIndexes");
++  const scatterReelSet = new Set<number>();
++  scatterReels.forEach((reelValue, index) => {
++    const reel = expectInt(reelValue, `scatter.appearsOnReelIndexes[${index}]`);
++    assert(reel >= 0 && reel < columns, `scatter.appearsOnReelIndexes[${index}] out of bounds`);
++    scatterReelSet.add(reel);
++  });
++  expectPayoutMap(scatter.totalBetMultipliers, "scatter.totalBetMultipliers", columns);
++  expectPayoutMap(scatter.baseFreeGames, "scatter.baseFreeGames", columns, 3);
++  expectPayoutMap(scatter.retriggerFreeGames, "scatter.retriggerFreeGames", columns, 2);
++
++  const wild = expectObject(c.wild, "wild");
++  const wildReels = expectArray(wild.appearsOnReelIndexes, "wild.appearsOnReelIndexes");
++  const wildReelSet = new Set<number>();
++  wildReels.forEach((reelValue, index) => {
++    const reel = expectInt(reelValue, `wild.appearsOnReelIndexes[${index}]`);
++    assert(reel >= 0 && reel < columns, `wild.appearsOnReelIndexes[${index}] out of bounds`);
++    wildReelSet.add(reel);
++  });
++  const substitutes = expectArray(wild.substitutes, "wild.substitutes");
++  substitutes.forEach((substituteValue, index) => {
++    const symbol = expectString(substituteValue, `wild.substitutes[${index}]`);
++    assert(symbolIds.has(symbol), `wild.substitutes[${index}] ${symbol} is not declared in symbols`);
++    assert(regularSymbols.has(symbol), `wild.substitutes[${index}] ${symbol} is not a regular symbol`);
++  });
++  const freeGameMultiplier = expectObject(wild.freeGameMultiplier, "wild.freeGameMultiplier");
++  expectString(freeGameMultiplier.kind, "wild.freeGameMultiplier.kind");
++  const multiplierValues = expectArray(freeGameMultiplier.values, "wild.freeGameMultiplier.values");
++  assert(multiplierValues.length > 0, "wild.freeGameMultiplier.values must not be empty");
++  multiplierValues.forEach((value, index) => {
++    const n = expectPositiveInt(value, `wild.freeGameMultiplier.values[${index}]`);
++    assert(n > 0, `wild.freeGameMultiplier.values[${index}] must be positive`);
++  });
++  expectString(freeGameMultiplier.note, "wild.freeGameMultiplier.note");
++
++  const rooms = expectObject(c.rooms, "rooms");
++  expectNonEmptyNumberArray(rooms.baseBets, "rooms.baseBets");
++  expectNonEmptyNumberArray(rooms.betLevels, "rooms.betLevels");
++  expectNonEmptyNumberArray(rooms.betMultipliers, "rooms.betMultipliers");
++  const lineCount = expectPositiveInt(rooms.lineCount, "rooms.lineCount");
++  assert(lineCount === paylineCount, "rooms.lineCount must equal paylineCount");
++
++  const reelWeights = expectObject(c.reelWeights, "reelWeights");
++  const weightKind = expectString(reelWeights.kind, "reelWeights.kind");
++  assert(weightKind === "per-reel", "reelWeights.kind must be per-reel");
++  const reels = expectArray(reelWeights.reels, "reelWeights.reels");
++  assert(reels.length === columns, `reelWeights.reels.length must equal grid.columns ${columns}`);
++  reels.forEach((reelValue, reelIndex) => {
++    const reel = expectObject(reelValue, `reelWeights.reels[${reelIndex}]`);
++    const entries = Object.entries(reel);
++    assert(entries.length > 0, `reelWeights.reels[${reelIndex}] must not be empty`);
++    let total = 0;
++    entries.forEach(([symbol, weight]) => {
++      assert(symbolIds.has(symbol), `reelWeights.reels[${reelIndex}] unknown symbol ${symbol}`);
++      if (symbol === "wild") {
++        assert(wildReelSet.has(reelIndex), `wild not allowed on reel ${reelIndex}`);
++      }
++      const w = expectPositiveInt(weight, `reelWeights.reels[${reelIndex}].${symbol}`);
++      total += w;
++    });
++    assert(total > 0, `reelWeights.reels[${reelIndex}] total weight must be positive`);
++  });
++  expectString(reelWeights.note, "reelWeights.note");
++
++  const maxPayout = expectObject(c.maxPayout, "maxPayout");
++  const maxPayoutKind = expectString(maxPayout.kind, "maxPayout.kind");
++  assert(["candidate", "fixed"].includes(maxPayoutKind), "maxPayout.kind must be candidate or fixed");
++  const maxPayoutMultiplier = expectNumber(maxPayout.totalBetMultiplier, "maxPayout.totalBetMultiplier");
++  assert(maxPayoutMultiplier > 0, "maxPayout.totalBetMultiplier must be positive");
++  expectString(maxPayout.note, "maxPayout.note");
++
++  const disclosure = expectObject(c.disclosure, "disclosure");
++  expectString(disclosure.status, "disclosure.status");
++  if (disclosure.targetRtp !== null && disclosure.targetRtp !== undefined) {
++    const rtp = expectNumber(disclosure.targetRtp, "disclosure.targetRtp");
++    assert(rtp > 0 && rtp < 100, "disclosure.targetRtp must be between 0 and 100");
++  }
++  expectBoolean(disclosure.originalRtpKnown, "disclosure.originalRtpKnown");
++  expectBoolean(disclosure.realMoneyEnabled, "disclosure.realMoneyEnabled");
++  const provisionalNotes = expectArray(disclosure.provisionalNotes, "disclosure.provisionalNotes");
++  provisionalNotes.forEach((note, index) => {
++    expectString(note, `disclosure.provisionalNotes[${index}]`);
++  });
++}
++
++/**
++ * Parse, structurally validate, and integrity-check a single math-version row.
++ *
++ * The row must be FROZEN, the config_json must parse, the stored sha256 must
++ * match the computed hash, and the row id must match the config version.
++ */
++export async function parseAndValidateMathVersion(row: MathVersionRow): Promise<MathVersionConfig> {
++  if (row.status !== "FROZEN") {
++    throw new MathVersionValidationError(
++      `math version ${row.id} status is ${row.status} (must be FROZEN)`,
++    );
++  }
++
++  let parsed: unknown;
++  try {
++    parsed = JSON.parse(row.configJson);
++  } catch {
++    throw new MathVersionValidationError(`math version ${row.id} config_json is not valid JSON`);
++  }
++
++  validateMathVersionConfig(parsed);
++  const config = parsed as MathVersionConfig;
++
++  if (config.version !== row.id) {
++    throw new MathVersionValidationError(
++      `math version id mismatch: row ${row.id} vs config ${config.version}`,
++    );
++  }
++
++  const computed = await hashMathVersionConfig(config);
++  if (computed !== row.sha256) {
++    throw new MathVersionIntegrityError(
++      `math version ${row.id} SHA-256 mismatch: stored ${row.sha256} vs computed ${computed}`,
++    );
++  }
++
++  return config;
++}
++
++/**
++ * Execution gate for the game engine.
++ *
++ * In addition to structural validation, the config must be FROZEN, its
++ * disclosure must be FROZEN, it must carry a calibrated targetRTP, and
++ * realMoneyEnabled must be false because this milestone does not enable
++ * real-money settlement.
++ */
++export function validateExecutableMathVersion(config: MathVersionConfig): void {
++  if (config.status !== "FROZEN") {
++    throw new MathVersionValidationError(
++      `math version ${config.version} status is ${config.status} (must be FROZEN)`,
++    );
++  }
++
++  validateMathVersionConfig(config);
++
++  if (config.disclosure.status !== "FROZEN") {
++    throw new MathVersionValidationError(
++      `math version ${config.version} disclosure status is ${config.disclosure.status} (must be FROZEN)`,
++    );
++  }
++
++  if (
++    config.disclosure.targetRtp === null ||
++    config.disclosure.targetRtp === undefined ||
++    config.disclosure.targetRtp <= 0 ||
++    config.disclosure.targetRtp >= 100
++  ) {
++    throw new MathVersionValidationError(
++      `math version ${config.version} targetRtp is missing or invalid`,
++    );
++  }
++
++  if (config.disclosure.realMoneyEnabled !== false) {
++    throw new MathVersionValidationError(
++      `math version ${config.version} realMoneyEnabled must be false in this milestone`,
++    );
++  }
++}
++
++/**
++ * Select an executable FROZEN math version from a collection of rows.
++ *
++ * If versionId is provided, only that exact version is accepted and must be
++ * FROZEN and valid. Otherwise the most recently activated FROZEN version is
++ * chosen. If no FROZEN version is available, this fails closed with
++ * MathVersionUnavailableError and never falls back to an initial/DRAFT version.
++ */
++export async function selectMathVersion(
++  rows: MathVersionRow[],
++  opts: { versionId?: string } = {},
++): Promise<MathVersionConfig> {
++  if (rows.length === 0) {
++    throw new MathVersionUnavailableError("no math versions available");
++  }
++
++  if (opts.versionId) {
++    const row = rows.find((r) => r.id === opts.versionId);
++    if (!row) {
++      throw new MathVersionUnavailableError(`math version ${opts.versionId} not found`);
++    }
++    return parseAndValidateMathVersion(row);
++  }
++
++  const frozenRows = rows.filter((r) => r.status === "FROZEN");
++  if (frozenRows.length === 0) {
++    throw new MathVersionUnavailableError("no FROZEN math versions available");
++  }
++
++  const chosen = frozenRows.sort((a, b) => {
++    if (a.activatedAt && b.activatedAt) {
++      return b.activatedAt.localeCompare(a.activatedAt);
++    }
++    if (a.activatedAt) return -1;
++    if (b.activatedAt) return 1;
++    return 0;
++  })[0];
++
++  return parseAndValidateMathVersion(chosen);
++}
+diff --git a/lib/server-game-engine.ts b/lib/server-game-engine.ts
+index 0948904..a385e9d 100644
+--- a/lib/server-game-engine.ts
++++ b/lib/server-game-engine.ts
+@@ -4,17 +4,16 @@
+  * All round results are generated on the server using a CSPRNG. The client may
+  * only submit the bet configuration; any submitted symbol grid, win amount,
+  * free-game count or multiplier is rejected by the API layer.
++ *
++ * In R1-M3-PRE this engine became fully config-driven: paylines, paytable,
++ * scatter, wild, reel weights and room parameters are taken exclusively from
++ * the supplied MathVersionConfig. The global game-config constants are no
++ * longer a runtime authority for server spins.
+  */
+ 
+-import {
+-  GRID_COLUMNS,
+-  GRID_ROWS,
+-  PAYLINE_COUNT,
+-  PAYLINES,
+-  type SymbolId,
+-} from "./game-config.ts";
+-import { evaluateSpin, type Grid, type SpinEvaluation } from "./game-engine.ts";
+-import type { MathVersionConfig } from "./math-config.ts";
++import type { Grid, LineWin, SpinEvaluation } from "./game-engine.ts";
++import type { MathVersionConfig, RegularSymbol, SymbolId } from "./math-config.ts";
++import { validateExecutableMathVersion } from "./math-version-loader.ts";
+ 
+ export type ServerSpinOutcome = {
+   grid: Grid;
+@@ -69,44 +68,148 @@ function generateServerGrid(mathConfig: MathVersionConfig): Grid {
+   if (reelWeights.kind !== "per-reel") {
+     throw new ServerGameError("Only per-reel weights are supported in this engine");
+   }
+-  if (reelWeights.reels.length !== GRID_COLUMNS) {
++  if (reelWeights.reels.length !== mathConfig.grid.columns) {
+     throw new ServerGameError(
+-      `Reel weights count ${reelWeights.reels.length} does not match grid columns ${GRID_COLUMNS}`,
++      `Reel weights count ${reelWeights.reels.length} does not match grid columns ${mathConfig.grid.columns}`,
+     );
+   }
+ 
+-  return Array.from({ length: GRID_COLUMNS }, (_, reelIndex) => {
++  return Array.from({ length: mathConfig.grid.columns }, (_, reelIndex) => {
+     const weights = reelWeights.reels[reelIndex];
+-    return Array.from({ length: GRID_ROWS }, () => weightedPick(weights) as SymbolId);
++    return Array.from({ length: mathConfig.grid.rows }, () => weightedPick(weights) as SymbolId);
+   });
+ }
+ 
+ function validateMathConfigForSpin(mathConfig: MathVersionConfig): void {
+-  if (mathConfig.grid.columns !== GRID_COLUMNS || mathConfig.grid.rows !== GRID_ROWS) {
+-    throw new ServerGameError("Math config grid dimensions do not match engine");
+-  }
+-  if (mathConfig.paylineCount !== PAYLINE_COUNT) {
+-    throw new ServerGameError("Math config payline count does not match engine");
++  const { columns, rows } = mathConfig.grid;
++  if (columns <= 0 || rows <= 0) {
++    throw new ServerGameError("Math config grid dimensions must be positive");
+   }
+-  if (mathConfig.paylines.length !== PAYLINE_COUNT) {
+-    throw new ServerGameError("Math config payline map length does not match paylineCount");
++  if (mathConfig.paylineCount !== mathConfig.paylines.length) {
++    throw new ServerGameError(
++      `Math config paylineCount ${mathConfig.paylineCount} does not match paylines.length ${mathConfig.paylines.length}`,
++    );
+   }
+   mathConfig.paylines.forEach((line, index) => {
+-    if (line.length !== GRID_COLUMNS) {
+-      throw new ServerGameError(`Payline ${index} length ${line.length} != ${GRID_COLUMNS}`);
++    if (line.length !== columns) {
++      throw new ServerGameError(`Payline ${index} length ${line.length} != ${columns}`);
+     }
+     line.forEach((row, reel) => {
+-      if (row < 0 || row >= GRID_ROWS) {
++      if (row < 0 || row >= rows) {
+         throw new ServerGameError(`Payline ${index} reel ${reel} row ${row} out of bounds`);
+       }
+     });
+   });
++  if (mathConfig.rooms.lineCount !== mathConfig.paylineCount) {
++    throw new ServerGameError("Math config rooms.lineCount does not match paylineCount");
++  }
+ }
+ 
+-function computeWinningPositions(grid: Grid, evaluation: SpinEvaluation): { reel: number; row: number }[] {
++function largestMatchingKey(
++  map: { readonly [count: number]: number | undefined },
++  count: number,
++): number {
++  let best = 0;
++  Object.keys(map).forEach((key) => {
++    const n = Number(key);
++    if (Number.isSafeInteger(n) && n <= count && n > best) {
++      best = n;
++    }
++  });
++  return best;
++}
++
++function evaluateSpinWithConfig(
++  grid: Grid,
++  totalBet: number,
++  inFreeGames: boolean,
++  mathConfig: MathVersionConfig,
++): SpinEvaluation {
++  const { columns } = mathConfig.grid;
++  if (grid.length !== columns || grid.some((reel) => reel.length !== mathConfig.grid.rows)) {
++    throw new ServerGameError("Grid dimensions do not match math config");
++  }
++
++  const paylines = mathConfig.paylines;
++  const lineBet = totalBet / paylines.length;
++  const paytableBySymbol = new Map(mathConfig.paytable.map((entry) => [entry.symbol, entry.payouts]));
++  const regularSymbols = new Set(mathConfig.paytable.map((entry) => entry.symbol));
++  const lineWins: LineWin[] = [];
++
++  paylines.forEach((rows, lineIndex) => {
++    const first = grid[0][rows[0]];
++    if (!regularSymbols.has(first as RegularSymbol)) return;
++    const target = first as RegularSymbol;
++    let count = 1;
++    for (let reel = 1; reel < columns; reel += 1) {
++      const symbol = grid[reel][rows[reel]];
++      if (symbol === target || symbol === "wild") {
++        count += 1;
++      } else {
++        break;
++      }
++    }
++    const payouts = paytableBySymbol.get(target);
++    const payoutMultiple = payouts?.[count as 2 | 3 | 4 | 5];
++    if (payoutMultiple === undefined || payoutMultiple === null) return;
++    lineWins.push({
++      line: lineIndex + 1,
++      symbol: target,
++      count,
++      payout: payoutMultiple * lineBet,
++    });
++  });
++
++  const scatterCount = grid.flat().filter((symbol) => symbol === "scatter").length;
++  const scatterMatch = largestMatchingKey(mathConfig.scatter.totalBetMultipliers, scatterCount);
++  const scatterWin = scatterMatch > 0 ? (mathConfig.scatter.totalBetMultipliers[scatterMatch] ?? 0) * totalBet : 0;
++
++  const lineWin = lineWins.reduce((sum, win) => sum + win.payout, 0);
++
++  const wildReelIndexes = new Set(mathConfig.wild.appearsOnReelIndexes);
++  const hasWild = grid.some(
++    (reel, reelIndex) => wildReelIndexes.has(reelIndex) && reel.includes("wild"),
++  );
++  const multiplier =
++    inFreeGames && hasWild && lineWin > 0
++      ? (mathConfig.wild.freeGameMultiplier.values[
++          randomInt(mathConfig.wild.freeGameMultiplier.values.length)
++        ] as 2 | 3)
++      : 1;
++
++  const totalWin = lineWin * multiplier + scatterWin;
++
++  const awardedFreeGames = inFreeGames
++    ? scatterCount >= 2
++      ? (mathConfig.scatter.retriggerFreeGames[
++          largestMatchingKey(mathConfig.scatter.retriggerFreeGames, Math.min(scatterCount, columns)) as 2 | 3 | 4 | 5
++        ] ?? 0)
++      : 0
++    : scatterCount >= 3
++      ? (mathConfig.scatter.baseFreeGames[
++          largestMatchingKey(mathConfig.scatter.baseFreeGames, Math.min(scatterCount, columns)) as 3 | 4 | 5
++        ] ?? 0)
++      : 0;
++
++  return {
++    lineWins,
++    lineWin,
++    scatterCount,
++    scatterWin,
++    multiplier,
++    totalWin,
++    awardedFreeGames,
++  };
++}
++
++function computeWinningPositions(
++  grid: Grid,
++  evaluation: SpinEvaluation,
++  mathConfig: MathVersionConfig,
++): { reel: number; row: number }[] {
+   const positions = new Set<string>();
+   evaluation.lineWins.forEach((win) => {
+-    const line = PAYLINES[win.line - 1];
++    const line = mathConfig.paylines[win.line - 1];
+     for (let reel = 0; reel < win.count; reel += 1) {
+       positions.add(`${reel}-${line[reel]}`);
+     }
+@@ -141,21 +244,22 @@ export function generateServerSpinOutcome(
+   if (!Number.isSafeInteger(totalBetMinor) || totalBetMinor < 0) {
+     throw new ServerGameError("totalBetMinor must be a non-negative safe integer");
+   }
+-  if (totalBetMinor % PAYLINE_COUNT !== 0) {
++  if (totalBetMinor % mathConfig.paylineCount !== 0) {
+     throw new ServerGameError(
+-      `totalBetMinor ${totalBetMinor} is not divisible by ${PAYLINE_COUNT}`,
++      `totalBetMinor ${totalBetMinor} is not divisible by ${mathConfig.paylineCount}`,
+     );
+   }
+ 
++  validateExecutableMathVersion(mathConfig);
+   validateMathConfigForSpin(mathConfig);
+ 
+   const grid = generateServerGrid(mathConfig);
+-  const evaluation = evaluateSpin(grid, totalBetMinor, inFreeGames);
+-  const winningPositions = computeWinningPositions(grid, evaluation);
++  const evaluation = evaluateSpinWithConfig(grid, totalBetMinor, inFreeGames, mathConfig);
++  const winningPositions = computeWinningPositions(grid, evaluation, mathConfig);
+ 
+   return {
+     grid,
+-    lineBetMinor: totalBetMinor / PAYLINE_COUNT,
++    lineBetMinor: totalBetMinor / mathConfig.paylineCount,
+     totalBetMinor,
+     evaluation,
+     winningPositions,
+@@ -179,26 +283,27 @@ export type FixedOutcomeInput = {
+ export function evaluateFixedGrid(input: FixedOutcomeInput): ServerSpinOutcome {
+   const { grid, totalBetMinor, inFreeGames, mathConfig } = input;
+ 
+-  if (grid.length !== GRID_COLUMNS || grid.some((reel) => reel.length !== GRID_ROWS)) {
++  if (grid.length !== mathConfig.grid.columns || grid.some((reel) => reel.length !== mathConfig.grid.rows)) {
+     throw new ServerGameError("Invalid grid dimensions");
+   }
+   if (!Number.isSafeInteger(totalBetMinor) || totalBetMinor < 0) {
+     throw new ServerGameError("totalBetMinor must be a non-negative safe integer");
+   }
+-  if (totalBetMinor % PAYLINE_COUNT !== 0) {
++  if (totalBetMinor % mathConfig.paylineCount !== 0) {
+     throw new ServerGameError(
+-      `totalBetMinor ${totalBetMinor} is not divisible by ${PAYLINE_COUNT}`,
++      `totalBetMinor ${totalBetMinor} is not divisible by ${mathConfig.paylineCount}`,
+     );
+   }
+ 
++  validateExecutableMathVersion(mathConfig);
+   validateMathConfigForSpin(mathConfig);
+ 
+-  const evaluation = evaluateSpin(grid, totalBetMinor, inFreeGames);
+-  const winningPositions = computeWinningPositions(grid, evaluation);
++  const evaluation = evaluateSpinWithConfig(grid, totalBetMinor, inFreeGames, mathConfig);
++  const winningPositions = computeWinningPositions(grid, evaluation, mathConfig);
+ 
+   return {
+     grid,
+-    lineBetMinor: totalBetMinor / PAYLINE_COUNT,
++    lineBetMinor: totalBetMinor / mathConfig.paylineCount,
+     totalBetMinor,
+     evaluation,
+     winningPositions,
+diff --git a/tests/math-authority.test.mjs b/tests/math-authority.test.mjs
+new file mode 100644
+index 0000000..365dfe1
+--- /dev/null
++++ b/tests/math-authority.test.mjs
+@@ -0,0 +1,270 @@
++import assert from "node:assert/strict";
++import { readFileSync } from "node:fs";
++import test from "node:test";
++import {
++  buildFrozenMathVersion,
++  hashMathVersionConfig,
++  INITIAL_MATH_VERSION,
++} from "../lib/math-config.ts";
++import {
++  evaluateFixedGrid,
++  generateServerSpinOutcome,
++} from "../lib/server-game-engine.ts";
++import {
++  MathVersionIntegrityError,
++  MathVersionUnavailableError,
++  MathVersionValidationError,
++  parseAndValidateMathVersion,
++  selectMathVersion,
++} from "../lib/math-version-loader.ts";
++
++const mathConfig = buildFrozenMathVersion({ version: "ab-authority-base" });
++
++async function frozenRow(overrides = {}) {
++  const config = buildFrozenMathVersion(overrides);
++  return {
++    id: config.version,
++    sha256: await hashMathVersionConfig(config),
++    status: "FROZEN",
++    configJson: JSON.stringify(config),
++    activatedAt: new Date().toISOString(),
++  };
++}
++
++test("FROZEN math version loads and validates", async () => {
++  const row = await frozenRow({ version: "ab-frozen-load-test" });
++  const loaded = await parseAndValidateMathVersion(row);
++  assert.equal(loaded.version, "ab-frozen-load-test");
++  assert.equal(loaded.status, "FROZEN");
++  assert.equal(loaded.disclosure.status, "FROZEN");
++  assert.equal(loaded.disclosure.realMoneyEnabled, false);
++});
++
++test("DRAFT and RETIRED math versions are rejected", async () => {
++  const base = await frozenRow({ version: "ab-status-test" });
++  const draft = { ...base, status: "DRAFT" };
++  await assert.rejects(parseAndValidateMathVersion(draft), MathVersionValidationError);
++  const retired = { ...base, status: "RETIRED" };
++  await assert.rejects(parseAndValidateMathVersion(retired), MathVersionValidationError);
++});
++
++test("SHA-256 mismatch rejects the math version", async () => {
++  const row = await frozenRow({ version: "ab-hash-test" });
++  row.sha256 = "0".repeat(64);
++  await assert.rejects(parseAndValidateMathVersion(row), MathVersionIntegrityError);
++});
++
++test("corrupt or incomplete config_json rejects the math version", async () => {
++  const row = await frozenRow({ version: "ab-corrupt-test" });
++  row.configJson = "{not valid json";
++  await assert.rejects(parseAndValidateMathVersion(row), MathVersionValidationError);
++
++  const incomplete = await frozenRow({ version: "ab-incomplete-test" });
++  incomplete.configJson = JSON.stringify({ version: "ab-incomplete-test", status: "FROZEN" });
++  await assert.rejects(parseAndValidateMathVersion(incomplete), MathVersionValidationError);
++});
++
++test("no FROZEN math version available fails closed", async () => {
++  const draft = await frozenRow({ version: "ab-no-frozen-test" });
++  draft.status = "DRAFT";
++  await assert.rejects(selectMathVersion([draft]), MathVersionUnavailableError);
++
++  const retired = await frozenRow({ version: "ab-retired-test" });
++  retired.status = "RETIRED";
++  await assert.rejects(selectMathVersion([retired]), MathVersionUnavailableError);
++
++  await assert.rejects(
++    selectMathVersion([], { versionId: "missing" }),
++    MathVersionUnavailableError,
++  );
++});
++
++test("modified paytable changes the spin payout", () => {
++  const base = buildFrozenMathVersion({ version: "ab-paytable-base" });
++  base.paylines = [[0, 0, 0, 0, 0]];
++  base.paylineCount = 1;
++  base.rooms.lineCount = 1;
++
++  const modified = structuredClone(base);
++  const buffalo = modified.paytable.find((entry) => entry.symbol === "buffalo");
++  assert.ok(buffalo);
++  buffalo.payouts[5] = 9999;
++
++  // Five buffalo along the single horizontal payline.
++  const grid = [
++    ["buffalo", "nine", "nine", "nine"],
++    ["buffalo", "nine", "nine", "nine"],
++    ["buffalo", "nine", "nine", "nine"],
++    ["buffalo", "nine", "nine", "nine"],
++    ["buffalo", "nine", "nine", "nine"],
++  ];
++
++  const baseOutcome = evaluateFixedGrid({
++    grid,
++    totalBetMinor: 1,
++    inFreeGames: false,
++    mathConfig: base,
++  });
++  const modifiedOutcome = evaluateFixedGrid({
++    grid,
++    totalBetMinor: 1,
++    inFreeGames: false,
++    mathConfig: modified,
++  });
++
++  assert.equal(baseOutcome.evaluation.lineWins.length, 1);
++  assert.equal(modifiedOutcome.evaluation.lineWins.length, 1);
++  assert.equal(
++    modifiedOutcome.evaluation.totalWin - baseOutcome.evaluation.totalWin,
++    9999 - 250,
++  );
++});
++
++test("modified paylines take effect", () => {
++  const base = buildFrozenMathVersion({ version: "ab-paylines-base" });
++  base.paylines = [[1, 0, 3, 0, 1]];
++  base.paylineCount = 1;
++  base.rooms.lineCount = 1;
++
++  const modified = structuredClone(base);
++  modified.paylines = [[0, 1, 2, 1, 0]];
++
++  // The base line (1,0,3,0,1) reads four different regular symbols and must
++  // not produce a win. The modified line (0,1,2,1,0) reads five buffalo.
++  const grid = [
++    ["buffalo", "lion", "nine", "nine"],
++    ["elephant", "buffalo", "nine", "nine"],
++    ["nine", "nine", "buffalo", "zebra"],
++    ["antelope", "buffalo", "nine", "nine"],
++    ["buffalo", "a", "nine", "nine"],
++  ];
++
++  const baseOutcome = evaluateFixedGrid({
++    grid,
++    totalBetMinor: 1,
++    inFreeGames: false,
++    mathConfig: base,
++  });
++  const modifiedOutcome = evaluateFixedGrid({
++    grid,
++    totalBetMinor: 1,
++    inFreeGames: false,
++    mathConfig: modified,
++  });
++
++  assert.equal(baseOutcome.evaluation.lineWins.length, 0);
++  assert.equal(modifiedOutcome.evaluation.lineWins.length, 1);
++  assert.equal(modifiedOutcome.evaluation.lineWins[0].symbol, "buffalo");
++  assert.equal(modifiedOutcome.evaluation.lineWins[0].count, 5);
++});
++
++test("modified reelWeights are used by the generator", () => {
++  const config = buildFrozenMathVersion({ version: "ab-weights-test" });
++  config.reelWeights.reels = Array.from({ length: config.grid.columns }, () => ({
++    buffalo: 1,
++  }));
++
++  const outcome = generateServerSpinOutcome(config, 50, false);
++  for (const reel of outcome.grid) {
++    for (const symbol of reel) {
++      assert.equal(symbol, "buffalo");
++    }
++  }
++});
++
++test("server engine no longer reads global PAYTABLE or PAYLINES", () => {
++  const source = readFileSync(
++    new URL("../lib/server-game-engine.ts", import.meta.url),
++    "utf-8",
++  );
++  assert.doesNotMatch(source, /from\s+["']\.\/game-config\.ts["']/);
++  assert.doesNotMatch(source, /\bPAYTABLE\b/);
++  assert.doesNotMatch(source, /\bPAYLINES\b/);
++  assert.doesNotMatch(source, /\bPAYLINE_COUNT\b/);
++  assert.doesNotMatch(source, /\bGRID_COLUMNS\b/);
++  assert.doesNotMatch(source, /\bGRID_ROWS\b/);
++});
++
++test("fixedGrid cannot be injected into generateServerSpinOutcome", () => {
++  const fixedGrid = Array.from({ length: mathConfig.grid.columns }, () =>
++    Array.from({ length: mathConfig.grid.rows }, () => "buffalo"),
++  );
++  // @ts-expect-error deliberate extra argument test
++  const outcome = generateServerSpinOutcome(mathConfig, 50, false, fixedGrid);
++  assert.notStrictEqual(outcome.grid, fixedGrid);
++  const allBuffalo = outcome.grid.every((reel) =>
++    reel.every((symbol) => symbol === "buffalo"),
++  );
++  assert.equal(allBuffalo, false);
++});
++
++test("same fixed grid under same config is deterministic", () => {
++  const config = buildFrozenMathVersion({ version: "ab-deterministic-test" });
++  const grid = [
++    ["buffalo", "lion", "ten", "buffalo"],
++    ["buffalo", "wild", "q", "elephant"],
++    ["nine", "antelope", "scatter", "k"],
++    ["elephant", "j", "wild", "lion"],
++    ["buffalo", "ten", "zebra", "a"],
++  ];
++  const first = evaluateFixedGrid({
++    grid,
++    totalBetMinor: 50,
++    inFreeGames: false,
++    mathConfig: config,
++  });
++  const second = evaluateFixedGrid({
++    grid,
++    totalBetMinor: 50,
++    inFreeGames: false,
++    mathConfig: config,
++  });
++  assert.deepEqual(first.evaluation, second.evaluation);
++  assert.deepEqual(first.winningPositions, second.winningPositions);
++});
++
++test("version A and version B produce independent results", () => {
++  const versionA = buildFrozenMathVersion({
++    version: "ab-version-a",
++    gameVersion: "game-a",
++  });
++  const versionB = structuredClone(versionA);
++  versionB.version = "ab-version-b";
++  versionB.gameVersion = "game-b";
++  const buffaloB = versionB.paytable.find((entry) => entry.symbol === "buffalo");
++  assert.ok(buffaloB);
++  buffaloB.payouts[5] = 5000;
++
++  const grid = [
++    ["buffalo", "nine", "nine", "nine"],
++    ["buffalo", "nine", "nine", "nine"],
++    ["buffalo", "nine", "nine", "nine"],
++    ["buffalo", "nine", "nine", "nine"],
++    ["buffalo", "nine", "nine", "nine"],
++  ];
++
++  const outcomeA = evaluateFixedGrid({
++    grid,
++    totalBetMinor: 50,
++    inFreeGames: false,
++    mathConfig: versionA,
++  });
++  const outcomeB = evaluateFixedGrid({
++    grid,
++    totalBetMinor: 50,
++    inFreeGames: false,
++    mathConfig: versionB,
++  });
++
++  assert.notEqual(outcomeA.evaluation.totalWin, outcomeB.evaluation.totalWin);
++  assert.equal(outcomeA.mathVersion, versionA.version);
++  assert.equal(outcomeB.mathVersion, versionB.version);
++});
++
++test("INITIAL_MATH_VERSION is no longer auto-selected for execution", () => {
++  assert.equal(INITIAL_MATH_VERSION.status, "DRAFT");
++  assert.throws(
++    () => generateServerSpinOutcome(INITIAL_MATH_VERSION, 50, false),
++    /status is DRAFT/,
++  );
++});
+diff --git a/tests/round-service.test.mjs b/tests/round-service.test.mjs
+index 330b656..c4886e0 100644
+--- a/tests/round-service.test.mjs
++++ b/tests/round-service.test.mjs
+@@ -1,15 +1,17 @@
+ import assert from "node:assert/strict";
+ import test from "node:test";
+-import { INITIAL_MATH_VERSION } from "../lib/math-config.ts";
++import { buildFrozenMathVersion, INITIAL_MATH_VERSION } from "../lib/math-config.ts";
+ import { processSpin, RoundValidationError } from "../lib/round-service.ts";
+ import { TestRoundStore } from "../lib/round-store.ts";
+ import { TestWalletAdapter } from "../lib/wallet-adapter.ts";
+ 
+-function makeService(wallet, roundStore = new TestRoundStore()) {
++const FROZEN_MATH_VERSION = buildFrozenMathVersion({ version: "ab-math-frozen-round" });
++
++function makeService(wallet, roundStore = new TestRoundStore(), mathConfig = FROZEN_MATH_VERSION) {
+   return {
+     walletAdapter: wallet,
+     roundStore,
+-    mathConfig: INITIAL_MATH_VERSION,
++    mathConfig,
+     allowRealMoney: false,
+   };
+ }
+@@ -35,7 +37,7 @@ test("processes a base-game spin and updates balance", async () => {
+   const result = await processSpin(makeService(wallet), spinRequest());
+   assert.equal(result.totalBetMinor, 50);
+   assert.equal(result.playerId, "p1");
+-  assert.equal(result.mathVersion, INITIAL_MATH_VERSION.version);
++  assert.equal(result.mathVersion, FROZEN_MATH_VERSION.version);
+   assert.equal(result.balanceAfterMinor, 9_950 + result.totalWinMinor);
+   assert.equal(result.isFreeGame, false);
+ });
+diff --git a/tests/server-game-engine.test.mjs b/tests/server-game-engine.test.mjs
+index d3f0e4b..8d4a3e8 100644
+--- a/tests/server-game-engine.test.mjs
++++ b/tests/server-game-engine.test.mjs
+@@ -1,7 +1,7 @@
+ import assert from "node:assert/strict";
+ import test from "node:test";
+-import { PAYLINES, ROOM_BASE_BETS, BET_LEVELS, BET_MULTIPLIERS } from "../lib/game-config.ts";
+-import { INITIAL_MATH_VERSION } from "../lib/math-config.ts";
++import { ROOM_BASE_BETS, BET_LEVELS, BET_MULTIPLIERS } from "../lib/game-config.ts";
++import { buildFrozenMathVersion } from "../lib/math-config.ts";
+ import {
+   evaluateFixedGrid,
+   generateServerSpinOutcome,
+@@ -9,7 +9,7 @@ import {
+   ServerGameError,
+ } from "../lib/server-game-engine.ts";
+ 
+-const mathConfig = INITIAL_MATH_VERSION;
++const mathConfig = buildFrozenMathVersion({ version: "ab-math-frozen-1.0.0" });
+ 
+ function totalBet(room, level, multiplier) {
+   return room * level * multiplier;
+@@ -28,14 +28,14 @@ test("randomInt rejects invalid ranges", () => {
+   assert.throws(() => randomInt(1.5), RangeError);
+ });
+ 
+-test("WILD only appears on reels 2, 3, 4", () => {
++test("WILD only appears on reels configured by the math version", () => {
+   for (let i = 0; i < 200; i += 1) {
+     const outcome = generateServerSpinOutcome(mathConfig, totalBet(50, 1, 1), false);
+     outcome.grid.forEach((reel, reelIndex) => {
+       reel.forEach((symbol) => {
+         if (symbol === "wild") {
+           assert.ok(
+-            reelIndex >= 1 && reelIndex <= 3,
++            mathConfig.wild.appearsOnReelIndexes.includes(reelIndex),
+             `WILD found on reel ${reelIndex}`,
+           );
+         }
+@@ -191,7 +191,7 @@ test("all valid room/level/multiplier combinations produce integer line bets", (
+       for (const multiplier of BET_MULTIPLIERS) {
+         const bet = totalBet(room, level, multiplier);
+         const outcome = generateServerSpinOutcome(mathConfig, bet, false);
+-        assert.equal(outcome.lineBetMinor, bet / PAYLINES.length);
++        assert.equal(outcome.lineBetMinor, bet / mathConfig.paylineCount);
+         assert.ok(Number.isSafeInteger(outcome.lineBetMinor));
+         assert.ok(Number.isSafeInteger(outcome.evaluation.totalWin));
+       }
+@@ -226,6 +226,15 @@ test("generated outcome contains audit metadata", () => {
+   const outcome = generateServerSpinOutcome(mathConfig, totalBet(50, 1, 1), false);
+   assert.equal(outcome.mathVersion, mathConfig.version);
+   assert.ok(outcome.generatedAt);
+-  assert.equal(outcome.grid.length, 5);
+-  assert.equal(outcome.grid[0].length, 4);
++  assert.equal(outcome.grid.length, mathConfig.grid.columns);
++  assert.equal(outcome.grid[0].length, mathConfig.grid.rows);
++});
++
++test("DRAFT math version is rejected by the production spin path", () => {
++  const draft = buildFrozenMathVersion({ version: "ab-math-draft-test" });
++  draft.status = "DRAFT";
++  assert.throws(
++    () => generateServerSpinOutcome(draft, totalBet(50, 1, 1), false),
++    /status is DRAFT/,
++  );
+ });

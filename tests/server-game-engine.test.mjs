@@ -1,15 +1,16 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { PAYLINES, ROOM_BASE_BETS, BET_LEVELS, BET_MULTIPLIERS } from "../lib/game-config.ts";
-import { INITIAL_MATH_VERSION } from "../lib/math-config.ts";
+import { ROOM_BASE_BETS, BET_LEVELS, BET_MULTIPLIERS } from "../lib/game-config.ts";
 import {
   evaluateFixedGrid,
   generateServerSpinOutcome,
   randomInt,
+  RANDOM_INT_MAX_EXCLUSIVE,
   ServerGameError,
 } from "../lib/server-game-engine.ts";
+import { buildFrozenMathVersion, loadExecutableMathVersion } from "./helpers/frozen-math-version.mjs";
 
-const mathConfig = INITIAL_MATH_VERSION;
+const mathConfig = await loadExecutableMathVersion({ version: "ab-math-frozen-1.0.0" });
 
 function totalBet(room, level, multiplier) {
   return room * level * multiplier;
@@ -26,16 +27,19 @@ test("randomInt rejects invalid ranges", () => {
   assert.throws(() => randomInt(0), RangeError);
   assert.throws(() => randomInt(-1), RangeError);
   assert.throws(() => randomInt(1.5), RangeError);
+  const atBound = randomInt(RANDOM_INT_MAX_EXCLUSIVE);
+  assert.ok(atBound >= 0 && atBound < RANDOM_INT_MAX_EXCLUSIVE);
+  assert.throws(() => randomInt(RANDOM_INT_MAX_EXCLUSIVE + 1), RangeError);
 });
 
-test("WILD only appears on reels 2, 3, 4", () => {
+test("WILD only appears on reels configured by the math version", () => {
   for (let i = 0; i < 200; i += 1) {
     const outcome = generateServerSpinOutcome(mathConfig, totalBet(50, 1, 1), false);
     outcome.grid.forEach((reel, reelIndex) => {
       reel.forEach((symbol) => {
         if (symbol === "wild") {
           assert.ok(
-            reelIndex >= 1 && reelIndex <= 3,
+            mathConfig.wild.appearsOnReelIndexes.includes(reelIndex),
             `WILD found on reel ${reelIndex}`,
           );
         }
@@ -175,7 +179,12 @@ test("free-game WILD multiplier is applied to line wins", () => {
     mathConfig,
   });
   assert.equal(freeOutcome.evaluation.multiplier >= 2, true);
-  assert.equal(freeOutcome.evaluation.totalWin, baseOutcome.evaluation.lineWin * freeOutcome.evaluation.multiplier);
+  assert.equal(
+    freeOutcome.evaluation.rawTotalWin,
+    baseOutcome.evaluation.lineWin * freeOutcome.evaluation.multiplier,
+  );
+  assert.equal(freeOutcome.evaluation.totalWin, freeOutcome.evaluation.finalTotalWin);
+  assert.equal(freeOutcome.evaluation.capApplied, false);
 });
 
 test("totalBet must be divisible by payline count", () => {
@@ -191,7 +200,7 @@ test("all valid room/level/multiplier combinations produce integer line bets", (
       for (const multiplier of BET_MULTIPLIERS) {
         const bet = totalBet(room, level, multiplier);
         const outcome = generateServerSpinOutcome(mathConfig, bet, false);
-        assert.equal(outcome.lineBetMinor, bet / PAYLINES.length);
+        assert.equal(outcome.lineBetMinor, bet / mathConfig.paylineCount);
         assert.ok(Number.isSafeInteger(outcome.lineBetMinor));
         assert.ok(Number.isSafeInteger(outcome.evaluation.totalWin));
       }
@@ -226,6 +235,15 @@ test("generated outcome contains audit metadata", () => {
   const outcome = generateServerSpinOutcome(mathConfig, totalBet(50, 1, 1), false);
   assert.equal(outcome.mathVersion, mathConfig.version);
   assert.ok(outcome.generatedAt);
-  assert.equal(outcome.grid.length, 5);
-  assert.equal(outcome.grid[0].length, 4);
+  assert.equal(outcome.grid.length, mathConfig.grid.columns);
+  assert.equal(outcome.grid[0].length, mathConfig.grid.rows);
+});
+
+test("DRAFT math version is rejected by the production spin path", () => {
+  const draft = buildFrozenMathVersion({ version: "ab-math-draft-test" });
+  draft.status = "DRAFT";
+  assert.throws(
+    () => generateServerSpinOutcome(draft, totalBet(50, 1, 1), false),
+    /loader-issued ExecutableMathVersion/,
+  );
 });

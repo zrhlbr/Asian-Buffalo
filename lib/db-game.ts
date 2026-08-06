@@ -6,15 +6,18 @@
  * integration is a future milestone.
  */
 
-import { eq, and } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 import type { DrizzleD1Database } from "drizzle-orm/d1";
 import * as schema from "../db/schema.ts";
+import type { Clock } from "./clock.ts";
+import { systemClock } from "./clock.ts";
 import type { SpinResult } from "./round-service.ts";
 import { INITIAL_MATH_VERSION } from "./math-config.ts";
 
 export type CreateSessionInput = {
   playerId: string;
   mathVersionId: string;
+  currency: string;
   expiresInSeconds?: number;
 };
 
@@ -37,10 +40,18 @@ export type DbSession = {
   playerId: string;
   mathVersionId: string;
   status: "OPEN" | "CLOSED" | "REVOKED";
+  currency: string;
   freeGamesRemaining: number;
   expiresAt: string;
   createdAt: string;
   updatedAt: string;
+};
+
+export type IdempotencyRecord = {
+  requestHash: string;
+  status: "PENDING" | "SETTLED" | "VOID";
+  result?: SpinResult;
+  round?: typeof schema.gameRounds.$inferSelect;
 };
 
 export function generateId(prefix: string): string {
@@ -72,10 +83,11 @@ export async function getTrustedPlayerContext(
 export async function createSession(
   db: DrizzleD1Database<typeof schema>,
   input: CreateSessionInput,
+  clock: Clock = systemClock,
 ): Promise<DbSession> {
   const id = generateId("sess");
   const expiresAt = new Date(
-    Date.now() + (input.expiresInSeconds ?? 3600) * 1000,
+    clock.now().getTime() + (input.expiresInSeconds ?? 3600) * 1000,
   ).toISOString();
 
   await db.insert(schema.gameSessions).values({
@@ -83,6 +95,7 @@ export async function createSession(
     playerId: input.playerId,
     mathVersionId: input.mathVersionId,
     status: "OPEN",
+    currency: input.currency,
     freeGamesRemaining: 0,
     expiresAt,
   });
@@ -94,39 +107,218 @@ export async function createSession(
   return row as DbSession;
 }
 
-export async function getSession(
+/** Locate a session by id and authenticated player. Prevents cross-player enumeration. */
+export async function getSessionForPlayer(
   db: DrizzleD1Database<typeof schema>,
   sessionId: string,
+  playerId: string,
 ): Promise<DbSession | undefined> {
   const row = await db.query.gameSessions.findFirst({
-    where: eq(schema.gameSessions.id, sessionId),
+    where: and(
+      eq(schema.gameSessions.id, sessionId),
+      eq(schema.gameSessions.playerId, playerId),
+    ),
   });
   return row as DbSession | undefined;
 }
 
-export async function saveRound(
+export function isSessionExpired(session: DbSession, clock: Clock = systemClock): boolean {
+  return clock.now().getTime() >= Date.parse(session.expiresAt);
+}
+
+/**
+ * Conditionally consume one free game via compare-and-set on the remaining count.
+ * Concurrent callers cannot both succeed when remaining === 1.
+ */
+export async function tryConsumeFreeGame(
   db: DrizzleD1Database<typeof schema>,
-  result: SpinResult,
-  requestPayload: string,
+  sessionId: string,
+  playerId: string,
+  clock: Clock = systemClock,
+): Promise<boolean> {
+  const current = await getSessionForPlayer(db, sessionId, playerId);
+  if (!current || current.status !== "OPEN" || current.freeGamesRemaining <= 0) {
+    return false;
+  }
+
+  const updated = await db
+    .update(schema.gameSessions)
+    .set({
+      freeGamesRemaining: current.freeGamesRemaining - 1,
+      updatedAt: clock.now().toISOString(),
+    })
+    .where(
+      and(
+        eq(schema.gameSessions.id, sessionId),
+        eq(schema.gameSessions.playerId, playerId),
+        eq(schema.gameSessions.status, "OPEN"),
+        eq(schema.gameSessions.freeGamesRemaining, current.freeGamesRemaining),
+      ),
+    )
+    .returning({ id: schema.gameSessions.id });
+  return updated.length > 0;
+}
+
+/** Credit awarded free games back onto the session (always non-negative via CHECK). */
+export async function creditFreeGames(
+  db: DrizzleD1Database<typeof schema>,
+  sessionId: string,
+  playerId: string,
+  amount: number,
+  clock: Clock = systemClock,
 ): Promise<void> {
-  await db.insert(schema.gameRounds).values({
-    id: result.roundId,
-    sessionId: result.sessionId,
-    playerId: result.playerId,
-    mathVersionId: result.mathVersion,
-    idempotencyKey: result.idempotencyKey,
-    requestHash: await sha256Hex(requestPayload),
-    requestPayload,
-    resultHash: await sha256Hex(JSON.stringify(result)),
-    status: "SETTLED",
-    currency: result.currency,
-    totalBetMinor: result.totalBetMinor,
-    totalWinMinor: result.totalWinMinor,
-    balanceAfterMinor: result.balanceAfterMinor,
-    isFreeGame: result.isFreeGame,
-    outcomeJson: JSON.stringify(result),
-    settledAt: result.settledAt,
+  if (!Number.isSafeInteger(amount) || amount <= 0) return;
+  await db
+    .update(schema.gameSessions)
+    .set({
+      freeGamesRemaining: sql`${schema.gameSessions.freeGamesRemaining} + ${amount}`,
+      updatedAt: clock.now().toISOString(),
+    })
+    .where(
+      and(
+        eq(schema.gameSessions.id, sessionId),
+        eq(schema.gameSessions.playerId, playerId),
+      ),
+    );
+}
+
+export type ClaimRoundInput = {
+  playerId: string;
+  sessionId: string;
+  mathVersionId: string;
+  idempotencyKey: string;
+  requestHash: string;
+  requestPayload: string;
+  currency: string;
+  totalBetMinor: number;
+};
+
+export type ClaimRoundResult =
+  | { kind: "claimed"; roundId: string }
+  | { kind: "exists"; record: IdempotencyRecord };
+
+function isUniqueViolation(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const message = "message" in error ? String((error as { message: unknown }).message) : "";
+  const code = "code" in error ? String((error as { code: unknown }).code) : "";
+  return (
+    code === "SQLITE_CONSTRAINT_UNIQUE" ||
+    /UNIQUE constraint failed/i.test(message) ||
+    /constraint failed/i.test(message)
+  );
+}
+
+async function loadIdempotencyRecord(
+  db: DrizzleD1Database<typeof schema>,
+  playerId: string,
+  idempotencyKey: string,
+): Promise<IdempotencyRecord | undefined> {
+  const row = await db.query.gameRounds.findFirst({
+    where: and(
+      eq(schema.gameRounds.playerId, playerId),
+      eq(schema.gameRounds.idempotencyKey, idempotencyKey),
+    ),
   });
+  if (!row) return undefined;
+
+  if (row.status === "SETTLED" && row.outcomeJson) {
+    const authorized = await getAuthorizedRound(db, row.id, playerId);
+    if (authorized.kind === "ok") {
+      return {
+        requestHash: row.requestHash,
+        status: "SETTLED",
+        result: authorized.result,
+      };
+    }
+  }
+
+  return {
+    requestHash: row.requestHash,
+    status: row.status as IdempotencyRecord["status"],
+  };
+}
+
+/** Atomically claim the (playerId, idempotencyKey) slot with a PENDING round. */
+export async function claimRoundSlot(
+  db: DrizzleD1Database<typeof schema>,
+  input: ClaimRoundInput,
+): Promise<ClaimRoundResult> {
+  const existing = await loadIdempotencyRecord(db, input.playerId, input.idempotencyKey);
+  if (existing) {
+    return { kind: "exists", record: existing };
+  }
+
+  const roundId = generateId("round");
+  try {
+    await db.insert(schema.gameRounds).values({
+      id: roundId,
+      sessionId: input.sessionId,
+      playerId: input.playerId,
+      mathVersionId: input.mathVersionId,
+      idempotencyKey: input.idempotencyKey,
+      requestHash: input.requestHash,
+      requestPayload: input.requestPayload,
+      status: "PENDING",
+      currency: input.currency,
+      totalBetMinor: input.totalBetMinor,
+      isFreeGame: false,
+    });
+    return { kind: "claimed", roundId };
+  } catch (error) {
+    if (!isUniqueViolation(error)) throw error;
+    const raced = await loadIdempotencyRecord(db, input.playerId, input.idempotencyKey);
+    if (!raced) throw error;
+    return { kind: "exists", record: raced };
+  }
+}
+
+export async function settleClaimedRound(
+  db: DrizzleD1Database<typeof schema>,
+  roundId: string,
+  result: SpinResult,
+  clock: Clock = systemClock,
+): Promise<void> {
+  await db
+    .update(schema.gameRounds)
+    .set({
+      status: "SETTLED",
+      totalWinMinor: result.totalWinMinor,
+      balanceAfterMinor: result.balanceAfterMinor,
+      isFreeGame: result.isFreeGame,
+      outcomeJson: JSON.stringify(result),
+      resultHash: await sha256Hex(JSON.stringify(result)),
+      settledAt: result.settledAt ?? clock.now().toISOString(),
+    })
+    .where(eq(schema.gameRounds.id, roundId));
+}
+
+export async function voidClaimedRound(
+  db: DrizzleD1Database<typeof schema>,
+  roundId: string,
+): Promise<void> {
+  await db
+    .update(schema.gameRounds)
+    .set({
+      status: "VOID",
+      outcomeJson: null,
+    })
+    .where(eq(schema.gameRounds.id, roundId));
+}
+
+export async function waitForSettledIdempotency(
+  db: DrizzleD1Database<typeof schema>,
+  playerId: string,
+  idempotencyKey: string,
+  attempts = 20,
+): Promise<IdempotencyRecord | undefined> {
+  for (let i = 0; i < attempts; i += 1) {
+    const record = await loadIdempotencyRecord(db, playerId, idempotencyKey);
+    if (!record) return undefined;
+    if (record.status === "SETTLED" && record.result) return record;
+    if (record.status === "VOID") return record;
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+  return loadIdempotencyRecord(db, playerId, idempotencyKey);
 }
 
 /**
@@ -190,14 +382,8 @@ export async function getRoundByIdempotency(
   playerId: string,
   idempotencyKey: string,
 ): Promise<SpinResult | undefined> {
-  const row = await db.query.gameRounds.findFirst({
-    where: and(
-      eq(schema.gameRounds.playerId, playerId),
-      eq(schema.gameRounds.idempotencyKey, idempotencyKey),
-    ),
-  });
-  if (!row || !row.outcomeJson) return undefined;
-  return JSON.parse(row.outcomeJson) as SpinResult;
+  const record = await loadIdempotencyRecord(db, playerId, idempotencyKey);
+  return record?.result;
 }
 
 async function sha256Hex(input: string): Promise<string> {

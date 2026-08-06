@@ -59,6 +59,8 @@ export const gameSessions = sqliteTable(
     status: text("status", { enum: ["OPEN", "CLOSED", "REVOKED"] })
       .notNull()
       .default("OPEN"),
+    /** Currency snapshot taken from the player row at session creation. */
+    currency: text("currency").notNull(),
     freeGamesRemaining: integer("free_games_remaining").notNull().default(0),
     expiresAt: text("expires_at").notNull(),
     ...timestamps,
@@ -66,6 +68,11 @@ export const gameSessions = sqliteTable(
   (table) => [
     index("game_sessions_player_status_idx").on(table.playerId, table.status),
     check("game_sessions_free_games_nonnegative", sql`${table.freeGamesRemaining} >= 0`),
+    check("game_sessions_currency_length", sql`length(${table.currency}) = 3`),
+    check(
+      "game_sessions_currency_format",
+      sql`${table.currency} GLOB '[A-Z][A-Z][A-Z]'`,
+    ),
   ],
 );
 
@@ -96,6 +103,13 @@ export const gameRounds = sqliteTable(
     isFreeGame: integer("is_free_game", { mode: "boolean" }).notNull().default(false),
     outcomeJson: text("outcome_json"),
     settledAt: text("settled_at"),
+    claimToken: text("claim_token"),
+    leaseExpiresAt: text("lease_expires_at"),
+    /** Nullable; DEFAULT CURRENT_TIMESTAMP applied by migration CREATE TABLE. */
+    updatedAt: text("updated_at").default(sql`CURRENT_TIMESTAMP`),
+    freeGameReserved: integer("free_game_reserved", { mode: "boolean" }).notNull().default(false),
+    freeGamesAwarded: integer("free_games_awarded").notNull().default(0),
+    walletApplied: integer("wallet_applied", { mode: "boolean" }).notNull().default(false),
     createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
   },
   (table) => [
@@ -109,6 +123,7 @@ export const gameRounds = sqliteTable(
       "game_rounds_win_nonnegative",
       sql`${table.totalWinMinor} IS NULL OR ${table.totalWinMinor} >= 0`,
     ),
+    check("game_rounds_free_games_awarded_nonnegative", sql`${table.freeGamesAwarded} >= 0`),
   ],
 );
 

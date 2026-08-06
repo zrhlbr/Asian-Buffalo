@@ -26,6 +26,8 @@ import {
   type SymbolId,
 } from "./game-config.ts";
 
+export type { RegularSymbol, SymbolId } from "./game-config.ts";
+
 export type MathVersionStatus = "DRAFT" | "FROZEN" | "RETIRED";
 
 export type WildRule = {
@@ -40,9 +42,9 @@ export type WildRule = {
 
 export type ScatterRule = {
   appearsOnReelIndexes: readonly number[];
-  totalBetMultipliers: { readonly [count: number]: number };
-  baseFreeGames: { readonly [count: number]: number };
-  retriggerFreeGames: { readonly [count: number]: number };
+  totalBetMultipliers: { readonly [count: number]: number | undefined };
+  baseFreeGames: { readonly [count: number]: number | undefined };
+  retriggerFreeGames: { readonly [count: number]: number | undefined };
 };
 
 export type ReelWeights = {
@@ -51,11 +53,17 @@ export type ReelWeights = {
   note: string;
 };
 
-export type MaxPayoutRule = {
-  kind: "candidate";
-  totalBetMultiplier: number;
-  note: string;
-};
+export type MaxPayoutRule =
+  | {
+      kind: "candidate";
+      totalBetMultiplier: number;
+      note: string;
+    }
+  | {
+      kind: "fixed";
+      totalBetMultiplier: number;
+      note: string;
+    };
 
 export type MathVersionConfig = {
   version: string;
@@ -74,7 +82,7 @@ export type MathVersionConfig = {
   }[];
   paytable: {
     symbol: RegularSymbol;
-    payouts: { readonly [count: number]: number };
+    payouts: { readonly [count: number]: number | undefined };
   }[];
   scatter: ScatterRule;
   wild: WildRule;
@@ -152,7 +160,10 @@ export function validateRealMoneyAllowed(config: MathVersionConfig): void {
     failures.push(`realMoneyEnabled is ${config.disclosure.realMoneyEnabled}`);
   }
 
-  if (config.reelWeights.kind === "per-reel" && config.reelWeights.note.toLowerCase().includes("temporary")) {
+  if (
+    config.reelWeights.kind === "per-reel" &&
+    config.reelWeights.note.toLowerCase().includes("temporary")
+  ) {
     failures.push("reelWeights are marked as temporary/candidate");
   }
 

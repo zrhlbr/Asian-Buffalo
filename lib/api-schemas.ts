@@ -5,16 +5,13 @@
  * submit. Player identity, currency, free-game state, math version, and any
  * outcome data are derived server-side and rejected if present in the request
  * body.
- *
- * Note: Module 1 does not yet wire these schemas into handlers. They document
- * the public contract for subsequent safety modules.
  */
 
 import {
   identifierField,
   intField,
   validateObject,
-} from "./validation";
+} from "./validation.ts";
 
 const idPattern = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const sessionIdPattern = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
@@ -25,7 +22,7 @@ export function validateCreateSessionRequest(payload: unknown): CreateSessionReq
   return validateObject<CreateSessionRequest>({}, payload, "createSession");
 }
 
-export type SpinRequest = {
+export type PublicSpinRequest = {
   sessionId: string;
   roomBase: number;
   betLevel: number;
@@ -33,8 +30,8 @@ export type SpinRequest = {
   idempotencyKey: string;
 };
 
-export function validateSpinRequest(payload: unknown): SpinRequest {
-  return validateObject<SpinRequest>(
+export function validateSpinRequest(payload: unknown): PublicSpinRequest {
+  return validateObject<PublicSpinRequest>(
     {
       sessionId: identifierField({
         maxLen: 128,

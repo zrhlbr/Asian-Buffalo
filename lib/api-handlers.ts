@@ -1,10 +1,6 @@
 /**
  * API handler logic for the game endpoints.
  *
- * These functions are decoupled from the Next.js request/response objects so
- * they can be unit-tested with mocked dependencies. Route files are thin
- * wrappers that wire them to `getDb()` and the runtime environment.
- *
  * Identity must be supplied via explicit dependency injection. There is no
  * default identity provider; production routes must inject the fail-closed
  * production provider until formal authentication is wired.
@@ -16,10 +12,9 @@ import {
   createSession,
   getAuthorizedRound,
   getTrustedPlayerContext,
-  getRoundByIdempotency,
-  saveRound,
   seedInitialMathVersion,
 } from "./db-game.ts";
+import { systemClock, type Clock } from "./clock.ts";
 import {
   createProductionIdentityProvider,
   IdentityAuthError,
@@ -27,7 +22,18 @@ import {
   type IdentityProvider,
 } from "./identity.ts";
 import { INITIAL_MATH_VERSION, getMathVersionById } from "./math-config.ts";
-import { processSpin, type SpinRequest, RoundValidationError } from "./round-service.ts";
+import type { ExecutableMathVersion } from "./math-version-loader.ts";
+import {
+  validateCreateSessionRequest,
+  validateSpinRequest,
+} from "./api-schemas.ts";
+import { ValidationError } from "./validation.ts";
+import { canonicalizeSpinRequest, hashSpinRequest } from "./request-hash.ts";
+import {
+  orchestrateSpin,
+  type SpinFaultHooks,
+  type SpinOrchestratorServices,
+} from "./spin-orchestrator.ts";
 import type { WalletAdapter } from "./wallet-adapter.ts";
 import type { RoundStore } from "./round-store.ts";
 
@@ -74,6 +80,16 @@ export type GameServices = {
   walletAdapter: WalletAdapter;
   roundStore: RoundStore;
   allowRealMoney: boolean;
+  /**
+   * Loader-issued executable math required for spin outcome generation.
+   * Formal M3 must wire selectMathVersion; omitted config fails closed.
+   */
+  mathConfig?: ExecutableMathVersion;
+  clock?: Clock;
+  /** Test-only fixed grid injection. Never accepted from public requests. */
+  testFixedGrid?: string[][];
+  /** Test-only fault injection hooks for crash-recovery coverage. */
+  faults?: SpinFaultHooks;
 };
 
 export type HandlerAuth = {
@@ -81,19 +97,7 @@ export type HandlerAuth = {
   request: Request;
 };
 
-const CLIENT_IDENTITY_BODY_FIELDS = ["playerId", "currency"] as const;
 const STRICT_CURRENCY = /^[A-Z]{3}$/;
-
-function rejectClientIdentityFields(payload: Record<string, unknown>): Response | null {
-  const found = CLIENT_IDENTITY_BODY_FIELDS.filter((key) => key in payload);
-  if (found.length > 0) {
-    return apiError(
-      "CLIENT_IDENTITY_REJECTED",
-      "Client-submitted identity fields are not allowed",
-    );
-  }
-  return null;
-}
 
 async function resolveAuthenticatedPlayer(auth: HandlerAuth) {
   try {
@@ -109,12 +113,6 @@ async function resolveAuthenticatedPlayer(auth: HandlerAuth) {
   }
 }
 
-/**
- * Load and gate a trusted ACTIVE player with a strict DB currency value.
- * Missing players stay on the established generic not-found response.
- * LOCKED/CLOSED map to a generic 403 that does not reveal account state.
- * Invalid currency is a server-data fault and returns a generic 503.
- */
 async function requireTrustedActivePlayer(
   db: DrizzleD1Database<typeof schema>,
   playerId: string,
@@ -134,36 +132,46 @@ async function requireTrustedActivePlayer(
   return { playerId: context.playerId, currency: context.currency };
 }
 
+function validationErrorResponse(error: ValidationError): Response {
+  return apiError("INVALID_REQUEST", error.message);
+}
+
 export async function handleCreateSession(
   db: DrizzleD1Database<typeof schema>,
   auth: HandlerAuth,
   payload: unknown,
+  clock: Clock = systemClock,
 ): Promise<Response> {
   const resolved = await resolveAuthenticatedPlayer(auth);
   if ("errorResponse" in resolved) return resolved.errorResponse;
   const { playerId } = resolved;
 
-  // Player gate before any request-body / business validation.
   const playerResult = await requireTrustedActivePlayer(db, playerId);
   if ("errorResponse" in playerResult) return playerResult.errorResponse;
+  const { currency } = playerResult;
 
-  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
-    return apiError("INVALID_REQUEST", "Request body must be an object");
+  try {
+    validateCreateSessionRequest(payload);
+  } catch (error) {
+    if (error instanceof ValidationError) return validationErrorResponse(error);
+    throw error;
   }
-  const body = payload as Record<string, unknown>;
-  const identityRejection = rejectClientIdentityFields(body);
-  if (identityRejection) return identityRejection;
 
-  const { mathVersionId } = body;
-  if (typeof mathVersionId !== "string" || !getMathVersionById(mathVersionId)) {
-    return apiError("INVALID_REQUEST", "Unknown math version");
+  const mathVersionId = INITIAL_MATH_VERSION.version;
+  if (!getMathVersionById(mathVersionId)) {
+    return apiServiceUnavailable();
   }
 
   await seedInitialMathVersion(db);
-  const session = await createSession(db, {
-    playerId,
-    mathVersionId,
-  });
+  const session = await createSession(
+    db,
+    {
+      playerId,
+      mathVersionId,
+      currency,
+    },
+    clock,
+  );
 
   return Response.json({
     sessionId: session.id,
@@ -182,88 +190,78 @@ export async function handleSpin(
   if ("errorResponse" in resolved) return resolved.errorResponse;
   const { playerId } = resolved;
 
-  // Player gate before any request-body / business validation.
   const playerResult = await requireTrustedActivePlayer(db, playerId);
   if ("errorResponse" in playerResult) return playerResult.errorResponse;
-  const { currency } = playerResult;
 
-  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
-    return apiError("INVALID_REQUEST", "Request body must be an object");
+  let publicSpin;
+  try {
+    publicSpin = validateSpinRequest(payload);
+  } catch (error) {
+    if (error instanceof ValidationError) return validationErrorResponse(error);
+    throw error;
   }
 
-  const body = payload as Record<string, unknown>;
-  const identityRejection = rejectClientIdentityFields(body);
-  if (identityRejection) return identityRejection;
-
-  const forbiddenFields = [
-    "grid",
-    "symbols",
-    "winscore",
-    "winScore",
-    "totalWin",
-    "freeGames",
-    "awardedFreeGames",
-    "multiplier",
-    "fMultiple",
-    "userscore",
-    "userScore",
-    "balanceAfter",
-  ];
-  const found = forbiddenFields.filter((key) => key in body);
-  if (found.length > 0) {
-    return apiError(
-      "CLIENT_OUTCOME_REJECTED",
-      `Client-submitted outcome fields are not allowed: ${found.join(", ")}`,
-    );
-  }
-
-  const spinRequest: SpinRequest = {
-    sessionId: String(body.sessionId ?? ""),
-    playerId,
-    currency,
-    roomBase: Number(body.roomBase ?? 0),
-    betLevel: Number(body.betLevel ?? 0),
-    betMultiplier: Number(body.betMultiplier ?? 0),
-    idempotencyKey: String(body.idempotencyKey ?? ""),
-    isFreeGame: Boolean(body.isFreeGame ?? false),
-    freeGamesRemainingBefore: Number(body.freeGamesRemainingBefore ?? 0),
-  };
-
-  // Idempotency: if the round already exists in the database, return it.
-  const existing = await getRoundByIdempotency(db, playerId, spinRequest.idempotencyKey);
-  if (existing) {
-    if (existing.playerId !== playerId) {
-      return apiError("ROUND_NOT_FOUND", "Round not found", 404);
-    }
-    return Response.json(existing);
-  }
+  const canonicalPayload = canonicalizeSpinRequest(publicSpin);
+  const requestHash = await hashSpinRequest(publicSpin);
 
   await seedInitialMathVersion(db);
 
-  try {
-    const result = await processSpin(
-      {
-        walletAdapter: services.walletAdapter,
-        roundStore: services.roundStore,
-        mathConfig: INITIAL_MATH_VERSION,
-        allowRealMoney: services.allowRealMoney,
-      },
-      spinRequest,
-    );
+  const orchServices: SpinOrchestratorServices = {
+    walletAdapter: services.walletAdapter,
+    roundStore: services.roundStore,
+    allowRealMoney: services.allowRealMoney,
+    mathConfig: services.mathConfig,
+    clock: services.clock,
+    testFixedGrid: services.testFixedGrid,
+    faults: services.faults,
+  };
 
-    await saveRound(db, result, JSON.stringify(payload));
-    return Response.json(result);
-  } catch (error) {
-    if (error instanceof RoundValidationError) {
-      return apiError("VALIDATION_ERROR", error.message);
-    }
-    if (error instanceof Error && error.name === "InsufficientBalanceError") {
-      return apiError("INSUFFICIENT_BALANCE", error.message);
-    }
-    if (error instanceof Error && error.name === "RealMoneyBlockedError") {
-      return apiError("REAL_MONEY_BLOCKED", error.message);
-    }
-    return apiServerError(error instanceof Error ? error.message : "Unknown error");
+  const outcome = await orchestrateSpin(db, orchServices, {
+    playerId,
+    playerCurrency: playerResult.currency,
+    publicSpin,
+    requestHash,
+    canonicalPayload,
+  });
+
+  switch (outcome.kind) {
+    case "ok":
+    case "idempotent":
+      return Response.json(outcome.result);
+    case "conflict":
+      return apiError(
+        "IDEMPOTENCY_CONFLICT",
+        "Idempotency key was reused with a different request",
+        409,
+      );
+    case "in_progress":
+      return apiError(
+        "IDEMPOTENCY_IN_PROGRESS",
+        "A matching request is still processing",
+        409,
+      );
+    case "session_not_found":
+      return apiError("SESSION_NOT_FOUND", "Session not found", 404);
+    case "session_unavailable":
+      return apiError("SESSION_UNAVAILABLE", "Session unavailable", 403);
+    case "session_currency_mismatch":
+      return apiError(
+        "SESSION_CURRENCY_MISMATCH",
+        "Session currency no longer matches player wallet currency",
+        409,
+      );
+    case "validation":
+      return apiError("VALIDATION_ERROR", outcome.message);
+    case "insufficient_balance":
+      return apiError("INSUFFICIENT_BALANCE", outcome.message);
+    case "real_money_blocked":
+      return apiError("REAL_MONEY_BLOCKED", outcome.message);
+    case "math_version_mismatch":
+      return apiError("MATH_VERSION_MISMATCH", outcome.message, 500);
+    case "error":
+      return apiServerError(outcome.message);
+    default:
+      return apiServerError("Unknown spin orchestration result");
   }
 }
 

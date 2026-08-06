@@ -4,13 +4,24 @@ import { INITIAL_MATH_VERSION } from "../lib/math-config.ts";
 import { processSpin, RoundValidationError } from "../lib/round-service.ts";
 import { TestRoundStore } from "../lib/round-store.ts";
 import { TestWalletAdapter } from "../lib/wallet-adapter.ts";
+import { loadExecutableMathVersion } from "./helpers/frozen-math-version.mjs";
 
-function makeService(wallet, roundStore = new TestRoundStore()) {
+const FROZEN_MATH_VERSION = await loadExecutableMathVersion({
+  version: "ab-math-frozen-round",
+});
+
+function makeService(
+  wallet,
+  roundStore = new TestRoundStore(),
+  mathConfig = FROZEN_MATH_VERSION,
+  extras = {},
+) {
   return {
     walletAdapter: wallet,
     roundStore,
-    mathConfig: INITIAL_MATH_VERSION,
+    mathConfig,
     allowRealMoney: false,
+    ...extras,
   };
 }
 
@@ -35,7 +46,7 @@ test("processes a base-game spin and updates balance", async () => {
   const result = await processSpin(makeService(wallet), spinRequest());
   assert.equal(result.totalBetMinor, 50);
   assert.equal(result.playerId, "p1");
-  assert.equal(result.mathVersion, INITIAL_MATH_VERSION.version);
+  assert.equal(result.mathVersion, FROZEN_MATH_VERSION.version);
   assert.equal(result.balanceAfterMinor, 9_950 + result.totalWinMinor);
   assert.equal(result.isFreeGame, false);
 });
@@ -44,14 +55,8 @@ test("free-game spin does not debit stake", async () => {
   const wallet = new TestWalletAdapter();
   wallet.creditAvailable("p1", "MMK", 10_000);
   const result = await processSpin(
-    makeService(wallet),
-    spinRequest({
-      isFreeGame: true,
-      freeGamesRemainingBefore: 5,
-      roomBase: 50,
-      betLevel: 10,
-      betMultiplier: 50,
-      fixedGrid: [
+    makeService(wallet, new TestRoundStore(), FROZEN_MATH_VERSION, {
+      testFixedGrid: [
         ["buffalo", "a", "k", "q"],
         ["buffalo", "nine", "nine", "nine"],
         ["buffalo", "nine", "nine", "nine"],
@@ -59,9 +64,14 @@ test("free-game spin does not debit stake", async () => {
         ["buffalo", "nine", "nine", "nine"],
       ],
     }),
+    spinRequest({
+      isFreeGame: true,
+      freeGamesRemainingBefore: 5,
+      roomBase: 50,
+      betLevel: 10,
+      betMultiplier: 50,
+    }),
   );
-  // Free games retain the triggering bet value for line/scatter evaluation
-  // but charge zero stake.
   assert.equal(result.totalBetMinor, 50 * 10 * 50);
   assert.ok(result.totalWinMinor > 0);
   assert.equal(result.isFreeGame, true);
@@ -70,7 +80,7 @@ test("free-game spin does not debit stake", async () => {
   assert.equal(balance, 10_000 + result.totalWinMinor);
 });
 
-test("rejects client-submitted outcome fields", async () => {
+test("rejects client-submitted outcome fields including fixedGrid", async () => {
   const wallet = new TestWalletAdapter();
   wallet.creditAvailable("p1", "MMK", 10_000);
   await assert.rejects(
@@ -86,6 +96,14 @@ test("rejects client-submitted outcome fields", async () => {
       makeService(wallet),
       spinRequest(),
       { multiplier: 3, freeGames: 10 },
+    ),
+    RoundValidationError,
+  );
+  await assert.rejects(
+    processSpin(
+      makeService(wallet),
+      spinRequest(),
+      { fixedGrid: [["buffalo"]] },
     ),
     RoundValidationError,
   );
@@ -159,9 +177,8 @@ test("scatter trigger records awarded free games", async () => {
   const wallet = new TestWalletAdapter();
   wallet.creditAvailable("p1", "MMK", 10_000);
   const result = await processSpin(
-    makeService(wallet),
-    spinRequest({
-      fixedGrid: [
+    makeService(wallet, new TestRoundStore(), FROZEN_MATH_VERSION, {
+      testFixedGrid: [
         ["scatter", "lion", "ten", "buffalo"],
         ["scatter", "wild", "q", "elephant"],
         ["nine", "antelope", "scatter", "k"],
@@ -169,6 +186,7 @@ test("scatter trigger records awarded free games", async () => {
         ["buffalo", "ten", "zebra", "a"],
       ],
     }),
+    spinRequest(),
   );
   assert.equal(result.scatterCount, 3);
   assert.equal(result.awardedFreeGames, 8);

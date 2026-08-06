@@ -6,7 +6,7 @@ export function createTestDb() {
   const sqlite = new Database(":memory:");
   const db = drizzle(sqlite, { schema });
 
-  // Run the existing Drizzle migration SQL directly.
+  // Mirror production schema (post-0003) for unit tests.
   const migrationSql =
     `CREATE TABLE IF NOT EXISTS "players" (
        "id" text PRIMARY KEY NOT NULL,
@@ -14,7 +14,8 @@ export function createTestDb() {
        "currency" text DEFAULT 'MMK' NOT NULL,
        "status" text DEFAULT 'ACTIVE' NOT NULL,
        "created_at" text DEFAULT CURRENT_TIMESTAMP NOT NULL,
-       "updated_at" text DEFAULT CURRENT_TIMESTAMP NOT NULL
+       "updated_at" text DEFAULT CURRENT_TIMESTAMP NOT NULL,
+       CONSTRAINT "players_currency_length" CHECK(length("currency") = 3)
      );
      CREATE UNIQUE INDEX IF NOT EXISTS "players_wallet_adapter_ref_unique" ON "players" ("wallet_adapter_ref");
      CREATE TABLE IF NOT EXISTS "game_math_versions" (
@@ -31,10 +32,14 @@ export function createTestDb() {
        "player_id" text NOT NULL,
        "math_version_id" text NOT NULL,
        "status" text DEFAULT 'OPEN' NOT NULL,
+       "currency" text NOT NULL,
        "free_games_remaining" integer DEFAULT 0 NOT NULL,
        "expires_at" text NOT NULL,
        "created_at" text DEFAULT CURRENT_TIMESTAMP NOT NULL,
-       "updated_at" text DEFAULT CURRENT_TIMESTAMP NOT NULL
+       "updated_at" text DEFAULT CURRENT_TIMESTAMP NOT NULL,
+       CONSTRAINT "game_sessions_free_games_nonnegative" CHECK("free_games_remaining" >= 0),
+       CONSTRAINT "game_sessions_currency_length" CHECK(length("currency") = 3),
+       CONSTRAINT "game_sessions_currency_format" CHECK("currency" GLOB '[A-Z][A-Z][A-Z]')
      );
      CREATE INDEX IF NOT EXISTS "game_sessions_player_status_idx" ON "game_sessions" ("player_id", "status");
      CREATE TABLE IF NOT EXISTS "game_rounds" (
@@ -54,7 +59,16 @@ export function createTestDb() {
        "is_free_game" integer DEFAULT false NOT NULL,
        "outcome_json" text,
        "settled_at" text,
-       "created_at" text DEFAULT CURRENT_TIMESTAMP NOT NULL
+       "claim_token" text,
+       "lease_expires_at" text,
+       "updated_at" text DEFAULT CURRENT_TIMESTAMP,
+       "free_game_reserved" integer DEFAULT false NOT NULL,
+       "free_games_awarded" integer DEFAULT 0 NOT NULL,
+       "wallet_applied" integer DEFAULT false NOT NULL,
+       "created_at" text DEFAULT CURRENT_TIMESTAMP NOT NULL,
+       CONSTRAINT "game_rounds_bet_nonnegative" CHECK("total_bet_minor" >= 0),
+       CONSTRAINT "game_rounds_win_nonnegative" CHECK("total_win_minor" IS NULL OR "total_win_minor" >= 0),
+       CONSTRAINT "game_rounds_free_games_awarded_nonnegative" CHECK("free_games_awarded" >= 0)
      );
      CREATE UNIQUE INDEX IF NOT EXISTS "game_rounds_player_idempotency_unique" ON "game_rounds" ("player_id", "idempotency_key");
      CREATE INDEX IF NOT EXISTS "game_rounds_session_created_idx" ON "game_rounds" ("session_id", "created_at");

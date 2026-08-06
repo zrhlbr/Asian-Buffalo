@@ -13,6 +13,7 @@ import {
   evaluateFixedGrid,
   type ServerSpinOutcome,
 } from "./server-game-engine.ts";
+import type { Grid } from "./game-engine.ts";
 import {
   ROOM_BASE_BETS,
   BET_LEVELS,
@@ -23,6 +24,7 @@ import {
   validateRealMoneyAllowed,
   type MathVersionConfig,
 } from "./math-config.ts";
+import type { ExecutableMathVersion } from "./math-version-loader.ts";
 import type { WalletAdapter } from "./wallet-adapter.ts";
 import type { RoundStore } from "./round-store.ts";
 
@@ -36,8 +38,6 @@ export type SpinRequest = {
   idempotencyKey: string;
   isFreeGame: boolean;
   freeGamesRemainingBefore: number;
-  /** Optional seed for deterministic replay tests. Ignored in production spins. */
-  fixedGrid?: string[][];
 };
 
 export type SpinResult = {
@@ -69,24 +69,30 @@ export class RoundValidationError extends Error {
   }
 }
 
-function validateSpinRequest(
-  request: SpinRequest,
+/** Validate public bet parameters before any round claim is created. */
+export function validateBetConfiguration(
+  input: {
+    roomBase: number;
+    betLevel: number;
+    betMultiplier: number;
+    idempotencyKey: string;
+  },
   mathConfig: MathVersionConfig,
-): { totalBetMinor: number; chargeMinor: number } {
-  if (!ROOM_BASE_BETS.includes(request.roomBase as 50 | 500)) {
-    throw new RoundValidationError(`Invalid room base bet: ${request.roomBase}`);
+): { totalBetMinor: number } {
+  if (!ROOM_BASE_BETS.includes(input.roomBase as 50 | 500)) {
+    throw new RoundValidationError(`Invalid room base bet: ${input.roomBase}`);
   }
-  if (!BET_LEVELS.includes(request.betLevel as 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10)) {
-    throw new RoundValidationError(`Invalid bet level: ${request.betLevel}`);
+  if (!BET_LEVELS.includes(input.betLevel as 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10)) {
+    throw new RoundValidationError(`Invalid bet level: ${input.betLevel}`);
   }
-  if (!BET_MULTIPLIERS.includes(request.betMultiplier as 1 | 5 | 10 | 20 | 50)) {
-    throw new RoundValidationError(`Invalid bet multiplier: ${request.betMultiplier}`);
+  if (!BET_MULTIPLIERS.includes(input.betMultiplier as 1 | 5 | 10 | 20 | 50)) {
+    throw new RoundValidationError(`Invalid bet multiplier: ${input.betMultiplier}`);
   }
-  if (!request.idempotencyKey || request.idempotencyKey.length > 128) {
+  if (!input.idempotencyKey || input.idempotencyKey.length > 128) {
     throw new RoundValidationError("Idempotency key is required and must be <= 128 characters");
   }
 
-  const totalBetMinor = request.roomBase * request.betLevel * request.betMultiplier;
+  const totalBetMinor = input.roomBase * input.betLevel * input.betMultiplier;
   if (!Number.isSafeInteger(totalBetMinor) || totalBetMinor < 0) {
     throw new RoundValidationError("totalBetMinor overflow or negative");
   }
@@ -95,6 +101,17 @@ function validateSpinRequest(
       `totalBetMinor ${totalBetMinor} is not divisible by ${PAYLINE_COUNT}`,
     );
   }
+  if (mathConfig.rooms.baseBets.length !== ROOM_BASE_BETS.length) {
+    throw new RoundValidationError("Math config room mismatch");
+  }
+  return { totalBetMinor };
+}
+
+function validateSpinRequest(
+  request: SpinRequest,
+  mathConfig: MathVersionConfig,
+): { totalBetMinor: number; chargeMinor: number } {
+  const { totalBetMinor } = validateBetConfiguration(request, mathConfig);
 
   if (request.isFreeGame) {
     if (request.freeGamesRemainingBefore <= 0) {
@@ -104,19 +121,65 @@ function validateSpinRequest(
     throw new RoundValidationError("Base-game spin must have totalBetMinor > 0");
   }
 
-  if (mathConfig.rooms.baseBets.length !== ROOM_BASE_BETS.length) {
-    throw new RoundValidationError("Math config room mismatch");
-  }
-
   // Free games use the triggering bet amount for line/scatter evaluation but
   // charge zero stake.
   const chargeMinor = request.isFreeGame ? 0 : totalBetMinor;
   return { totalBetMinor, chargeMinor };
 }
 
+/**
+ * Generate a server outcome without touching the wallet.
+ * fixedGrid is a test/dispute-replay entry only — never a production request field.
+ */
+export function generateSpinOutcomeOnly(
+  mathConfig: ExecutableMathVersion,
+  totalBetMinor: number,
+  isFreeGame: boolean,
+  fixedGrid?: string[][],
+): ServerSpinOutcome {
+  return fixedGrid
+    ? evaluateFixedGrid({
+        grid: fixedGrid as Grid,
+        totalBetMinor,
+        inFreeGames: isFreeGame,
+        mathConfig,
+      })
+    : generateServerSpinOutcome(mathConfig, totalBetMinor, isFreeGame);
+}
+
+export function buildSpinResultSkeleton(input: {
+  roundId: string;
+  request: SpinRequest;
+  mathVersion: string;
+  totalBetMinor: number;
+  outcome: ServerSpinOutcome;
+  freeGamesRemaining: number;
+}): Omit<SpinResult, "balanceAfterMinor" | "settledAt"> {
+  return {
+    roundId: input.roundId,
+    sessionId: input.request.sessionId,
+    playerId: input.request.playerId,
+    mathVersion: input.mathVersion,
+    idempotencyKey: input.request.idempotencyKey,
+    currency: input.request.currency,
+    totalBetMinor: input.totalBetMinor,
+    totalWinMinor: input.outcome.evaluation.totalWin,
+    isFreeGame: input.request.isFreeGame,
+    freeGamesRemaining: input.freeGamesRemaining,
+    awardedFreeGames: input.outcome.evaluation.awardedFreeGames,
+    grid: input.outcome.grid,
+    winningPositions: input.outcome.winningPositions,
+    lineWins: input.outcome.evaluation.lineWins,
+    scatterCount: input.outcome.evaluation.scatterCount,
+    scatterWin: input.outcome.evaluation.scatterWin,
+    multiplier: input.outcome.evaluation.multiplier,
+  };
+}
+
 function rejectClientOutcomeFields(payload: Record<string, unknown>): void {
   const forbidden = [
     "grid",
+    "fixedGrid",
     "symbols",
     "winscore",
     "winScore",
@@ -140,9 +203,11 @@ function rejectClientOutcomeFields(payload: Record<string, unknown>): void {
 export type RoundServiceDeps = {
   walletAdapter: WalletAdapter;
   roundStore: RoundStore;
-  mathConfig: MathVersionConfig;
+  mathConfig: ExecutableMathVersion;
   /** Set to true only in non-production, math-prototype environments. */
   allowRealMoney: boolean;
+  /** Test/dispute replay only — never populated from a public SpinRequest. */
+  testFixedGrid?: string[][];
 };
 
 /**
@@ -174,14 +239,12 @@ export async function processSpin(
     return cached;
   }
 
-  const outcome: ServerSpinOutcome = request.fixedGrid
-    ? evaluateFixedGrid({
-        grid: request.fixedGrid,
-        totalBetMinor,
-        inFreeGames: request.isFreeGame,
-        mathConfig: deps.mathConfig,
-      })
-    : generateServerSpinOutcome(deps.mathConfig, totalBetMinor, request.isFreeGame);
+  const outcome: ServerSpinOutcome = generateSpinOutcomeOnly(
+    deps.mathConfig,
+    totalBetMinor,
+    request.isFreeGame,
+    deps.testFixedGrid,
+  );
 
   const settlement = await deps.walletAdapter.settleRound({
     idempotencyKey: request.idempotencyKey,

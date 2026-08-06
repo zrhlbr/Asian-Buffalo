@@ -63,11 +63,34 @@ export interface WalletAdapter {
   }): Promise<RoundSettlement>;
 }
 
+/**
+ * Clear pre-settlement rejection: wallet guarantees no funds moved.
+ * Orchestrator may release free-game reservations only for this class of error.
+ */
 export class InsufficientBalanceError extends Error {
+  readonly settlementRejected = true as const;
   constructor(message: string) {
     super(message);
     this.name = "InsufficientBalanceError";
   }
+}
+
+/** Wallet call started but outcome is ambiguous (timeout/network/etc). */
+export class WalletResultUnknownError extends Error {
+  readonly settlementUnknown = true as const;
+  constructor(message: string) {
+    super(message);
+    this.name = "WalletResultUnknownError";
+  }
+}
+
+export function isClearWalletRejection(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "settlementRejected" in error &&
+    (error as { settlementRejected?: unknown }).settlementRejected === true
+  );
 }
 
 export class ConcurrentModificationError extends Error {
@@ -87,6 +110,8 @@ export class DuplicateIdempotencyKeyError extends Error {
 export class TestWalletAdapter implements WalletAdapter {
   private accounts = new Map<string, WalletAccount>();
   private settlements = new Map<string, RoundSettlement>();
+  /** Test-only: invoked after settlement is committed, before return. */
+  afterSettlementCommitted?: () => Promise<void> | void;
 
   private accountKey(playerId: string, kind: WalletAccount["kind"], currency: Currency): string {
     return `${playerId}:${kind}:${currency}`;
@@ -235,6 +260,9 @@ export class TestWalletAdapter implements WalletAdapter {
     };
 
     this.settlements.set(cacheKey, settlement);
+    if (this.afterSettlementCommitted) {
+      await this.afterSettlementCommitted();
+    }
     return settlement;
   }
 }
