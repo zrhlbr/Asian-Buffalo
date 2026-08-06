@@ -11,6 +11,7 @@ function migrationFiles() {
     "0001_steady_annihilus.sql",
     "0002_session_currency.sql",
     "0003_round_lease.sql",
+    "0004_wallet_money_layer.sql",
   ].map((name) => readFileSync(join(base, name), "utf8"));
 }
 
@@ -30,10 +31,11 @@ function applyMigration(sqlite, sqlText) {
   }
 }
 
-test("drizzle meta snapshots exist for 0002/0003 and journal includes both", () => {
+test("drizzle meta snapshots exist for 0002/0003/0004 and journal includes them", () => {
   const meta = join(process.cwd(), "drizzle", "meta");
   assert.equal(existsSync(join(meta, "0002_snapshot.json")), true);
   assert.equal(existsSync(join(meta, "0003_snapshot.json")), true);
+  assert.equal(existsSync(join(meta, "0004_snapshot.json")), true);
   const journal = JSON.parse(readFileSync(join(meta, "_journal.json"), "utf8"));
   assert.deepEqual(
     journal.entries.map((e) => e.tag),
@@ -42,6 +44,7 @@ test("drizzle meta snapshots exist for 0002/0003 and journal includes both", () 
       "0001_steady_annihilus",
       "0002_session_currency",
       "0003_round_lease",
+      "0004_wallet_money_layer",
     ],
   );
   const snap = JSON.parse(readFileSync(join(meta, "0002_snapshot.json"), "utf8"));
@@ -92,9 +95,12 @@ test("all migrations apply cleanly to a fresh empty database", () => {
       "game_rounds",
       "game_sessions",
       "ledger_accounts",
+      "ledger_balances",
       "ledger_entries",
       "ledger_transactions",
       "players",
+      "wallet_intents",
+      "wallet_provider_ops",
     ],
   );
 

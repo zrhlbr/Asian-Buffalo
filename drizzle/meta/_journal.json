@@ -29,6 +29,13 @@
       "when": 1785979200000,
       "tag": "0003_round_lease",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1785982800000,
+      "tag": "0004_wallet_money_layer",
+      "breakpoints": true
     }
   ]
 }

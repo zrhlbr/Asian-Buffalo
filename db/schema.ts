@@ -230,3 +230,76 @@ export const auditEvents = sqliteTable(
     ),
   ],
 );
+
+/** Projection of account balances; updated atomically with ledger posts. */
+export const ledgerBalances = sqliteTable("ledger_balances", {
+  accountId: text("account_id")
+    .primaryKey()
+    .references(() => ledgerAccounts.id, { onDelete: "restrict" }),
+  balanceMinor: integer("balance_minor").notNull().default(0),
+  version: integer("version").notNull().default(0),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+});
+
+export const walletIntents = sqliteTable(
+  "wallet_intents",
+  {
+    id: text("id").primaryKey(),
+    playerId: text("player_id")
+      .notNull()
+      .references(() => players.id, { onDelete: "restrict" }),
+    idempotencyKey: text("idempotency_key").notNull(),
+    operation: text("operation", {
+      enum: ["DEBIT", "CREDIT", "SETTLE", "ROLLBACK"],
+    }).notNull(),
+    status: text("status", {
+      enum: ["NEW", "LOCKED", "PROCESSING", "SUCCESS", "FAILED", "UNKNOWN", "RECOVERED"],
+    })
+      .notNull()
+      .default("NEW"),
+    currency: text("currency").notNull(),
+    amountMinor: integer("amount_minor").notNull(),
+    requestHash: text("request_hash").notNull(),
+    providerOpId: text("provider_op_id"),
+    ledgerTxId: text("ledger_tx_id"),
+    resultJson: text("result_json"),
+    errorCode: text("error_code"),
+    version: integer("version").notNull().default(0),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex("wallet_intents_player_idempotency_unique").on(
+      table.playerId,
+      table.idempotencyKey,
+    ),
+    index("wallet_intents_status_idx").on(table.status),
+    check("wallet_intents_amount_nonnegative", sql`${table.amountMinor} >= 0`),
+  ],
+);
+
+export const walletProviderOps = sqliteTable(
+  "wallet_provider_ops",
+  {
+    id: text("id").primaryKey(),
+    intentId: text("intent_id")
+      .notNull()
+      .references(() => walletIntents.id, { onDelete: "restrict" }),
+    idempotencyKey: text("idempotency_key").notNull(),
+    status: text("status", {
+      enum: ["NEW", "PROCESSING", "SUCCESS", "SETTLED", "FAILED", "UNKNOWN", "RECOVER"],
+    })
+      .notNull()
+      .default("NEW"),
+    currency: text("currency").notNull(),
+    amountMinor: integer("amount_minor").notNull(),
+    direction: text("direction", { enum: ["DEBIT", "CREDIT"] }).notNull(),
+    version: integer("version").notNull().default(0),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex("wallet_provider_ops_idempotency_unique").on(table.idempotencyKey),
+    uniqueIndex("wallet_provider_ops_intent_unique").on(table.intentId),
+    index("wallet_provider_ops_status_idx").on(table.status),
+    check("wallet_provider_ops_amount_nonnegative", sql`${table.amountMinor} >= 0`),
+  ],
+);

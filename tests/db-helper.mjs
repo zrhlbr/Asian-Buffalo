@@ -121,7 +121,49 @@ export function createTestDb() {
        "created_at" text DEFAULT CURRENT_TIMESTAMP NOT NULL
      );
      CREATE UNIQUE INDEX IF NOT EXISTS "audit_events_event_hash_unique" ON "audit_events" ("event_hash");
-     CREATE INDEX IF NOT EXISTS "audit_events_subject_created_idx" ON "audit_events" ("subject_type", "subject_id", "created_at");`;
+     CREATE INDEX IF NOT EXISTS "audit_events_subject_created_idx" ON "audit_events" ("subject_type", "subject_id", "created_at");
+     CREATE TABLE IF NOT EXISTS "ledger_balances" (
+       "account_id" text PRIMARY KEY NOT NULL,
+       "balance_minor" integer DEFAULT 0 NOT NULL,
+       "version" integer DEFAULT 0 NOT NULL,
+       "updated_at" text DEFAULT CURRENT_TIMESTAMP NOT NULL
+     );
+     CREATE TABLE IF NOT EXISTS "wallet_intents" (
+       "id" text PRIMARY KEY NOT NULL,
+       "player_id" text NOT NULL,
+       "idempotency_key" text NOT NULL,
+       "operation" text NOT NULL,
+       "status" text DEFAULT 'NEW' NOT NULL,
+       "currency" text NOT NULL,
+       "amount_minor" integer NOT NULL,
+       "request_hash" text NOT NULL,
+       "provider_op_id" text,
+       "ledger_tx_id" text,
+       "result_json" text,
+       "error_code" text,
+       "version" integer DEFAULT 0 NOT NULL,
+       "created_at" text DEFAULT CURRENT_TIMESTAMP NOT NULL,
+       "updated_at" text DEFAULT CURRENT_TIMESTAMP NOT NULL,
+       CONSTRAINT "wallet_intents_amount_nonnegative" CHECK("amount_minor" >= 0)
+     );
+     CREATE UNIQUE INDEX IF NOT EXISTS "wallet_intents_player_idempotency_unique" ON "wallet_intents" ("player_id", "idempotency_key");
+     CREATE INDEX IF NOT EXISTS "wallet_intents_status_idx" ON "wallet_intents" ("status");
+     CREATE TABLE IF NOT EXISTS "wallet_provider_ops" (
+       "id" text PRIMARY KEY NOT NULL,
+       "intent_id" text NOT NULL,
+       "idempotency_key" text NOT NULL,
+       "status" text DEFAULT 'NEW' NOT NULL,
+       "currency" text NOT NULL,
+       "amount_minor" integer NOT NULL,
+       "direction" text NOT NULL,
+       "version" integer DEFAULT 0 NOT NULL,
+       "created_at" text DEFAULT CURRENT_TIMESTAMP NOT NULL,
+       "updated_at" text DEFAULT CURRENT_TIMESTAMP NOT NULL,
+       CONSTRAINT "wallet_provider_ops_amount_nonnegative" CHECK("amount_minor" >= 0)
+     );
+     CREATE UNIQUE INDEX IF NOT EXISTS "wallet_provider_ops_idempotency_unique" ON "wallet_provider_ops" ("idempotency_key");
+     CREATE UNIQUE INDEX IF NOT EXISTS "wallet_provider_ops_intent_unique" ON "wallet_provider_ops" ("intent_id");
+     CREATE INDEX IF NOT EXISTS "wallet_provider_ops_status_idx" ON "wallet_provider_ops" ("status");`;
 
   sqlite.exec(migrationSql);
   return { sqlite, db };

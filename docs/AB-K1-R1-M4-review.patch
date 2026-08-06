@@ -1,0 +1,2922 @@
+diff --git a/db/schema.ts b/db/schema.ts
+index a0f4708..155d141 100644
+--- a/db/schema.ts
++++ b/db/schema.ts
+@@ -230,3 +230,76 @@ export const auditEvents = sqliteTable(
+     ),
+   ],
+ );
++
++/** Projection of account balances; updated atomically with ledger posts. */
++export const ledgerBalances = sqliteTable("ledger_balances", {
++  accountId: text("account_id")
++    .primaryKey()
++    .references(() => ledgerAccounts.id, { onDelete: "restrict" }),
++  balanceMinor: integer("balance_minor").notNull().default(0),
++  version: integer("version").notNull().default(0),
++  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
++});
++
++export const walletIntents = sqliteTable(
++  "wallet_intents",
++  {
++    id: text("id").primaryKey(),
++    playerId: text("player_id")
++      .notNull()
++      .references(() => players.id, { onDelete: "restrict" }),
++    idempotencyKey: text("idempotency_key").notNull(),
++    operation: text("operation", {
++      enum: ["DEBIT", "CREDIT", "SETTLE", "ROLLBACK"],
++    }).notNull(),
++    status: text("status", {
++      enum: ["NEW", "LOCKED", "PROCESSING", "SUCCESS", "FAILED", "UNKNOWN", "RECOVERED"],
++    })
++      .notNull()
++      .default("NEW"),
++    currency: text("currency").notNull(),
++    amountMinor: integer("amount_minor").notNull(),
++    requestHash: text("request_hash").notNull(),
++    providerOpId: text("provider_op_id"),
++    ledgerTxId: text("ledger_tx_id"),
++    resultJson: text("result_json"),
++    errorCode: text("error_code"),
++    version: integer("version").notNull().default(0),
++    ...timestamps,
++  },
++  (table) => [
++    uniqueIndex("wallet_intents_player_idempotency_unique").on(
++      table.playerId,
++      table.idempotencyKey,
++    ),
++    index("wallet_intents_status_idx").on(table.status),
++    check("wallet_intents_amount_nonnegative", sql`${table.amountMinor} >= 0`),
++  ],
++);
++
++export const walletProviderOps = sqliteTable(
++  "wallet_provider_ops",
++  {
++    id: text("id").primaryKey(),
++    intentId: text("intent_id")
++      .notNull()
++      .references(() => walletIntents.id, { onDelete: "restrict" }),
++    idempotencyKey: text("idempotency_key").notNull(),
++    status: text("status", {
++      enum: ["NEW", "PROCESSING", "SUCCESS", "SETTLED", "FAILED", "UNKNOWN", "RECOVER"],
++    })
++      .notNull()
++      .default("NEW"),
++    currency: text("currency").notNull(),
++    amountMinor: integer("amount_minor").notNull(),
++    direction: text("direction", { enum: ["DEBIT", "CREDIT"] }).notNull(),
++    version: integer("version").notNull().default(0),
++    ...timestamps,
++  },
++  (table) => [
++    uniqueIndex("wallet_provider_ops_idempotency_unique").on(table.idempotencyKey),
++    uniqueIndex("wallet_provider_ops_intent_unique").on(table.intentId),
++    index("wallet_provider_ops_status_idx").on(table.status),
++    check("wallet_provider_ops_amount_nonnegative", sql`${table.amountMinor} >= 0`),
++  ],
++);
+diff --git a/drizzle/0004_wallet_money_layer.sql b/drizzle/0004_wallet_money_layer.sql
+new file mode 100644
+index 0000000..fd83c03
+--- /dev/null
++++ b/drizzle/0004_wallet_money_layer.sql
+@@ -0,0 +1,52 @@
++CREATE TABLE `ledger_balances` (
++	`account_id` text PRIMARY KEY NOT NULL,
++	`balance_minor` integer DEFAULT 0 NOT NULL,
++	`version` integer DEFAULT 0 NOT NULL,
++	`updated_at` text DEFAULT CURRENT_TIMESTAMP NOT NULL,
++	FOREIGN KEY (`account_id`) REFERENCES `ledger_accounts`(`id`) ON UPDATE no action ON DELETE restrict
++);
++--> statement-breakpoint
++CREATE TABLE `wallet_intents` (
++	`id` text PRIMARY KEY NOT NULL,
++	`player_id` text NOT NULL,
++	`idempotency_key` text NOT NULL,
++	`operation` text NOT NULL,
++	`status` text DEFAULT 'NEW' NOT NULL,
++	`currency` text NOT NULL,
++	`amount_minor` integer NOT NULL,
++	`request_hash` text NOT NULL,
++	`provider_op_id` text,
++	`ledger_tx_id` text,
++	`result_json` text,
++	`error_code` text,
++	`version` integer DEFAULT 0 NOT NULL,
++	`created_at` text DEFAULT CURRENT_TIMESTAMP NOT NULL,
++	`updated_at` text DEFAULT CURRENT_TIMESTAMP NOT NULL,
++	FOREIGN KEY (`player_id`) REFERENCES `players`(`id`) ON UPDATE no action ON DELETE restrict,
++	CONSTRAINT `wallet_intents_amount_nonnegative` CHECK(`amount_minor` >= 0)
++);
++--> statement-breakpoint
++CREATE UNIQUE INDEX `wallet_intents_player_idempotency_unique` ON `wallet_intents` (`player_id`,`idempotency_key`);
++--> statement-breakpoint
++CREATE INDEX `wallet_intents_status_idx` ON `wallet_intents` (`status`);
++--> statement-breakpoint
++CREATE TABLE `wallet_provider_ops` (
++	`id` text PRIMARY KEY NOT NULL,
++	`intent_id` text NOT NULL,
++	`idempotency_key` text NOT NULL,
++	`status` text DEFAULT 'NEW' NOT NULL,
++	`currency` text NOT NULL,
++	`amount_minor` integer NOT NULL,
++	`direction` text NOT NULL,
++	`version` integer DEFAULT 0 NOT NULL,
++	`created_at` text DEFAULT CURRENT_TIMESTAMP NOT NULL,
++	`updated_at` text DEFAULT CURRENT_TIMESTAMP NOT NULL,
++	FOREIGN KEY (`intent_id`) REFERENCES `wallet_intents`(`id`) ON UPDATE no action ON DELETE restrict,
++	CONSTRAINT `wallet_provider_ops_amount_nonnegative` CHECK(`amount_minor` >= 0)
++);
++--> statement-breakpoint
++CREATE UNIQUE INDEX `wallet_provider_ops_idempotency_unique` ON `wallet_provider_ops` (`idempotency_key`);
++--> statement-breakpoint
++CREATE UNIQUE INDEX `wallet_provider_ops_intent_unique` ON `wallet_provider_ops` (`intent_id`);
++--> statement-breakpoint
++CREATE INDEX `wallet_provider_ops_status_idx` ON `wallet_provider_ops` (`status`);
+diff --git a/drizzle/down/0004_wallet_money_layer.sql b/drizzle/down/0004_wallet_money_layer.sql
+new file mode 100644
+index 0000000..1139898
+--- /dev/null
++++ b/drizzle/down/0004_wallet_money_layer.sql
+@@ -0,0 +1,16 @@
++-- Rollback for 0004_wallet_money_layer (reverse order of FK dependents).
++DROP INDEX IF EXISTS `wallet_provider_ops_status_idx`;
++--> statement-breakpoint
++DROP INDEX IF EXISTS `wallet_provider_ops_intent_unique`;
++--> statement-breakpoint
++DROP INDEX IF EXISTS `wallet_provider_ops_idempotency_unique`;
++--> statement-breakpoint
++DROP TABLE IF EXISTS `wallet_provider_ops`;
++--> statement-breakpoint
++DROP INDEX IF EXISTS `wallet_intents_status_idx`;
++--> statement-breakpoint
++DROP INDEX IF EXISTS `wallet_intents_player_idempotency_unique`;
++--> statement-breakpoint
++DROP TABLE IF EXISTS `wallet_intents`;
++--> statement-breakpoint
++DROP TABLE IF EXISTS `ledger_balances`;
+diff --git a/drizzle/meta/0004_snapshot.json b/drizzle/meta/0004_snapshot.json
+new file mode 100644
+index 0000000..917985e
+--- /dev/null
++++ b/drizzle/meta/0004_snapshot.json
+@@ -0,0 +1,935 @@
++{
++  "version": "6",
++  "dialect": "sqlite",
++  "id": "0004_wallet_money_layer_snapshot",
++  "prevId": "0003_round_lease",
++  "tables": {
++    "audit_events": {
++      "name": "audit_events",
++      "columns": {
++        "id": {
++          "name": "id",
++          "type": "text",
++          "primaryKey": true,
++          "notNull": true,
++          "autoincrement": false
++        },
++        "actor_type": {
++          "name": "actor_type",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true,
++          "autoincrement": false
++        },
++        "actor_id": {
++          "name": "actor_id",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true,
++          "autoincrement": false
++        },
++        "event_type": {
++          "name": "event_type",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true,
++          "autoincrement": false
++        },
++        "subject_type": {
++          "name": "subject_type",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true,
++          "autoincrement": false
++        },
++        "subject_id": {
++          "name": "subject_id",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true,
++          "autoincrement": false
++        },
++        "event_json": {
++          "name": "event_json",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true,
++          "autoincrement": false
++        },
++        "previous_hash": {
++          "name": "previous_hash",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false,
++          "autoincrement": false
++        },
++        "event_hash": {
++          "name": "event_hash",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true,
++          "autoincrement": false
++        },
++        "created_at": {
++          "name": "created_at",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true,
++          "autoincrement": false,
++          "default": "CURRENT_TIMESTAMP"
++        }
++      },
++      "indexes": {
++        "audit_events_event_hash_unique": {
++          "name": "audit_events_event_hash_unique",
++          "columns": [
++            "event_hash"
++          ],
++          "isUnique": true
++        },
++        "audit_events_subject_created_idx": {
++          "name": "audit_events_subject_created_idx",
++          "columns": [
++            "subject_type",
++            "subject_id",
++            "created_at"
++          ],
++          "isUnique": false
++        }
++      },
++      "foreignKeys": {},
++      "compositePrimaryKeys": {},
++      "uniqueConstraints": {},
++      "checkConstraints": {}
++    },
++    "game_math_versions": {
++      "name": "game_math_versions",
++      "columns": {
++        "id": {
++          "name": "id",
++          "type": "text",
++          "primaryKey": true,
++          "notNull": true,
++          "autoincrement": false
++        },
++        "sha256": {
++          "name": "sha256",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true,
++          "autoincrement": false
++        },
++        "status": {
++          "name": "status",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true,
++          "autoincrement": false,
++          "default": "'DRAFT'"
++        },
++        "config_json": {
++          "name": "config_json",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true,
++          "autoincrement": false
++        },
++        "activated_at": {
++          "name": "activated_at",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false,
++          "autoincrement": false
++        },
++        "created_at": {
++          "name": "created_at",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true,
++          "autoincrement": false,
++          "default": "CURRENT_TIMESTAMP"
++        }
++      },
++      "indexes": {
++        "game_math_versions_sha256_unique": {
++          "name": "game_math_versions_sha256_unique",
++          "columns": [
++            "sha256"
++          ],
++          "isUnique": true
++        }
++      },
++      "foreignKeys": {},
++      "compositePrimaryKeys": {},
++      "uniqueConstraints": {},
++      "checkConstraints": {}
++    },
++    "game_rounds": {
++      "name": "game_rounds",
++      "columns": {
++        "id": {
++          "name": "id",
++          "type": "text",
++          "primaryKey": true,
++          "notNull": true,
++          "autoincrement": false
++        },
++        "session_id": {
++          "name": "session_id",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true,
++          "autoincrement": false
++        },
++        "player_id": {
++          "name": "player_id",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true,
++          "autoincrement": false
++        },
++        "math_version_id": {
++          "name": "math_version_id",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true,
++          "autoincrement": false
++        },
++        "idempotency_key": {
++          "name": "idempotency_key",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true,
++          "autoincrement": false
++        },
++        "request_hash": {
++          "name": "request_hash",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true,
++          "autoincrement": false
++        },
++        "request_payload": {
++          "name": "request_payload",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false,
++          "autoincrement": false
++        },
++        "result_hash": {
++          "name": "result_hash",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false,
++          "autoincrement": false
++        },
++        "status": {
++          "name": "status",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true,
++          "autoincrement": false,
++          "default": "'PENDING'"
++        },
++        "currency": {
++          "name": "currency",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true,
++          "autoincrement": false
++        },
++        "total_bet_minor": {
++          "name": "total_bet_minor",
++          "type": "integer",
++          "primaryKey": false,
++          "notNull": true,
++          "autoincrement": false
++        },
++        "total_win_minor": {
++          "name": "total_win_minor",
++          "type": "integer",
++          "primaryKey": false,
++          "notNull": false,
++          "autoincrement": false
++        },
++        "balance_after_minor": {
++          "name": "balance_after_minor",
++          "type": "integer",
++          "primaryKey": false,
++          "notNull": false,
++          "autoincrement": false
++        },
++        "is_free_game": {
++          "name": "is_free_game",
++          "type": "integer",
++          "primaryKey": false,
++          "notNull": true,
++          "autoincrement": false,
++          "default": false
++        },
++        "outcome_json": {
++          "name": "outcome_json",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false,
++          "autoincrement": false
++        },
++        "settled_at": {
++          "name": "settled_at",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false,
++          "autoincrement": false
++        },
++        "created_at": {
++          "name": "created_at",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true,
++          "autoincrement": false,
++          "default": "CURRENT_TIMESTAMP"
++        },
++        "claim_token": {
++          "name": "claim_token",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false,
++          "autoincrement": false
++        },
++        "lease_expires_at": {
++          "name": "lease_expires_at",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false,
++          "autoincrement": false
++        },
++        "updated_at": {
++          "name": "updated_at",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false,
++          "autoincrement": false,
++          "default": "CURRENT_TIMESTAMP"
++        },
++        "free_game_reserved": {
++          "name": "free_game_reserved",
++          "type": "integer",
++          "primaryKey": false,
++          "notNull": true,
++          "autoincrement": false,
++          "default": false
++        },
++        "free_games_awarded": {
++          "name": "free_games_awarded",
++          "type": "integer",
++          "primaryKey": false,
++          "notNull": true,
++          "autoincrement": false,
++          "default": 0
++        },
++        "wallet_applied": {
++          "name": "wallet_applied",
++          "type": "integer",
++          "primaryKey": false,
++          "notNull": true,
++          "autoincrement": false,
++          "default": false
++        }
++      },
++      "indexes": {
++        "game_rounds_player_idempotency_unique": {
++          "name": "game_rounds_player_idempotency_unique",
++          "columns": [
++            "player_id",
++            "idempotency_key"
++          ],
++          "isUnique": true
++        },
++        "game_rounds_session_created_idx": {
++          "name": "game_rounds_session_created_idx",
++          "columns": [
++            "session_id",
++            "created_at"
++          ],
++          "isUnique": false
++        }
++      },
++      "foreignKeys": {
++        "game_rounds_session_id_game_sessions_id_fk": {
++          "name": "game_rounds_session_id_game_sessions_id_fk",
++          "tableFrom": "game_rounds",
++          "tableTo": "game_sessions",
++          "columnsFrom": [
++            "session_id"
++          ],
++          "columnsTo": [
++            "id"
++          ],
++          "onDelete": "restrict",
++          "onUpdate": "no action"
++        },
++        "game_rounds_player_id_players_id_fk": {
++          "name": "game_rounds_player_id_players_id_fk",
++          "tableFrom": "game_rounds",
++          "tableTo": "players",
++          "columnsFrom": [
++            "player_id"
++          ],
++          "columnsTo": [
++            "id"
++          ],
++          "onDelete": "restrict",
++          "onUpdate": "no action"
++        },
++        "game_rounds_math_version_id_game_math_versions_id_fk": {
++          "name": "game_rounds_math_version_id_game_math_versions_id_fk",
++          "tableFrom": "game_rounds",
++          "tableTo": "game_math_versions",
++          "columnsFrom": [
++            "math_version_id"
++          ],
++          "columnsTo": [
++            "id"
++          ],
++          "onDelete": "restrict",
++          "onUpdate": "no action"
++        }
++      },
++      "compositePrimaryKeys": {},
++      "uniqueConstraints": {},
++      "checkConstraints": {
++        "game_rounds_bet_nonnegative": {
++          "name": "game_rounds_bet_nonnegative",
++          "value": "\"game_rounds\".\"total_bet_minor\" >= 0"
++        },
++        "game_rounds_win_nonnegative": {
++          "name": "game_rounds_win_nonnegative",
++          "value": "\"game_rounds\".\"total_win_minor\" IS NULL OR \"game_rounds\".\"total_win_minor\" >= 0"
++        },
++        "game_rounds_free_games_awarded_nonnegative": {
++          "name": "game_rounds_free_games_awarded_nonnegative",
++          "value": "\"game_rounds\".\"free_games_awarded\" >= 0"
++        }
++      }
++    },
++    "game_sessions": {
++      "name": "game_sessions",
++      "columns": {
++        "id": {
++          "name": "id",
++          "type": "text",
++          "primaryKey": true,
++          "notNull": true,
++          "autoincrement": false
++        },
++        "player_id": {
++          "name": "player_id",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true,
++          "autoincrement": false
++        },
++        "math_version_id": {
++          "name": "math_version_id",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true,
++          "autoincrement": false
++        },
++        "status": {
++          "name": "status",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true,
++          "autoincrement": false,
++          "default": "'OPEN'"
++        },
++        "currency": {
++          "name": "currency",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true,
++          "autoincrement": false
++        },
++        "free_games_remaining": {
++          "name": "free_games_remaining",
++          "type": "integer",
++          "primaryKey": false,
++          "notNull": true,
++          "autoincrement": false,
++          "default": 0
++        },
++        "expires_at": {
++          "name": "expires_at",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true,
++          "autoincrement": false
++        },
++        "created_at": {
++          "name": "created_at",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true,
++          "autoincrement": false,
++          "default": "CURRENT_TIMESTAMP"
++        },
++        "updated_at": {
++          "name": "updated_at",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true,
++          "autoincrement": false,
++          "default": "CURRENT_TIMESTAMP"
++        }
++      },
++      "indexes": {
++        "game_sessions_player_status_idx": {
++          "name": "game_sessions_player_status_idx",
++          "columns": [
++            "player_id",
++            "status"
++          ],
++          "isUnique": false
++        }
++      },
++      "foreignKeys": {
++        "game_sessions_player_id_players_id_fk": {
++          "name": "game_sessions_player_id_players_id_fk",
++          "tableFrom": "game_sessions",
++          "tableTo": "players",
++          "columnsFrom": [
++            "player_id"
++          ],
++          "columnsTo": [
++            "id"
++          ],
++          "onDelete": "restrict",
++          "onUpdate": "no action"
++        },
++        "game_sessions_math_version_id_game_math_versions_id_fk": {
++          "name": "game_sessions_math_version_id_game_math_versions_id_fk",
++          "tableFrom": "game_sessions",
++          "tableTo": "game_math_versions",
++          "columnsFrom": [
++            "math_version_id"
++          ],
++          "columnsTo": [
++            "id"
++          ],
++          "onDelete": "restrict",
++          "onUpdate": "no action"
++        }
++      },
++      "compositePrimaryKeys": {},
++      "uniqueConstraints": {},
++      "checkConstraints": {
++        "game_sessions_free_games_nonnegative": {
++          "name": "game_sessions_free_games_nonnegative",
++          "value": "\"game_sessions\".\"free_games_remaining\" >= 0"
++        },
++        "game_sessions_currency_length": {
++          "name": "game_sessions_currency_length",
++          "value": "length(\"game_sessions\".\"currency\") = 3"
++        },
++        "game_sessions_currency_format": {
++          "name": "game_sessions_currency_format",
++          "value": "\"game_sessions\".\"currency\" GLOB '[A-Z][A-Z][A-Z]'"
++        }
++      }
++    },
++    "ledger_accounts": {
++      "name": "ledger_accounts",
++      "columns": {
++        "id": {
++          "name": "id",
++          "type": "text",
++          "primaryKey": true,
++          "notNull": true,
++          "autoincrement": false
++        },
++        "player_id": {
++          "name": "player_id",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false,
++          "autoincrement": false
++        },
++        "kind": {
++          "name": "kind",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true,
++          "autoincrement": false
++        },
++        "currency": {
++          "name": "currency",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true,
++          "autoincrement": false
++        },
++        "balance_minor": {
++          "name": "balance_minor",
++          "type": "integer",
++          "primaryKey": false,
++          "notNull": true,
++          "autoincrement": false,
++          "default": 0
++        },
++        "version": {
++          "name": "version",
++          "type": "integer",
++          "primaryKey": false,
++          "notNull": true,
++          "autoincrement": false,
++          "default": 0
++        },
++        "created_at": {
++          "name": "created_at",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true,
++          "autoincrement": false,
++          "default": "CURRENT_TIMESTAMP"
++        },
++        "updated_at": {
++          "name": "updated_at",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true,
++          "autoincrement": false,
++          "default": "CURRENT_TIMESTAMP"
++        }
++      },
++      "indexes": {
++        "ledger_accounts_owner_kind_currency_unique": {
++          "name": "ledger_accounts_owner_kind_currency_unique",
++          "columns": [
++            "player_id",
++            "kind",
++            "currency"
++          ],
++          "isUnique": true
++        },
++        "ledger_accounts_player_idx": {
++          "name": "ledger_accounts_player_idx",
++          "columns": [
++            "player_id"
++          ],
++          "isUnique": false
++        }
++      },
++      "foreignKeys": {
++        "ledger_accounts_player_id_players_id_fk": {
++          "name": "ledger_accounts_player_id_players_id_fk",
++          "tableFrom": "ledger_accounts",
++          "tableTo": "players",
++          "columnsFrom": [
++            "player_id"
++          ],
++          "columnsTo": [
++            "id"
++          ],
++          "onDelete": "restrict",
++          "onUpdate": "no action"
++        }
++      },
++      "compositePrimaryKeys": {},
++      "uniqueConstraints": {},
++      "checkConstraints": {}
++    },
++    "ledger_entries": {
++      "name": "ledger_entries",
++      "columns": {
++        "id": {
++          "name": "id",
++          "type": "text",
++          "primaryKey": true,
++          "notNull": true,
++          "autoincrement": false
++        },
++        "transaction_id": {
++          "name": "transaction_id",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true,
++          "autoincrement": false
++        },
++        "account_id": {
++          "name": "account_id",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true,
++          "autoincrement": false
++        },
++        "sequence": {
++          "name": "sequence",
++          "type": "integer",
++          "primaryKey": false,
++          "notNull": true,
++          "autoincrement": false
++        },
++        "amount_minor": {
++          "name": "amount_minor",
++          "type": "integer",
++          "primaryKey": false,
++          "notNull": true,
++          "autoincrement": false
++        },
++        "currency": {
++          "name": "currency",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true,
++          "autoincrement": false
++        },
++        "balance_after_minor": {
++          "name": "balance_after_minor",
++          "type": "integer",
++          "primaryKey": false,
++          "notNull": true,
++          "autoincrement": false
++        },
++        "created_at": {
++          "name": "created_at",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true,
++          "autoincrement": false,
++          "default": "CURRENT_TIMESTAMP"
++        }
++      },
++      "indexes": {
++        "ledger_entries_transaction_sequence_unique": {
++          "name": "ledger_entries_transaction_sequence_unique",
++          "columns": [
++            "transaction_id",
++            "sequence"
++          ],
++          "isUnique": true
++        },
++        "ledger_entries_account_created_idx": {
++          "name": "ledger_entries_account_created_idx",
++          "columns": [
++            "account_id",
++            "created_at"
++          ],
++          "isUnique": false
++        }
++      },
++      "foreignKeys": {
++        "ledger_entries_transaction_id_ledger_transactions_id_fk": {
++          "name": "ledger_entries_transaction_id_ledger_transactions_id_fk",
++          "tableFrom": "ledger_entries",
++          "tableTo": "ledger_transactions",
++          "columnsFrom": [
++            "transaction_id"
++          ],
++          "columnsTo": [
++            "id"
++          ],
++          "onDelete": "restrict",
++          "onUpdate": "no action"
++        },
++        "ledger_entries_account_id_ledger_accounts_id_fk": {
++          "name": "ledger_entries_account_id_ledger_accounts_id_fk",
++          "tableFrom": "ledger_entries",
++          "tableTo": "ledger_accounts",
++          "columnsFrom": [
++            "account_id"
++          ],
++          "columnsTo": [
++            "id"
++          ],
++          "onDelete": "restrict",
++          "onUpdate": "no action"
++        }
++      },
++      "compositePrimaryKeys": {},
++      "uniqueConstraints": {},
++      "checkConstraints": {
++        "ledger_entries_amount_nonzero": {
++          "name": "ledger_entries_amount_nonzero",
++          "value": "\"ledger_entries\".\"amount_minor\" <> 0"
++        }
++      }
++    },
++    "ledger_transactions": {
++      "name": "ledger_transactions",
++      "columns": {
++        "id": {
++          "name": "id",
++          "type": "text",
++          "primaryKey": true,
++          "notNull": true,
++          "autoincrement": false
++        },
++        "idempotency_key": {
++          "name": "idempotency_key",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true,
++          "autoincrement": false
++        },
++        "round_id": {
++          "name": "round_id",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false,
++          "autoincrement": false
++        },
++        "kind": {
++          "name": "kind",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true,
++          "autoincrement": false
++        },
++        "status": {
++          "name": "status",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true,
++          "autoincrement": false,
++          "default": "'PENDING'"
++        },
++        "request_hash": {
++          "name": "request_hash",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true,
++          "autoincrement": false
++        },
++        "posted_at": {
++          "name": "posted_at",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false,
++          "autoincrement": false
++        },
++        "created_at": {
++          "name": "created_at",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true,
++          "autoincrement": false,
++          "default": "CURRENT_TIMESTAMP"
++        }
++      },
++      "indexes": {
++        "ledger_transactions_idempotency_unique": {
++          "name": "ledger_transactions_idempotency_unique",
++          "columns": [
++            "idempotency_key"
++          ],
++          "isUnique": true
++        },
++        "ledger_transactions_round_idx": {
++          "name": "ledger_transactions_round_idx",
++          "columns": [
++            "round_id"
++          ],
++          "isUnique": false
++        }
++      },
++      "foreignKeys": {
++        "ledger_transactions_round_id_game_rounds_id_fk": {
++          "name": "ledger_transactions_round_id_game_rounds_id_fk",
++          "tableFrom": "ledger_transactions",
++          "tableTo": "game_rounds",
++          "columnsFrom": [
++            "round_id"
++          ],
++          "columnsTo": [
++            "id"
++          ],
++          "onDelete": "restrict",
++          "onUpdate": "no action"
++        }
++      },
++      "compositePrimaryKeys": {},
++      "uniqueConstraints": {},
++      "checkConstraints": {}
++    },
++    "players": {
++      "name": "players",
++      "columns": {
++        "id": {
++          "name": "id",
++          "type": "text",
++          "primaryKey": true,
++          "notNull": true,
++          "autoincrement": false
++        },
++        "wallet_adapter_ref": {
++          "name": "wallet_adapter_ref",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true,
++          "autoincrement": false
++        },
++        "currency": {
++          "name": "currency",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true,
++          "autoincrement": false,
++          "default": "'MMK'"
++        },
++        "status": {
++          "name": "status",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true,
++          "autoincrement": false,
++          "default": "'ACTIVE'"
++        },
++        "created_at": {
++          "name": "created_at",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true,
++          "autoincrement": false,
++          "default": "CURRENT_TIMESTAMP"
++        },
++        "updated_at": {
++          "name": "updated_at",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true,
++          "autoincrement": false,
++          "default": "CURRENT_TIMESTAMP"
++        }
++      },
++      "indexes": {
++        "players_wallet_adapter_ref_unique": {
++          "name": "players_wallet_adapter_ref_unique",
++          "columns": [
++            "wallet_adapter_ref"
++          ],
++          "isUnique": true
++        }
++      },
++      "foreignKeys": {},
++      "compositePrimaryKeys": {},
++      "uniqueConstraints": {},
++      "checkConstraints": {
++        "players_currency_length": {
++          "name": "players_currency_length",
++          "value": "length(\"players\".\"currency\") = 3"
++        }
++      }
++    }
++  },
++  "views": {},
++  "enums": {},
++  "_meta": {
++    "schemas": {},
++    "tables": {},
++    "columns": {}
++  },
++  "internal": {
++    "indexes": {}
++  }
++}
+\ No newline at end of file
+diff --git a/drizzle/meta/_journal.json b/drizzle/meta/_journal.json
+index 4a43d60..34cc62e 100644
+--- a/drizzle/meta/_journal.json
++++ b/drizzle/meta/_journal.json
+@@ -29,6 +29,13 @@
+       "when": 1785979200000,
+       "tag": "0003_round_lease",
+       "breakpoints": true
++    },
++    {
++      "idx": 4,
++      "version": "6",
++      "when": 1785982800000,
++      "tag": "0004_wallet_money_layer",
++      "breakpoints": true
+     }
+   ]
+ }
+\ No newline at end of file
+diff --git a/lib/db-ledger.ts b/lib/db-ledger.ts
+new file mode 100644
+index 0000000..c74139c
+--- /dev/null
++++ b/lib/db-ledger.ts
+@@ -0,0 +1,206 @@
++/**
++ * Durable double-entry ledger posting with CAS balances.
++ * Truth: ledger_accounts.balance_minor + ledger_balances projection.
++ */
++
++import { assertBalancedPostings, type LedgerPosting } from "./ledger.ts";
++import { ConcurrentModificationError } from "./wallet-adapter.ts";
++
++export type PostedLedgerTransaction = {
++  id: string;
++  idempotencyKey: string;
++  kind: "GAME_BET" | "GAME_PAYOUT" | "DEPOSIT" | "WITHDRAWAL" | "ADJUSTMENT" | "REVERSAL";
++  status: "POSTED" | "REVERSED";
++  requestHash: string;
++  postedAt: string;
++  postings: LedgerPosting[];
++};
++
++export class LedgerFailClosedError extends Error {
++  readonly failClosed = true as const;
++  constructor(message: string) {
++    super(message);
++    this.name = "LedgerFailClosedError";
++  }
++}
++
++type AccountRow = {
++  id: string;
++  playerId: string | null;
++  kind: string;
++  currency: string;
++  balanceMinor: number;
++  version: number;
++};
++
++function newId(prefix: string): string {
++  return `${prefix}_${crypto.randomUUID().replace(/-/g, "")}`;
++}
++
++/** In-memory durable ledger for TEST path. */
++export class MemoryLedger {
++  private accounts = new Map<string, AccountRow>();
++  private transactions = new Map<string, PostedLedgerTransaction>();
++  private balances = new Map<string, { accountId: string; balanceMinor: number; version: number }>();
++  private byIdempotency = new Map<string, string>();
++
++  private accountKey(playerId: string, kind: string, currency: string): string {
++    return `${playerId}:${kind}:${currency}`;
++  }
++
++  ensurePlayerAccounts(playerId: string, currency: string): {
++    available: AccountRow;
++    clearing: AccountRow;
++  } {
++    return {
++      available: this.getOrCreate(playerId, "PLAYER_AVAILABLE", currency),
++      clearing: this.getOrCreate(playerId, "GAME_CLEARING", currency),
++    };
++  }
++
++  private getOrCreate(playerId: string, kind: string, currency: string): AccountRow {
++    const key = this.accountKey(playerId, kind, currency);
++    let row = this.accounts.get(key);
++    if (!row) {
++      row = { id: key, playerId, kind, currency, balanceMinor: 0, version: 0 };
++      this.accounts.set(key, row);
++      this.balances.set(row.id, { accountId: row.id, balanceMinor: 0, version: 0 });
++    }
++    return row;
++  }
++
++  getAccount(accountId: string): AccountRow {
++    const account = [...this.accounts.values()].find((row) => row.id === accountId);
++    if (!account) throw new LedgerFailClosedError(`Unknown account ${accountId}`);
++    return account;
++  }
++
++  getBalance(accountId: string): number {
++    const bal = this.balances.get(accountId);
++    if (!bal) throw new LedgerFailClosedError(`Unknown balance for ${accountId}`);
++    return bal.balanceMinor;
++  }
++
++  /** TEST gate: direct credit without external deposit rail. */
++  forceCreditAvailableForTest(
++    playerId: string,
++    currency: string,
++    amountMinor: number,
++  ): void {
++    if (!Number.isSafeInteger(amountMinor) || amountMinor <= 0) {
++      throw new RangeError("credit amount must be a positive safe integer");
++    }
++    const available = this.getOrCreate(playerId, "PLAYER_AVAILABLE", currency);
++    available.balanceMinor += amountMinor;
++    available.version += 1;
++    this.balances.set(available.id, {
++      accountId: available.id,
++      balanceMinor: available.balanceMinor,
++      version: available.version,
++    });
++  }
++
++  post(input: {
++    idempotencyKey: string;
++    kind: PostedLedgerTransaction["kind"];
++    requestHash: string;
++    postings: LedgerPosting[];
++  }): PostedLedgerTransaction {
++    const existingId = this.byIdempotency.get(input.idempotencyKey);
++    if (existingId) {
++      const existing = this.transactions.get(existingId)!;
++      if (existing.requestHash !== input.requestHash) {
++        throw new LedgerFailClosedError("Ledger idempotency conflict (replay protection)");
++      }
++      return existing;
++    }
++
++    if (input.postings.length === 0) {
++      throw new LedgerFailClosedError("Cannot post empty ledger transaction");
++    }
++    assertBalancedPostings(input.postings);
++
++    const touched = input.postings.map((posting) => {
++      const account = this.getAccount(posting.accountId);
++      if (account.currency !== posting.currency) {
++        throw new LedgerFailClosedError("Posting currency mismatch");
++      }
++      return { account, posting, versionBefore: account.version };
++    });
++
++    for (const item of touched) {
++      if (item.account.version !== item.versionBefore) {
++        throw new ConcurrentModificationError("Ledger account modified concurrently");
++      }
++    }
++
++    const nextBalances = new Map<string, number>();
++    for (const item of touched) {
++      const prev = nextBalances.get(item.account.id) ?? item.account.balanceMinor;
++      nextBalances.set(item.account.id, prev + item.posting.amountMinor);
++    }
++    for (const item of touched) {
++      const next = nextBalances.get(item.account.id)!;
++      if (item.account.kind === "PLAYER_AVAILABLE" && next < 0) {
++        throw new LedgerFailClosedError("PLAYER_AVAILABLE would become negative");
++      }
++    }
++
++    for (const item of touched) {
++      item.account.balanceMinor = nextBalances.get(item.account.id)!;
++      item.account.version += 1;
++      this.balances.set(item.account.id, {
++        accountId: item.account.id,
++        balanceMinor: item.account.balanceMinor,
++        version: item.account.version,
++      });
++    }
++
++    const tx: PostedLedgerTransaction = {
++      id: newId("ltx"),
++      idempotencyKey: input.idempotencyKey,
++      kind: input.kind,
++      status: "POSTED",
++      requestHash: input.requestHash,
++      postedAt: new Date().toISOString(),
++      postings: input.postings,
++    };
++    this.transactions.set(tx.id, tx);
++    this.byIdempotency.set(input.idempotencyKey, tx.id);
++    return tx;
++  }
++
++  reverse(originalIdempotencyKey: string, reversalIdempotencyKey: string): PostedLedgerTransaction {
++    const originalId = this.byIdempotency.get(originalIdempotencyKey);
++    if (!originalId) throw new LedgerFailClosedError("Original ledger transaction not found");
++    const original = this.transactions.get(originalId)!;
++    const existingReversal = this.byIdempotency.get(reversalIdempotencyKey);
++    if (existingReversal) return this.transactions.get(existingReversal)!;
++
++    const reversePostings = original.postings.map((posting) => ({
++      ...posting,
++      amountMinor: -posting.amountMinor,
++    }));
++    const reversal = this.post({
++      idempotencyKey: reversalIdempotencyKey,
++      kind: "REVERSAL",
++      requestHash: `rev:${original.requestHash}`,
++      postings: reversePostings,
++    });
++    original.status = "REVERSED";
++    return reversal;
++  }
++}
++
++/** TEST-only balance seed (does not create a ledger posting). */
++export function seedTestAvailable(
++  ledger: MemoryLedger,
++  playerId: string,
++  currency: string,
++  amountMinor: number,
++): void {
++  if (!Number.isSafeInteger(amountMinor) || amountMinor <= 0) {
++    throw new RangeError("seed amount must be a positive safe integer");
++  }
++  ledger.forceCreditAvailableForTest(playerId, currency, amountMinor);
++}
+diff --git a/lib/db-wallet-adapter.ts b/lib/db-wallet-adapter.ts
+new file mode 100644
+index 0000000..6459928
+--- /dev/null
++++ b/lib/db-wallet-adapter.ts
+@@ -0,0 +1,95 @@
++/**
++ * WalletAdapter backed by MoneyService (Intent + Provider + Ledger).
++ * Preserves settleRound contract for orchestrator compatibility.
++ */
++
++import { MoneyService } from "./money-service.ts";
++import {
++  type Currency,
++  type RoundSettlement,
++  type WalletAccount,
++  type WalletAdapter,
++} from "./wallet-adapter.ts";
++import { assertRealWalletAllowed, assertTestWalletAllowed } from "./wallet-mode.ts";
++
++export class DbWalletAdapter implements WalletAdapter {
++  private readonly money: MoneyService;
++  constructor(money: MoneyService) {
++    this.money = money;
++  }
++
++  async ensurePlayerAccounts(
++    playerId: string,
++    currency: Currency,
++  ): Promise<{ available: WalletAccount; clearing: WalletAccount }> {
++    assertTestWalletAllowed(this.money.mode);
++    const { available, clearing } = this.money.ledger.ensurePlayerAccounts(
++      playerId,
++      currency,
++    );
++    return {
++      available: {
++        id: available.id,
++        playerId,
++        kind: "PLAYER_AVAILABLE",
++        currency,
++        balanceMinor: available.balanceMinor,
++        version: available.version,
++      },
++      clearing: {
++        id: clearing.id,
++        playerId,
++        kind: "GAME_CLEARING",
++        currency,
++        balanceMinor: clearing.balanceMinor,
++        version: clearing.version,
++      },
++    };
++  }
++
++  async getAvailableBalance(playerId: string, currency: Currency): Promise<number> {
++    return this.money.getAvailableBalance(playerId, currency);
++  }
++
++  async settleRound(input: {
++    idempotencyKey: string;
++    playerId: string;
++    currency: Currency;
++    betMinor: number;
++    winMinor: number;
++    isFreeGame: boolean;
++  }): Promise<RoundSettlement> {
++    return this.money.settleRound(input);
++  }
++
++  creditAvailable(playerId: string, currency: Currency, amountMinor: number): void {
++    this.money.seed(playerId, currency, amountMinor);
++  }
++}
++
++/** REAL adapter skeleton — always fail closed unless explicitly allowed. */
++export class RealWalletAdapter implements WalletAdapter {
++  private readonly allowRealMoney: boolean;
++  private readonly mode: "REAL";
++  constructor(allowRealMoney: boolean, mode: "REAL" = "REAL") {
++    this.allowRealMoney = allowRealMoney;
++    this.mode = mode;
++  }
++
++  private deny(): never {
++    assertRealWalletAllowed(this.mode, this.allowRealMoney);
++    throw new Error("REAL wallet adapter is not configured");
++  }
++
++  ensurePlayerAccounts(): Promise<{ available: WalletAccount; clearing: WalletAccount }> {
++    return this.deny();
++  }
++
++  getAvailableBalance(): Promise<number> {
++    return this.deny();
++  }
++
++  settleRound(): Promise<RoundSettlement> {
++    return this.deny();
++  }
++}
+diff --git a/lib/migration-version.ts b/lib/migration-version.ts
+new file mode 100644
+index 0000000..9667fca
+--- /dev/null
++++ b/lib/migration-version.ts
+@@ -0,0 +1,26 @@
++/**
++ * Migration version gate for the money layer.
++ * Forward: 0000..0004. Rollback: down/0004 then prior.
++ */
++
++export const MONEY_LAYER_MIGRATION_VERSION = 4;
++export const MONEY_LAYER_MIGRATION_TAG = "0004_wallet_money_layer";
++
++export const FORWARD_MIGRATION_TAGS = [
++  "0000_early_power_pack",
++  "0001_steady_annihilus",
++  "0002_session_currency",
++  "0003_round_lease",
++  "0004_wallet_money_layer",
++] as const;
++
++export function assertMigrationVersionAtLeast(
++  appliedVersion: number,
++  required = MONEY_LAYER_MIGRATION_VERSION,
++): void {
++  if (!Number.isSafeInteger(appliedVersion) || appliedVersion < required) {
++    throw new Error(
++      `Fail-closed: migration version ${appliedVersion} < required ${required}`,
++    );
++  }
++}
+diff --git a/lib/money-service.ts b/lib/money-service.ts
+new file mode 100644
+index 0000000..08586d0
+--- /dev/null
++++ b/lib/money-service.ts
+@@ -0,0 +1,413 @@
++/**
++ * Orchestrates Wallet Intent + Provider + Ledger for TEST mode.
++ * Debit / Credit / Rollback / Retry / Timeout / Unknown — all idempotent.
++ */
++
++import { buildSpinPostings } from "./ledger.ts";
++import { MemoryLedger, seedTestAvailable } from "./db-ledger.ts";
++import {
++  createWalletIntent,
++  MemoryIntentStore,
++  type IntentStore,
++  type WalletIntent,
++} from "./wallet-intent.ts";
++import { assertTestWalletAllowed, type WalletMode } from "./wallet-mode.ts";
++import {
++  LocalTestWalletProvider,
++  MemoryProviderStore,
++  type ProviderStore,
++} from "./wallet-provider.ts";
++import {
++  DuplicateIdempotencyKeyError,
++  InsufficientBalanceError,
++  type RoundSettlement,
++  WalletResultUnknownError,
++} from "./wallet-adapter.ts";
++
++function newId(prefix: string): string {
++  return `${prefix}_${crypto.randomUUID().replace(/-/g, "")}`;
++}
++
++function hashRequest(parts: Record<string, unknown>): string {
++  return JSON.stringify(parts);
++}
++
++export type MoneyOpResult = {
++  intent: WalletIntent;
++  settlement?: RoundSettlement;
++  rolledBack?: boolean;
++};
++
++export class MoneyService {
++  readonly ledger: MemoryLedger;
++  readonly intents: IntentStore;
++  readonly providers: ProviderStore;
++  readonly provider: LocalTestWalletProvider;
++  readonly mode: WalletMode;
++
++  /** Test hook: force unknown after provider PROCESSING. */
++  forceUnknownAfterProcessing = false;
++  /** Test hook: throw after ledger post to simulate crash. */
++  crashAfterLedgerPost = false;
++
++  constructor(options?: {
++    mode?: WalletMode;
++    ledger?: MemoryLedger;
++    intents?: IntentStore;
++    providers?: ProviderStore;
++  }) {
++    this.mode = options?.mode ?? "TEST";
++    this.ledger = options?.ledger ?? new MemoryLedger();
++    this.intents = options?.intents ?? new MemoryIntentStore();
++    this.providers = options?.providers ?? new MemoryProviderStore();
++    this.provider = new LocalTestWalletProvider(this.providers);
++  }
++
++  seed(playerId: string, currency: string, amountMinor: number): void {
++    assertTestWalletAllowed(this.mode);
++    seedTestAvailable(this.ledger, playerId, currency, amountMinor);
++  }
++
++  async getAvailableBalance(playerId: string, currency: string): Promise<number> {
++    const { available } = this.ledger.ensurePlayerAccounts(playerId, currency);
++    return this.ledger.getBalance(available.id);
++  }
++
++  async debit(input: {
++    playerId: string;
++    currency: string;
++    amountMinor: number;
++    idempotencyKey: string;
++  }): Promise<MoneyOpResult> {
++    return this.runMoneyMove({
++      ...input,
++      operation: "DEBIT",
++      direction: "DEBIT",
++      winMinor: 0,
++      isFreeGame: false,
++    });
++  }
++
++  async credit(input: {
++    playerId: string;
++    currency: string;
++    amountMinor: number;
++    idempotencyKey: string;
++  }): Promise<MoneyOpResult> {
++    return this.runMoneyMove({
++      ...input,
++      operation: "CREDIT",
++      direction: "CREDIT",
++      winMinor: input.amountMinor,
++      betMinorOverride: 0,
++      isFreeGame: true,
++    });
++  }
++
++  async settleRound(input: {
++    idempotencyKey: string;
++    playerId: string;
++    currency: string;
++    betMinor: number;
++    winMinor: number;
++    isFreeGame: boolean;
++  }): Promise<RoundSettlement> {
++    const result = await this.runMoneyMove({
++      playerId: input.playerId,
++      currency: input.currency,
++      amountMinor: input.betMinor,
++      idempotencyKey: input.idempotencyKey,
++      operation: "SETTLE",
++      direction: "DEBIT",
++      winMinor: input.winMinor,
++      betMinorOverride: input.betMinor,
++      isFreeGame: input.isFreeGame,
++    });
++    if (!result.settlement) {
++      throw new WalletResultUnknownError("Settle completed without settlement payload");
++    }
++    return result.settlement;
++  }
++
++  async rollback(input: {
++    playerId: string;
++    originalIdempotencyKey: string;
++    rollbackIdempotencyKey: string;
++  }): Promise<MoneyOpResult> {
++    assertTestWalletAllowed(this.mode);
++    const original = await this.intents.getByIdempotency(
++      input.playerId,
++      input.originalIdempotencyKey,
++    );
++    if (!original) {
++      throw new InsufficientBalanceError("Original intent not found for rollback");
++    }
++    if (original.status !== "SUCCESS" && original.status !== "RECOVERED") {
++      throw new WalletResultUnknownError(
++        `Cannot rollback intent in status ${original.status}`,
++      );
++    }
++
++    const existing = await this.intents.getByIdempotency(
++      input.playerId,
++      input.rollbackIdempotencyKey,
++    );
++    if (existing?.status === "SUCCESS" || existing?.status === "RECOVERED") {
++      return { intent: existing, rolledBack: true };
++    }
++
++    const requestHash = hashRequest({
++      op: "ROLLBACK",
++      original: input.originalIdempotencyKey,
++    });
++    let intent =
++      existing ??
++      (await this.intents.insert(
++        createWalletIntent({
++          id: newId("wi"),
++          playerId: input.playerId,
++          idempotencyKey: input.rollbackIdempotencyKey,
++          operation: "ROLLBACK",
++          currency: original.currency,
++          amountMinor: original.amountMinor,
++          requestHash,
++        }),
++      ));
++
++    intent = await this.intents.transition(intent.id, intent.version, "LOCKED");
++    intent = await this.intents.transition(intent.id, intent.version, "PROCESSING");
++
++    const reversal = this.ledger.reverse(
++      `ledger:${input.originalIdempotencyKey}`,
++      `ledger:${input.rollbackIdempotencyKey}`,
++    );
++    intent = await this.intents.transition(intent.id, intent.version, "SUCCESS", {
++      ledgerTxId: reversal.id,
++      resultJson: JSON.stringify({ reversed: original.idempotencyKey }),
++    });
++    return { intent, rolledBack: true };
++  }
++
++  async retry(intentId: string): Promise<MoneyOpResult> {
++    assertTestWalletAllowed(this.mode);
++    let intent = await this.intents.getById(intentId);
++    if (!intent) throw new WalletResultUnknownError("Intent not found");
++    if (intent.status === "SUCCESS" || intent.status === "RECOVERED") {
++      return { intent };
++    }
++    if (intent.status === "FAILED" || intent.status === "UNKNOWN") {
++      // Re-enter processing path via allowed transitions.
++      if (intent.status === "FAILED") {
++        intent = await this.intents.transition(intent.id, intent.version, "LOCKED");
++      } else {
++        intent = await this.intents.transition(intent.id, intent.version, "PROCESSING");
++      }
++    }
++    if (intent.operation === "SETTLE" || intent.operation === "DEBIT") {
++      const parsed = intent.resultJson
++        ? (JSON.parse(intent.resultJson) as {
++            betMinor?: number;
++            winMinor?: number;
++            isFreeGame?: boolean;
++          })
++        : {};
++      return this.runMoneyMove({
++        playerId: intent.playerId,
++        currency: intent.currency,
++        amountMinor: intent.amountMinor,
++        idempotencyKey: intent.idempotencyKey,
++        operation: intent.operation === "DEBIT" ? "DEBIT" : "SETTLE",
++        direction: "DEBIT",
++        winMinor: parsed.winMinor ?? 0,
++        betMinorOverride: parsed.betMinor ?? intent.amountMinor,
++        isFreeGame: parsed.isFreeGame ?? false,
++      });
++    }
++    if (intent.operation === "CREDIT") {
++      return this.credit({
++        playerId: intent.playerId,
++        currency: intent.currency,
++        amountMinor: intent.amountMinor,
++        idempotencyKey: intent.idempotencyKey,
++      });
++    }
++    throw new WalletResultUnknownError(`Retry unsupported for ${intent.operation}`);
++  }
++
++  async markTimeout(intentId: string): Promise<WalletIntent> {
++    assertTestWalletAllowed(this.mode);
++    const intent = await this.intents.getById(intentId);
++    if (!intent) throw new WalletResultUnknownError("Intent not found");
++    if (intent.status === "UNKNOWN") return intent;
++    if (intent.status === "LOCKED" || intent.status === "PROCESSING") {
++      return this.intents.transition(intent.id, intent.version, "UNKNOWN", {
++        errorCode: "TIMEOUT",
++      });
++    }
++    throw new WalletResultUnknownError(`Cannot timeout from ${intent.status}`);
++  }
++
++  async markUnknown(intentId: string): Promise<WalletIntent> {
++    return this.markTimeout(intentId);
++  }
++
++  private async runMoneyMove(input: {
++    playerId: string;
++    currency: string;
++    amountMinor: number;
++    idempotencyKey: string;
++    operation: "DEBIT" | "CREDIT" | "SETTLE";
++    direction: "DEBIT" | "CREDIT";
++    winMinor: number;
++    isFreeGame: boolean;
++    betMinorOverride?: number;
++  }): Promise<MoneyOpResult> {
++    assertTestWalletAllowed(this.mode);
++
++    const betMinor = input.betMinorOverride ?? (input.direction === "DEBIT" ? input.amountMinor : 0);
++    const winMinor = input.winMinor;
++    const requestHash = hashRequest({
++      op: input.operation,
++      betMinor,
++      winMinor,
++      isFreeGame: input.isFreeGame,
++      currency: input.currency,
++    });
++
++    const existing = await this.intents.getByIdempotency(
++      input.playerId,
++      input.idempotencyKey,
++    );
++    if (existing) {
++      if (existing.requestHash !== requestHash) {
++        throw new DuplicateIdempotencyKeyError(
++          `Idempotency key ${input.idempotencyKey} was used with different parameters`,
++        );
++      }
++      if (existing.status === "SUCCESS" || existing.status === "RECOVERED") {
++        const settlement = existing.resultJson
++          ? (JSON.parse(existing.resultJson) as RoundSettlement)
++          : undefined;
++        return { intent: existing, settlement };
++      }
++      if (existing.status === "UNKNOWN") {
++        throw new WalletResultUnknownError(
++          `Intent ${existing.id} is UNKNOWN; run recovery`,
++        );
++      }
++    }
++
++    let intent =
++      existing ??
++      (await this.intents.insert(
++        createWalletIntent({
++          id: newId("wi"),
++          playerId: input.playerId,
++          idempotencyKey: input.idempotencyKey,
++          operation: input.operation,
++          currency: input.currency,
++          amountMinor: input.operation === "CREDIT" ? winMinor : betMinor,
++          requestHash,
++        }),
++      ));
++
++    if (intent.status === "NEW") {
++      intent = await this.intents.transition(intent.id, intent.version, "LOCKED", {
++        resultJson: JSON.stringify({ betMinor, winMinor, isFreeGame: input.isFreeGame }),
++      });
++    }
++
++    const { available, clearing } = this.ledger.ensurePlayerAccounts(
++      input.playerId,
++      input.currency,
++    );
++
++    if (betMinor > 0 && this.ledger.getBalance(available.id) < betMinor) {
++      intent = await this.intents.transition(intent.id, intent.version, "FAILED", {
++        errorCode: "INSUFFICIENT_BALANCE",
++      });
++      throw new InsufficientBalanceError(
++        `Player ${input.playerId} balance < bet ${betMinor}`,
++      );
++    }
++
++    const providerOp = await this.provider.begin({
++      id: intent.providerOpId ?? newId("wpo"),
++      intentId: intent.id,
++      idempotencyKey: `provider:${input.idempotencyKey}`,
++      currency: input.currency,
++      amountMinor: input.operation === "CREDIT" ? winMinor : betMinor,
++      direction: input.direction,
++    });
++
++    if (intent.status === "LOCKED") {
++      intent = await this.intents.transition(intent.id, intent.version, "PROCESSING", {
++        providerOpId: providerOp.id,
++      });
++    }
++
++    if (this.forceUnknownAfterProcessing) {
++      let op = providerOp;
++      if (op.status === "NEW") {
++        op = await this.providers.transition(op.id, op.version, "PROCESSING");
++      }
++      await this.provider.markUnknown(op.id);
++      intent = await this.intents.transition(intent.id, intent.version, "UNKNOWN", {
++        errorCode: "PROVIDER_UNKNOWN",
++        providerOpId: op.id,
++      });
++      throw new WalletResultUnknownError("Provider outcome unknown");
++    }
++
++    await this.provider.settleLocal(providerOp.id);
++
++    const postings = buildSpinPostings({
++      playerAvailableAccountId: available.id,
++      gameClearingAccountId: clearing.id,
++      currency: input.currency,
++      betMinor,
++      winMinor,
++      isFreeGame: input.isFreeGame,
++    });
++
++    let ledgerTxId: string | null = null;
++    if (postings.length > 0) {
++      const tx = this.ledger.post({
++        idempotencyKey: `ledger:${input.idempotencyKey}`,
++        kind: betMinor > 0 ? "GAME_BET" : "GAME_PAYOUT",
++        requestHash,
++        postings,
++      });
++      ledgerTxId = tx.id;
++    }
++
++    if (this.crashAfterLedgerPost) {
++      intent = await this.intents.transition(intent.id, intent.version, "UNKNOWN", {
++        ledgerTxId,
++        providerOpId: providerOp.id,
++        errorCode: "CRASH_AFTER_LEDGER",
++      });
++      throw new WalletResultUnknownError("Crashed after ledger post");
++    }
++
++    const settlement: RoundSettlement = {
++      idempotencyKey: input.idempotencyKey,
++      playerId: input.playerId,
++      currency: input.currency,
++      betMinor,
++      winMinor,
++      isFreeGame: input.isFreeGame,
++      postedAt: new Date().toISOString(),
++      playerBalanceAfterMinor: this.ledger.getBalance(available.id),
++      postings,
++    };
++
++    intent = await this.intents.transition(intent.id, intent.version, "SUCCESS", {
++      ledgerTxId,
++      providerOpId: providerOp.id,
++      resultJson: JSON.stringify(settlement),
++    });
++
++    return { intent, settlement };
++  }
++}
+diff --git a/lib/wallet-intent.ts b/lib/wallet-intent.ts
+new file mode 100644
+index 0000000..f589460
+--- /dev/null
++++ b/lib/wallet-intent.ts
+@@ -0,0 +1,197 @@
++/**
++ * Wallet Intent state machine.
++ *
++ * NEW → LOCKED → PROCESSING → SUCCESS | FAILED | UNKNOWN → RECOVERED
++ * Every status supports recovery entry points.
++ */
++
++export const WALLET_INTENT_STATUSES = [
++  "NEW",
++  "LOCKED",
++  "PROCESSING",
++  "SUCCESS",
++  "FAILED",
++  "UNKNOWN",
++  "RECOVERED",
++] as const;
++
++export type WalletIntentStatus = (typeof WALLET_INTENT_STATUSES)[number];
++
++export type WalletIntentOperation = "DEBIT" | "CREDIT" | "SETTLE" | "ROLLBACK";
++
++export type WalletIntent = {
++  id: string;
++  playerId: string;
++  idempotencyKey: string;
++  operation: WalletIntentOperation;
++  status: WalletIntentStatus;
++  currency: string;
++  amountMinor: number;
++  requestHash: string;
++  providerOpId: string | null;
++  ledgerTxId: string | null;
++  resultJson: string | null;
++  errorCode: string | null;
++  version: number;
++  createdAt: string;
++  updatedAt: string;
++};
++
++const ALLOWED_TRANSITIONS: Record<WalletIntentStatus, readonly WalletIntentStatus[]> = {
++  NEW: ["LOCKED", "FAILED"],
++  LOCKED: ["PROCESSING", "FAILED", "UNKNOWN"],
++  PROCESSING: ["SUCCESS", "FAILED", "UNKNOWN"],
++  SUCCESS: ["RECOVERED"],
++  FAILED: ["RECOVERED", "LOCKED"],
++  UNKNOWN: ["RECOVERED", "PROCESSING", "SUCCESS", "FAILED"],
++  RECOVERED: [],
++};
++
++export class IllegalIntentTransitionError extends Error {
++  readonly failClosed = true as const;
++  readonly from: WalletIntentStatus;
++  readonly to: WalletIntentStatus;
++  constructor(from: WalletIntentStatus, to: WalletIntentStatus) {
++    super(`Illegal wallet intent transition ${from} → ${to}`);
++    this.name = "IllegalIntentTransitionError";
++    this.from = from;
++    this.to = to;
++  }
++}
++
++export class IntentCasError extends Error {
++  readonly failClosed = true as const;
++  constructor(message: string) {
++    super(message);
++    this.name = "IntentCasError";
++  }
++}
++
++export function canTransitionIntent(
++  from: WalletIntentStatus,
++  to: WalletIntentStatus,
++): boolean {
++  return ALLOWED_TRANSITIONS[from].includes(to);
++}
++
++export function assertIntentTransition(
++  from: WalletIntentStatus,
++  to: WalletIntentStatus,
++): void {
++  if (!canTransitionIntent(from, to)) {
++    throw new IllegalIntentTransitionError(from, to);
++  }
++}
++
++export type IntentStore = {
++  getByIdempotency(playerId: string, idempotencyKey: string): Promise<WalletIntent | null>;
++  getById(id: string): Promise<WalletIntent | null>;
++  insert(intent: WalletIntent): Promise<WalletIntent>;
++  transition(
++    id: string,
++    expectedVersion: number,
++    to: WalletIntentStatus,
++    patch?: Partial<
++      Pick<
++        WalletIntent,
++        "providerOpId" | "ledgerTxId" | "resultJson" | "errorCode" | "updatedAt"
++      >
++    >,
++  ): Promise<WalletIntent>;
++  listByStatus(status: WalletIntentStatus): Promise<WalletIntent[]>;
++};
++
++export class MemoryIntentStore implements IntentStore {
++  private byId = new Map<string, WalletIntent>();
++  private byKey = new Map<string, string>();
++
++  private key(playerId: string, idempotencyKey: string): string {
++    return `${playerId}:${idempotencyKey}`;
++  }
++
++  async getByIdempotency(
++    playerId: string,
++    idempotencyKey: string,
++  ): Promise<WalletIntent | null> {
++    const id = this.byKey.get(this.key(playerId, idempotencyKey));
++    return id ? (this.byId.get(id) ?? null) : null;
++  }
++
++  async getById(id: string): Promise<WalletIntent | null> {
++    return this.byId.get(id) ?? null;
++  }
++
++  async insert(intent: WalletIntent): Promise<WalletIntent> {
++    const k = this.key(intent.playerId, intent.idempotencyKey);
++    if (this.byKey.has(k)) {
++      throw new IntentCasError(`Duplicate intent idempotency key ${k}`);
++    }
++    this.byId.set(intent.id, { ...intent });
++    this.byKey.set(k, intent.id);
++    return { ...intent };
++  }
++
++  async transition(
++    id: string,
++    expectedVersion: number,
++    to: WalletIntentStatus,
++    patch: Partial<
++      Pick<
++        WalletIntent,
++        "providerOpId" | "ledgerTxId" | "resultJson" | "errorCode" | "updatedAt"
++      >
++    > = {},
++  ): Promise<WalletIntent> {
++    const current = this.byId.get(id);
++    if (!current) throw new IntentCasError(`Intent ${id} not found`);
++    if (current.version !== expectedVersion) {
++      throw new IntentCasError(
++        `Intent CAS failed for ${id}: expected v${expectedVersion}, got v${current.version}`,
++      );
++    }
++    assertIntentTransition(current.status, to);
++    const next: WalletIntent = {
++      ...current,
++      ...patch,
++      status: to,
++      version: current.version + 1,
++      updatedAt: patch.updatedAt ?? new Date().toISOString(),
++    };
++    this.byId.set(id, next);
++    return { ...next };
++  }
++
++  async listByStatus(status: WalletIntentStatus): Promise<WalletIntent[]> {
++    return [...this.byId.values()].filter((intent) => intent.status === status);
++  }
++}
++
++export function createWalletIntent(input: {
++  id: string;
++  playerId: string;
++  idempotencyKey: string;
++  operation: WalletIntentOperation;
++  currency: string;
++  amountMinor: number;
++  requestHash: string;
++  now?: string;
++}): WalletIntent {
++  const now = input.now ?? new Date().toISOString();
++  return {
++    id: input.id,
++    playerId: input.playerId,
++    idempotencyKey: input.idempotencyKey,
++    operation: input.operation,
++    status: "NEW",
++    currency: input.currency,
++    amountMinor: input.amountMinor,
++    requestHash: input.requestHash,
++    providerOpId: null,
++    ledgerTxId: null,
++    resultJson: null,
++    errorCode: null,
++    version: 0,
++    createdAt: now,
++    updatedAt: now,
++  };
++}
+diff --git a/lib/wallet-mode.ts b/lib/wallet-mode.ts
+new file mode 100644
+index 0000000..24c4aca
+--- /dev/null
++++ b/lib/wallet-mode.ts
+@@ -0,0 +1,30 @@
++/**
++ * REAL / TEST wallet gates.
++ * REAL money paths fail closed unless explicitly allowed.
++ */
++
++export type WalletMode = "TEST" | "REAL";
++
++export class WalletModeGateError extends Error {
++  readonly failClosed = true as const;
++  constructor(message: string) {
++    super(message);
++    this.name = "WalletModeGateError";
++  }
++}
++
++export function assertTestWalletAllowed(mode: WalletMode): void {
++  if (mode !== "TEST") {
++    throw new WalletModeGateError("TEST wallet operations require WalletMode=TEST");
++  }
++}
++
++/** REAL adapter skeleton must call this; default deny. */
++export function assertRealWalletAllowed(mode: WalletMode, allowRealMoney: boolean): void {
++  if (mode !== "REAL") {
++    throw new WalletModeGateError("REAL wallet operations require WalletMode=REAL");
++  }
++  if (!allowRealMoney) {
++    throw new WalletModeGateError("REAL money is fail-closed (allowRealMoney=false)");
++  }
++}
+diff --git a/lib/wallet-provider.ts b/lib/wallet-provider.ts
+new file mode 100644
+index 0000000..860e94c
+--- /dev/null
++++ b/lib/wallet-provider.ts
+@@ -0,0 +1,236 @@
++/**
++ * Wallet Provider state machine (distinct from IdentityProvider).
++ *
++ * Happy path: NEW → PROCESSING → SUCCESS → SETTLED
++ * Failure: FAILED | UNKNOWN → RECOVER
++ * Must never double-debit for the same provider idempotency key.
++ */
++
++export const WALLET_PROVIDER_STATUSES = [
++  "NEW",
++  "PROCESSING",
++  "SUCCESS",
++  "SETTLED",
++  "FAILED",
++  "UNKNOWN",
++  "RECOVER",
++] as const;
++
++export type WalletProviderStatus = (typeof WALLET_PROVIDER_STATUSES)[number];
++
++export type WalletProviderOp = {
++  id: string;
++  intentId: string;
++  idempotencyKey: string;
++  status: WalletProviderStatus;
++  currency: string;
++  amountMinor: number;
++  direction: "DEBIT" | "CREDIT";
++  version: number;
++  createdAt: string;
++  updatedAt: string;
++};
++
++const ALLOWED: Record<WalletProviderStatus, readonly WalletProviderStatus[]> = {
++  NEW: ["PROCESSING", "FAILED"],
++  PROCESSING: ["SUCCESS", "FAILED", "UNKNOWN"],
++  SUCCESS: ["SETTLED"],
++  SETTLED: ["RECOVER"],
++  FAILED: ["RECOVER"],
++  UNKNOWN: ["RECOVER", "PROCESSING", "SUCCESS", "FAILED"],
++  RECOVER: ["SETTLED", "FAILED"],
++};
++
++export class IllegalProviderTransitionError extends Error {
++  readonly failClosed = true as const;
++  readonly from: WalletProviderStatus;
++  readonly to: WalletProviderStatus;
++  constructor(from: WalletProviderStatus, to: WalletProviderStatus) {
++    super(`Illegal wallet provider transition ${from} → ${to}`);
++    this.name = "IllegalProviderTransitionError";
++    this.from = from;
++    this.to = to;
++  }
++}
++
++export class ProviderCasError extends Error {
++  readonly failClosed = true as const;
++  constructor(message: string) {
++    super(message);
++    this.name = "ProviderCasError";
++  }
++}
++
++export function assertProviderTransition(
++  from: WalletProviderStatus,
++  to: WalletProviderStatus,
++): void {
++  if (!ALLOWED[from].includes(to)) {
++    throw new IllegalProviderTransitionError(from, to);
++  }
++}
++
++export type ProviderStore = {
++  getById(id: string): Promise<WalletProviderOp | null>;
++  getByIdempotency(idempotencyKey: string): Promise<WalletProviderOp | null>;
++  getByIntentId(intentId: string): Promise<WalletProviderOp | null>;
++  insert(op: WalletProviderOp): Promise<WalletProviderOp>;
++  transition(
++    id: string,
++    expectedVersion: number,
++    to: WalletProviderStatus,
++    updatedAt?: string,
++  ): Promise<WalletProviderOp>;
++  listByStatus(status: WalletProviderStatus): Promise<WalletProviderOp[]>;
++};
++
++export class MemoryProviderStore implements ProviderStore {
++  private byId = new Map<string, WalletProviderOp>();
++  private byKey = new Map<string, string>();
++  private byIntent = new Map<string, string>();
++
++  async getById(id: string): Promise<WalletProviderOp | null> {
++    return this.byId.get(id) ?? null;
++  }
++
++  async getByIdempotency(idempotencyKey: string): Promise<WalletProviderOp | null> {
++    const id = this.byKey.get(idempotencyKey);
++    return id ? (this.byId.get(id) ?? null) : null;
++  }
++
++  async getByIntentId(intentId: string): Promise<WalletProviderOp | null> {
++    const id = this.byIntent.get(intentId);
++    return id ? (this.byId.get(id) ?? null) : null;
++  }
++
++  async insert(op: WalletProviderOp): Promise<WalletProviderOp> {
++    if (this.byKey.has(op.idempotencyKey)) {
++      throw new ProviderCasError(`Duplicate provider idempotency ${op.idempotencyKey}`);
++    }
++    if (this.byIntent.has(op.intentId)) {
++      throw new ProviderCasError(`Provider op already exists for intent ${op.intentId}`);
++    }
++    this.byId.set(op.id, { ...op });
++    this.byKey.set(op.idempotencyKey, op.id);
++    this.byIntent.set(op.intentId, op.id);
++    return { ...op };
++  }
++
++  async transition(
++    id: string,
++    expectedVersion: number,
++    to: WalletProviderStatus,
++    updatedAt?: string,
++  ): Promise<WalletProviderOp> {
++    const current = this.byId.get(id);
++    if (!current) throw new ProviderCasError(`Provider op ${id} not found`);
++    if (current.version !== expectedVersion) {
++      throw new ProviderCasError(
++        `Provider CAS failed for ${id}: expected v${expectedVersion}, got v${current.version}`,
++      );
++    }
++    assertProviderTransition(current.status, to);
++    const next: WalletProviderOp = {
++      ...current,
++      status: to,
++      version: current.version + 1,
++      updatedAt: updatedAt ?? new Date().toISOString(),
++    };
++    this.byId.set(id, next);
++    return { ...next };
++  }
++
++  async listByStatus(status: WalletProviderStatus): Promise<WalletProviderOp[]> {
++    return [...this.byId.values()].filter((op) => op.status === status);
++  }
++}
++
++/** Local/test provider: completes synchronously without external I/O. */
++export class LocalTestWalletProvider {
++  private readonly store: ProviderStore;
++  constructor(store: ProviderStore) {
++    this.store = store;
++  }
++
++  async begin(input: {
++    id: string;
++    intentId: string;
++    idempotencyKey: string;
++    currency: string;
++    amountMinor: number;
++    direction: "DEBIT" | "CREDIT";
++    now?: string;
++  }): Promise<WalletProviderOp> {
++    const existing = await this.store.getByIdempotency(input.idempotencyKey);
++    if (existing) {
++      if (
++        existing.intentId !== input.intentId ||
++        existing.amountMinor !== input.amountMinor ||
++        existing.direction !== input.direction
++      ) {
++        throw new ProviderCasError("Provider idempotency conflict (replay protection)");
++      }
++      return existing;
++    }
++    const now = input.now ?? new Date().toISOString();
++    return this.store.insert({
++      id: input.id,
++      intentId: input.intentId,
++      idempotencyKey: input.idempotencyKey,
++      status: "NEW",
++      currency: input.currency,
++      amountMinor: input.amountMinor,
++      direction: input.direction,
++      version: 0,
++      createdAt: now,
++      updatedAt: now,
++    });
++  }
++
++  async settleLocal(opId: string): Promise<WalletProviderOp> {
++    let op = await this.store.getById(opId);
++    if (!op) throw new ProviderCasError(`Provider op ${opId} not found`);
++    if (op.status === "SETTLED") return op;
++    // Recovery: UNKNOWN may re-enter PROCESSING.
++    if (op.status === "UNKNOWN") {
++      op = await this.store.transition(op.id, op.version, "PROCESSING");
++    }
++    if (op.status === "RECOVER") {
++      op = await this.store.transition(op.id, op.version, "SETTLED");
++      return op;
++    }
++    if (op.status === "NEW") {
++      op = await this.store.transition(op.id, op.version, "PROCESSING");
++    }
++    if (op.status === "PROCESSING") {
++      op = await this.store.transition(op.id, op.version, "SUCCESS");
++    }
++    if (op.status === "SUCCESS") {
++      op = await this.store.transition(op.id, op.version, "SETTLED");
++    }
++    if (op.status !== "SETTLED") {
++      throw new ProviderCasError(`Cannot settle provider op in status ${op.status}`);
++    }
++    return op;
++  }
++
++  async markFailed(opId: string): Promise<WalletProviderOp> {
++    const op = await this.store.getById(opId);
++    if (!op) throw new ProviderCasError(`Provider op ${opId} not found`);
++    if (op.status === "FAILED" || op.status === "SETTLED") return op;
++    if (op.status === "NEW" || op.status === "PROCESSING") {
++      return this.store.transition(op.id, op.version, "FAILED");
++    }
++    throw new ProviderCasError(`Cannot mark failed from ${op.status}`);
++  }
++
++  async markUnknown(opId: string): Promise<WalletProviderOp> {
++    const op = await this.store.getById(opId);
++    if (!op) throw new ProviderCasError(`Provider op ${opId} not found`);
++    if (op.status === "UNKNOWN") return op;
++    if (op.status === "PROCESSING") {
++      return this.store.transition(op.id, op.version, "UNKNOWN");
++    }
++    throw new ProviderCasError(`Cannot mark unknown from ${op.status}`);
++  }
++}
+diff --git a/lib/wallet-recovery.ts b/lib/wallet-recovery.ts
+new file mode 100644
+index 0000000..968a2ef
+--- /dev/null
++++ b/lib/wallet-recovery.ts
+@@ -0,0 +1,102 @@
++/**
++ * Typed money recovery: Crash / Pending / Unknown / Timeout.
++ * Advances Intent + Provider + Ledger to a consistent terminal state.
++ */
++
++import type { MoneyService } from "./money-service.ts";
++import type { WalletIntent } from "./wallet-intent.ts";
++import { assertTestWalletAllowed } from "./wallet-mode.ts";
++
++export type RecoveryKind = "CRASH" | "PENDING" | "UNKNOWN" | "TIMEOUT";
++
++export type RecoveryResult = {
++  kind: RecoveryKind;
++  intent: WalletIntent;
++  action: "REPLAYED" | "MARKED_RECOVERED" | "RETRIED" | "NOOP";
++};
++
++export class WalletRecoveryService {
++  private readonly money: MoneyService;
++  constructor(money: MoneyService) {
++    this.money = money;
++  }
++
++  async recoverIntent(intentId: string, kind: RecoveryKind): Promise<RecoveryResult> {
++    assertTestWalletAllowed(this.money.mode);
++    let intent = await this.money.intents.getById(intentId);
++    if (!intent) {
++      throw new Error(`Intent ${intentId} not found`);
++    }
++
++    if (intent.status === "RECOVERED") {
++      return { kind, intent, action: "NOOP" };
++    }
++
++    if (intent.status === "SUCCESS") {
++      intent = await this.money.intents.transition(intent.id, intent.version, "RECOVERED");
++      return { kind, intent, action: "MARKED_RECOVERED" };
++    }
++
++    if (intent.status === "FAILED") {
++      intent = await this.money.intents.transition(intent.id, intent.version, "RECOVERED");
++      return { kind, intent, action: "MARKED_RECOVERED" };
++    }
++
++    // PENDING-like: NEW / LOCKED / PROCESSING
++    if (
++      intent.status === "NEW" ||
++      intent.status === "LOCKED" ||
++      intent.status === "PROCESSING"
++    ) {
++      if (kind === "TIMEOUT") {
++        intent = await this.money.markTimeout(intent.id);
++        return { kind, intent, action: "RETRIED" };
++      }
++      // Crash/pending: retry completion
++      const result = await this.money.retry(intent.id);
++      if (result.intent.status === "SUCCESS") {
++        const recovered = await this.money.intents.transition(
++          result.intent.id,
++          result.intent.version,
++          "RECOVERED",
++        );
++        return { kind, intent: recovered, action: "REPLAYED" };
++      }
++      return { kind, intent: result.intent, action: "RETRIED" };
++    }
++
++    // UNKNOWN
++    if (intent.status === "UNKNOWN") {
++      // If ledger already posted, finalize SUCCESS then RECOVERED (no double post — idempotent).
++      const ledgerKey = `ledger:${intent.idempotencyKey}`;
++      try {
++        const result = await this.money.retry(intent.id);
++        if (result.intent.status === "SUCCESS") {
++          const recovered = await this.money.intents.transition(
++            result.intent.id,
++            result.intent.version,
++            "RECOVERED",
++          );
++          return { kind, intent: recovered, action: "REPLAYED" };
++        }
++        return { kind, intent: result.intent, action: "RETRIED" };
++      } catch {
++        // Fail closed: keep UNKNOWN if retry cannot complete safely.
++        void ledgerKey;
++        intent = (await this.money.intents.getById(intentId))!;
++        return { kind, intent, action: "NOOP" };
++      }
++    }
++
++    return { kind, intent, action: "NOOP" };
++  }
++
++  async recoverAllUnknown(): Promise<RecoveryResult[]> {
++    const unknown = await this.money.intents.listByStatus("UNKNOWN");
++    const results: RecoveryResult[] = [];
++    for (const intent of unknown) {
++      results.push(await this.recoverIntent(intent.id, "UNKNOWN"));
++    }
++    return results;
++  }
++}
+diff --git a/tests/d1-migration.test.mjs b/tests/d1-migration.test.mjs
+index 8fa5017..3cad201 100644
+--- a/tests/d1-migration.test.mjs
++++ b/tests/d1-migration.test.mjs
+@@ -11,6 +11,7 @@ function migrationSqlFiles() {
+     "0001_steady_annihilus.sql",
+     "0002_session_currency.sql",
+     "0003_round_lease.sql",
++    "0004_wallet_money_layer.sql",
+   ].map((name) => ({
+     name,
+     sql: readFileSync(join(base, name), "utf8"),
+diff --git a/tests/db-helper.mjs b/tests/db-helper.mjs
+index e3ce19f..92ed49a 100644
+--- a/tests/db-helper.mjs
++++ b/tests/db-helper.mjs
+@@ -121,7 +121,49 @@ export function createTestDb() {
+        "created_at" text DEFAULT CURRENT_TIMESTAMP NOT NULL
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS "audit_events_event_hash_unique" ON "audit_events" ("event_hash");
+-     CREATE INDEX IF NOT EXISTS "audit_events_subject_created_idx" ON "audit_events" ("subject_type", "subject_id", "created_at");`;
++     CREATE INDEX IF NOT EXISTS "audit_events_subject_created_idx" ON "audit_events" ("subject_type", "subject_id", "created_at");
++     CREATE TABLE IF NOT EXISTS "ledger_balances" (
++       "account_id" text PRIMARY KEY NOT NULL,
++       "balance_minor" integer DEFAULT 0 NOT NULL,
++       "version" integer DEFAULT 0 NOT NULL,
++       "updated_at" text DEFAULT CURRENT_TIMESTAMP NOT NULL
++     );
++     CREATE TABLE IF NOT EXISTS "wallet_intents" (
++       "id" text PRIMARY KEY NOT NULL,
++       "player_id" text NOT NULL,
++       "idempotency_key" text NOT NULL,
++       "operation" text NOT NULL,
++       "status" text DEFAULT 'NEW' NOT NULL,
++       "currency" text NOT NULL,
++       "amount_minor" integer NOT NULL,
++       "request_hash" text NOT NULL,
++       "provider_op_id" text,
++       "ledger_tx_id" text,
++       "result_json" text,
++       "error_code" text,
++       "version" integer DEFAULT 0 NOT NULL,
++       "created_at" text DEFAULT CURRENT_TIMESTAMP NOT NULL,
++       "updated_at" text DEFAULT CURRENT_TIMESTAMP NOT NULL,
++       CONSTRAINT "wallet_intents_amount_nonnegative" CHECK("amount_minor" >= 0)
++     );
++     CREATE UNIQUE INDEX IF NOT EXISTS "wallet_intents_player_idempotency_unique" ON "wallet_intents" ("player_id", "idempotency_key");
++     CREATE INDEX IF NOT EXISTS "wallet_intents_status_idx" ON "wallet_intents" ("status");
++     CREATE TABLE IF NOT EXISTS "wallet_provider_ops" (
++       "id" text PRIMARY KEY NOT NULL,
++       "intent_id" text NOT NULL,
++       "idempotency_key" text NOT NULL,
++       "status" text DEFAULT 'NEW' NOT NULL,
++       "currency" text NOT NULL,
++       "amount_minor" integer NOT NULL,
++       "direction" text NOT NULL,
++       "version" integer DEFAULT 0 NOT NULL,
++       "created_at" text DEFAULT CURRENT_TIMESTAMP NOT NULL,
++       "updated_at" text DEFAULT CURRENT_TIMESTAMP NOT NULL,
++       CONSTRAINT "wallet_provider_ops_amount_nonnegative" CHECK("amount_minor" >= 0)
++     );
++     CREATE UNIQUE INDEX IF NOT EXISTS "wallet_provider_ops_idempotency_unique" ON "wallet_provider_ops" ("idempotency_key");
++     CREATE UNIQUE INDEX IF NOT EXISTS "wallet_provider_ops_intent_unique" ON "wallet_provider_ops" ("intent_id");
++     CREATE INDEX IF NOT EXISTS "wallet_provider_ops_status_idx" ON "wallet_provider_ops" ("status");`;
+
+   sqlite.exec(migrationSql);
+   return { sqlite, db };
+diff --git a/tests/migration.test.mjs b/tests/migration.test.mjs
+index 9393453..9ee6c3b 100644
+--- a/tests/migration.test.mjs
++++ b/tests/migration.test.mjs
+@@ -11,6 +11,7 @@ function migrationFiles() {
+     "0001_steady_annihilus.sql",
+     "0002_session_currency.sql",
+     "0003_round_lease.sql",
++    "0004_wallet_money_layer.sql",
+   ].map((name) => readFileSync(join(base, name), "utf8"));
+ }
+
+@@ -30,10 +31,11 @@ function applyMigration(sqlite, sqlText) {
+   }
+ }
+
+-test("drizzle meta snapshots exist for 0002/0003 and journal includes both", () => {
++test("drizzle meta snapshots exist for 0002/0003/0004 and journal includes them", () => {
+   const meta = join(process.cwd(), "drizzle", "meta");
+   assert.equal(existsSync(join(meta, "0002_snapshot.json")), true);
+   assert.equal(existsSync(join(meta, "0003_snapshot.json")), true);
++  assert.equal(existsSync(join(meta, "0004_snapshot.json")), true);
+   const journal = JSON.parse(readFileSync(join(meta, "_journal.json"), "utf8"));
+   assert.deepEqual(
+     journal.entries.map((e) => e.tag),
+@@ -42,6 +44,7 @@ test("drizzle meta snapshots exist for 0002/0003 and journal includes both", ()
+       "0001_steady_annihilus",
+       "0002_session_currency",
+       "0003_round_lease",
++      "0004_wallet_money_layer",
+     ],
+   );
+   const snap = JSON.parse(readFileSync(join(meta, "0002_snapshot.json"), "utf8"));
+@@ -92,9 +95,12 @@ test("all migrations apply cleanly to a fresh empty database", () => {
+       "game_rounds",
+       "game_sessions",
+       "ledger_accounts",
++      "ledger_balances",
+       "ledger_entries",
+       "ledger_transactions",
+       "players",
++      "wallet_intents",
++      "wallet_provider_ops",
+     ],
+   );
+
+diff --git a/tests/r1-m4-money.test.mjs b/tests/r1-m4-money.test.mjs
+new file mode 100644
+index 0000000..98c5d8e
+--- /dev/null
++++ b/tests/r1-m4-money.test.mjs
+@@ -0,0 +1,328 @@
++import assert from "node:assert/strict";
++import test from "node:test";
++import { readFileSync } from "node:fs";
++import { join } from "node:path";
++import Database from "better-sqlite3";
++import {
++  assertIntentTransition,
++  IllegalIntentTransitionError,
++  MemoryIntentStore,
++  createWalletIntent,
++} from "../lib/wallet-intent.ts";
++import {
++  assertProviderTransition,
++  IllegalProviderTransitionError,
++  LocalTestWalletProvider,
++  MemoryProviderStore,
++} from "../lib/wallet-provider.ts";
++import { MemoryLedger } from "../lib/db-ledger.ts";
++import { MoneyService } from "../lib/money-service.ts";
++import { WalletRecoveryService } from "../lib/wallet-recovery.ts";
++import { DbWalletAdapter, RealWalletAdapter } from "../lib/db-wallet-adapter.ts";
++import {
++  assertRealWalletAllowed,
++  assertTestWalletAllowed,
++  WalletModeGateError,
++} from "../lib/wallet-mode.ts";
++import {
++  MONEY_LAYER_MIGRATION_VERSION,
++  assertMigrationVersionAtLeast,
++} from "../lib/migration-version.ts";
++import {
++  DuplicateIdempotencyKeyError,
++  InsufficientBalanceError,
++  WalletResultUnknownError,
++} from "../lib/wallet-adapter.ts";
++
++test("intent state machine allows happy path and rejects illegal jumps", () => {
++  assertIntentTransition("NEW", "LOCKED");
++  assertIntentTransition("LOCKED", "PROCESSING");
++  assertIntentTransition("PROCESSING", "SUCCESS");
++  assertIntentTransition("SUCCESS", "RECOVERED");
++  assert.throws(
++    () => assertIntentTransition("NEW", "SUCCESS"),
++    (e) => e instanceof IllegalIntentTransitionError,
++  );
++});
++
++test("provider state machine settles without double debit on replay", async () => {
++  const store = new MemoryProviderStore();
++  const provider = new LocalTestWalletProvider(store);
++  const first = await provider.begin({
++    id: "op1",
++    intentId: "i1",
++    idempotencyKey: "pk1",
++    currency: "MMK",
++    amountMinor: 50,
++    direction: "DEBIT",
++  });
++  const replay = await provider.begin({
++    id: "op1-other",
++    intentId: "i1",
++    idempotencyKey: "pk1",
++    currency: "MMK",
++    amountMinor: 50,
++    direction: "DEBIT",
++  });
++  assert.equal(replay.id, first.id);
++  const settled = await provider.settleLocal(first.id);
++  assert.equal(settled.status, "SETTLED");
++  const again = await provider.settleLocal(first.id);
++  assert.equal(again.status, "SETTLED");
++  assert.equal(again.version, settled.version);
++  assert.throws(
++    () => assertProviderTransition("SETTLED", "PROCESSING"),
++    (e) => e instanceof IllegalProviderTransitionError,
++  );
++});
++
++test("ledger posts are balanced, CAS-safe, and idempotent", () => {
++  const ledger = new MemoryLedger();
++  const { available, clearing } = ledger.ensurePlayerAccounts("p1", "MMK");
++  ledger.forceCreditAvailableForTest("p1", "MMK", 1000);
++  const tx = ledger.post({
++    idempotencyKey: "L1",
++    kind: "GAME_BET",
++    requestHash: "h1",
++    postings: [
++      { accountId: available.id, amountMinor: -50, currency: "MMK", memo: "BET" },
++      { accountId: clearing.id, amountMinor: 50, currency: "MMK", memo: "BET" },
++    ],
++  });
++  const replay = ledger.post({
++    idempotencyKey: "L1",
++    kind: "GAME_BET",
++    requestHash: "h1",
++    postings: [
++      { accountId: available.id, amountMinor: -50, currency: "MMK", memo: "BET" },
++      { accountId: clearing.id, amountMinor: 50, currency: "MMK", memo: "BET" },
++    ],
++  });
++  assert.equal(replay.id, tx.id);
++  assert.equal(ledger.getBalance(available.id), 950);
++  assert.throws(() =>
++    ledger.post({
++      idempotencyKey: "L1",
++      kind: "GAME_BET",
++      requestHash: "different",
++      postings: [
++        { accountId: available.id, amountMinor: -50, currency: "MMK", memo: "BET" },
++        { accountId: clearing.id, amountMinor: 50, currency: "MMK", memo: "BET" },
++      ],
++    }),
++  );
++  const rev = ledger.reverse("L1", "L1-rev");
++  assert.equal(rev.kind, "REVERSAL");
++  assert.equal(ledger.getBalance(available.id), 1000);
++});
++
++test("money service debit/credit/settle are idempotent and no double spend", async () => {
++  const money = new MoneyService({ mode: "TEST" });
++  money.seed("p1", "MMK", 500);
++  const first = await money.settleRound({
++    idempotencyKey: "s1",
++    playerId: "p1",
++    currency: "MMK",
++    betMinor: 50,
++    winMinor: 20,
++    isFreeGame: false,
++  });
++  const second = await money.settleRound({
++    idempotencyKey: "s1",
++    playerId: "p1",
++    currency: "MMK",
++    betMinor: 50,
++    winMinor: 20,
++    isFreeGame: false,
++  });
++  assert.equal(second.playerBalanceAfterMinor, first.playerBalanceAfterMinor);
++  assert.equal(await money.getAvailableBalance("p1", "MMK"), 470);
++  await assert.rejects(
++    () =>
++      money.settleRound({
++        idempotencyKey: "s1",
++        playerId: "p1",
++        currency: "MMK",
++        betMinor: 99,
++        winMinor: 0,
++        isFreeGame: false,
++      }),
++    (e) => e instanceof DuplicateIdempotencyKeyError,
++  );
++});
++
++test("rollback reverses ledger once", async () => {
++  const money = new MoneyService({ mode: "TEST" });
++  money.seed("p1", "MMK", 200);
++  await money.debit({
++    playerId: "p1",
++    currency: "MMK",
++    amountMinor: 40,
++    idempotencyKey: "d1",
++  });
++  assert.equal(await money.getAvailableBalance("p1", "MMK"), 160);
++  await money.rollback({
++    playerId: "p1",
++    originalIdempotencyKey: "d1",
++    rollbackIdempotencyKey: "r1",
++  });
++  assert.equal(await money.getAvailableBalance("p1", "MMK"), 200);
++  await money.rollback({
++    playerId: "p1",
++    originalIdempotencyKey: "d1",
++    rollbackIdempotencyKey: "r1",
++  });
++  assert.equal(await money.getAvailableBalance("p1", "MMK"), 200);
++});
++
++test("timeout/unknown recovery does not double post", async () => {
++  const money = new MoneyService({ mode: "TEST" });
++  money.seed("p1", "MMK", 300);
++  money.forceUnknownAfterProcessing = true;
++  await assert.rejects(
++    () =>
++      money.settleRound({
++        idempotencyKey: "u1",
++        playerId: "p1",
++        currency: "MMK",
++        betMinor: 30,
++        winMinor: 0,
++        isFreeGame: false,
++      }),
++    (e) => e instanceof WalletResultUnknownError,
++  );
++  money.forceUnknownAfterProcessing = false;
++  const intent = await money.intents.getByIdempotency("p1", "u1");
++  assert.equal(intent.status, "UNKNOWN");
++  const recovery = new WalletRecoveryService(money);
++  const result = await recovery.recoverIntent(intent.id, "UNKNOWN");
++  assert.ok(["REPLAYED", "RETRIED", "MARKED_RECOVERED"].includes(result.action));
++  const bal = await money.getAvailableBalance("p1", "MMK");
++  assert.ok(bal === 270 || bal === 300);
++  // Second recovery must not double-debit
++  await recovery.recoverIntent(intent.id, "UNKNOWN");
++  assert.equal(await money.getAvailableBalance("p1", "MMK"), bal);
++});
++
++test("REAL gate fail-closed; TEST gate required for money service", () => {
++  assert.throws(
++    () => assertRealWalletAllowed("REAL", false),
++    (e) => e instanceof WalletModeGateError,
++  );
++  assert.throws(
++    () => assertTestWalletAllowed("REAL"),
++    (e) => e instanceof WalletModeGateError,
++  );
++  const real = new RealWalletAdapter(false);
++  assert.throws(() =>
++    real.settleRound({
++      idempotencyKey: "x",
++      playerId: "p",
++      currency: "MMK",
++      betMinor: 1,
++      winMinor: 0,
++      isFreeGame: false,
++    }),
++  );
++});
++
++test("DbWalletAdapter settleRound matches MoneyService", async () => {
++  const money = new MoneyService({ mode: "TEST" });
++  const adapter = new DbWalletAdapter(money);
++  adapter.creditAvailable("p1", "MMK", 100);
++  const settled = await adapter.settleRound({
++    idempotencyKey: "a1",
++    playerId: "p1",
++    currency: "MMK",
++    betMinor: 10,
++    winMinor: 5,
++    isFreeGame: false,
++  });
++  assert.equal(settled.playerBalanceAfterMinor, 95);
++  assert.equal(await adapter.getAvailableBalance("p1", "MMK"), 95);
++});
++
++test("insufficient balance fails closed before provider settle", async () => {
++  const money = new MoneyService({ mode: "TEST" });
++  money.seed("p1", "MMK", 10);
++  await assert.rejects(
++    () =>
++      money.settleRound({
++        idempotencyKey: "poor",
++        playerId: "p1",
++        currency: "MMK",
++        betMinor: 50,
++        winMinor: 0,
++        isFreeGame: false,
++      }),
++    (e) => e instanceof InsufficientBalanceError,
++  );
++  const intent = await money.intents.getByIdempotency("p1", "poor");
++  assert.equal(intent.status, "FAILED");
++  assert.equal(await money.getAvailableBalance("p1", "MMK"), 10);
++});
++
++test("migration 0004 forward + down apply on sqlite", () => {
++  const sqlite = new Database(":memory:");
++  const base = join(process.cwd(), "drizzle");
++  const forwardFiles = [
++    "0000_early_power_pack.sql",
++    "0001_steady_annihilus.sql",
++    "0002_session_currency.sql",
++    "0003_round_lease.sql",
++    "0004_wallet_money_layer.sql",
++  ];
++  const execSql = (text) => {
++    for (const part of text.split(/-->\s*statement-breakpoint\s*/g)) {
++      const sql = part
++        .split("\n")
++        .filter((line) => !/^\s*--/.test(line))
++        .join("\n")
++        .trim();
++      if (sql) sqlite.exec(sql);
++    }
++  };
++  for (const name of forwardFiles) {
++    execSql(readFileSync(join(base, name), "utf8"));
++  }
++  const tables = sqlite
++    .prepare(`SELECT name FROM sqlite_master WHERE type='table' ORDER BY name`)
++    .all()
++    .map((r) => r.name);
++  assert.ok(tables.includes("wallet_intents"));
++  assert.ok(tables.includes("wallet_provider_ops"));
++  assert.ok(tables.includes("ledger_balances"));
++  execSql(readFileSync(join(base, "down", "0004_wallet_money_layer.sql"), "utf8"));
++  const after = sqlite
++    .prepare(`SELECT name FROM sqlite_master WHERE type='table' ORDER BY name`)
++    .all()
++    .map((r) => r.name);
++  assert.equal(after.includes("wallet_intents"), false);
++  assert.equal(after.includes("ledger_balances"), false);
++  // re-apply 0004
++  execSql(readFileSync(join(base, "0004_wallet_money_layer.sql"), "utf8"));
++  assert.ok(
++    sqlite
++      .prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='wallet_intents'`)
++      .get(),
++  );
++  assertMigrationVersionAtLeast(MONEY_LAYER_MIGRATION_VERSION);
++  assert.throws(() => assertMigrationVersionAtLeast(3));
++});
++
++test("intent CAS rejects stale version", async () => {
++  const store = new MemoryIntentStore();
++  const intent = await store.insert(
++    createWalletIntent({
++      id: "i1",
++      playerId: "p",
++      idempotencyKey: "k",
++      operation: "DEBIT",
++      currency: "MMK",
++      amountMinor: 1,
++      requestHash: "h",
++    }),
++  );
++  await store.transition(intent.id, 0, "LOCKED");
++  await assert.rejects(() => store.transition(intent.id, 0, "PROCESSING"));
++});

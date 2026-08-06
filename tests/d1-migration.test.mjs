@@ -11,6 +11,7 @@ function migrationSqlFiles() {
     "0001_steady_annihilus.sql",
     "0002_session_currency.sql",
     "0003_round_lease.sql",
+    "0004_wallet_money_layer.sql",
   ].map((name) => ({
     name,
     sql: readFileSync(join(base, name), "utf8"),
