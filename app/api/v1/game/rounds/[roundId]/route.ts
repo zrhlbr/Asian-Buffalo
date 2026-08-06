@@ -1,11 +1,16 @@
 import { getDb } from "../../../../../../db/index.ts";
-import { handleGetRound } from "../../../../../../lib/api-handlers.ts";
+import {
+  createProductionIdentityProvider,
+  handleGetRound,
+} from "../../../../../../lib/api-handlers.ts";
+
+const identityProvider = createProductionIdentityProvider();
 
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ roundId: string }> },
 ) {
   const db = await getDb();
   const { roundId } = await params;
-  return handleGetRound(db, roundId);
+  return handleGetRound(db, { identityProvider, request }, roundId);
 }

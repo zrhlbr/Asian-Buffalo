@@ -14,10 +14,23 @@ import { INITIAL_MATH_VERSION } from "./math-config.ts";
 
 export type CreateSessionInput = {
   playerId: string;
-  currency: string;
   mathVersionId: string;
   expiresInSeconds?: number;
 };
+
+export type PlayerStatus = "ACTIVE" | "LOCKED" | "CLOSED";
+
+/** Trusted player row fields used by protected handlers. */
+export type TrustedPlayerContext = {
+  playerId: string;
+  currency: string;
+  status: PlayerStatus;
+};
+
+export type AuthorizedRoundResult =
+  | { kind: "not_found" }
+  | { kind: "integrity_error" }
+  | { kind: "ok"; result: SpinResult };
 
 export type DbSession = {
   id: string;
@@ -35,6 +48,25 @@ export function generateId(prefix: string): string {
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
   return `${prefix}_${random}`;
+}
+
+/**
+ * Load trusted player context from the players table.
+ * Returns undefined when the player row is missing.
+ */
+export async function getTrustedPlayerContext(
+  db: DrizzleD1Database<typeof schema>,
+  playerId: string,
+): Promise<TrustedPlayerContext | undefined> {
+  const row = await db.query.players.findFirst({
+    where: eq(schema.players.id, playerId),
+  });
+  if (!row) return undefined;
+  return {
+    playerId: row.id,
+    currency: row.currency,
+    status: row.status as PlayerStatus,
+  };
 }
 
 export async function createSession(
@@ -97,15 +129,60 @@ export async function saveRound(
   });
 }
 
-export async function getRound(
+/**
+ * Authorize round access using database columns only:
+ *   WHERE id = roundId AND player_id = authenticatedPlayerId
+ * outcome_json is parsed only after that authorization succeeds.
+ */
+export async function getAuthorizedRound(
   db: DrizzleD1Database<typeof schema>,
   roundId: string,
-): Promise<SpinResult | undefined> {
+  authenticatedPlayerId: string,
+): Promise<AuthorizedRoundResult> {
   const row = await db.query.gameRounds.findFirst({
-    where: eq(schema.gameRounds.id, roundId),
+    where: and(
+      eq(schema.gameRounds.id, roundId),
+      eq(schema.gameRounds.playerId, authenticatedPlayerId),
+    ),
   });
-  if (!row || !row.outcomeJson) return undefined;
-  return JSON.parse(row.outcomeJson) as SpinResult;
+  if (!row || row.outcomeJson == null) {
+    return { kind: "not_found" };
+  }
+
+  let parsedUnknown: unknown;
+  try {
+    parsedUnknown = JSON.parse(row.outcomeJson) as unknown;
+  } catch {
+    console.error("round_outcome_integrity_error", {
+      roundId,
+      reason: "outcome_json_parse_failed",
+    });
+    return { kind: "integrity_error" };
+  }
+
+  if (
+    parsedUnknown === null ||
+    typeof parsedUnknown !== "object" ||
+    Array.isArray(parsedUnknown) ||
+    typeof (parsedUnknown as { playerId?: unknown }).playerId !== "string"
+  ) {
+    console.error("round_outcome_integrity_error", {
+      roundId,
+      reason: "outcome_json_invalid_shape",
+    });
+    return { kind: "integrity_error" };
+  }
+
+  const parsed = parsedUnknown as SpinResult;
+  if (parsed.playerId !== row.playerId) {
+    console.error("round_outcome_integrity_error", {
+      roundId,
+      reason: "outcome_player_mismatch",
+    });
+    return { kind: "integrity_error" };
+  }
+
+  return { kind: "ok", result: parsed };
 }
 
 export async function getRoundByIdempotency(
