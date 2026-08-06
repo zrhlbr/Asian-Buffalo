@@ -1,0 +1,800 @@
+diff --git a/lib/api-handlers.ts b/lib/api-handlers.ts
+index 7e75df2..ea65a38 100644
+--- a/lib/api-handlers.ts
++++ b/lib/api-handlers.ts
+@@ -11,8 +11,11 @@ import * as schema from "../db/schema.ts";
+ import {
+   createSession,
+   getAuthorizedRound,
++  getSessionForPlayer,
+   getTrustedPlayerContext,
+-  seedInitialMathVersion,
++  listMathVersionRows,
++  loadExecutableMathVersionById,
++  seedProductionFrozenMathVersion,
+ } from "./db-game.ts";
+ import { systemClock, type Clock } from "./clock.ts";
+ import {
+@@ -21,8 +24,13 @@ import {
+   IdentityUnavailableError,
+   type IdentityProvider,
+ } from "./identity.ts";
+-import { INITIAL_MATH_VERSION, getMathVersionById } from "./math-config.ts";
+ import type { ExecutableMathVersion } from "./math-version-loader.ts";
++import {
++  MathVersionIntegrityError,
++  MathVersionUnavailableError,
++  MathVersionValidationError,
++  selectMathVersion,
++} from "./math-version-loader.ts";
+ import {
+   validateCreateSessionRequest,
+   validateSpinRequest,
+@@ -157,27 +165,36 @@ export async function handleCreateSession(
+     throw error;
+   }
+ 
+-  const mathVersionId = INITIAL_MATH_VERSION.version;
+-  if (!getMathVersionById(mathVersionId)) {
+-    return apiServiceUnavailable();
++  try {
++    await seedProductionFrozenMathVersion(db);
++    const selected = await selectMathVersion(await listMathVersionRows(db));
++    const session = await createSession(
++      db,
++      {
++        playerId,
++        mathVersionId: selected.version,
++        currency,
++      },
++      clock,
++    );
++
++    return Response.json({
++      sessionId: session.id,
++      mathVersionId: selected.version,
++      expiresAt: session.expiresAt,
++    });
++  } catch (error) {
++    if (error instanceof MathVersionUnavailableError) {
++      return apiError("MATH_VERSION_UNAVAILABLE", error.message, 503);
++    }
++    if (
++      error instanceof MathVersionValidationError ||
++      error instanceof MathVersionIntegrityError
++    ) {
++      return apiError("MATH_VERSION_UNAVAILABLE", error.message, 503);
++    }
++    throw error;
+   }
+-
+-  await seedInitialMathVersion(db);
+-  const session = await createSession(
+-    db,
+-    {
+-      playerId,
+-      mathVersionId,
+-      currency,
+-    },
+-    clock,
+-  );
+-
+-  return Response.json({
+-    sessionId: session.id,
+-    mathVersionId,
+-    expiresAt: session.expiresAt,
+-  });
+ }
+ 
+ export async function handleSpin(
+@@ -204,13 +221,34 @@ export async function handleSpin(
+   const canonicalPayload = canonicalizeSpinRequest(publicSpin);
+   const requestHash = await hashSpinRequest(publicSpin);
+ 
+-  await seedInitialMathVersion(db);
++  let mathConfig = services.mathConfig;
++  if (!mathConfig) {
++    try {
++      await seedProductionFrozenMathVersion(db);
++      const session = await getSessionForPlayer(db, publicSpin.sessionId, playerId);
++      if (!session) {
++        return apiError("SESSION_NOT_FOUND", "Session not found", 404);
++      }
++      mathConfig = await loadExecutableMathVersionById(db, session.mathVersionId);
++    } catch (error) {
++      if (error instanceof MathVersionUnavailableError) {
++        return apiError("MATH_VERSION_UNAVAILABLE", error.message, 503);
++      }
++      if (
++        error instanceof MathVersionValidationError ||
++        error instanceof MathVersionIntegrityError
++      ) {
++        return apiError("MATH_VERSION_UNAVAILABLE", error.message, 503);
++      }
++      throw error;
++    }
++  }
+ 
+   const orchServices: SpinOrchestratorServices = {
+     walletAdapter: services.walletAdapter,
+     roundStore: services.roundStore,
+     allowRealMoney: services.allowRealMoney,
+-    mathConfig: services.mathConfig,
++    mathConfig,
+     clock: services.clock,
+     testFixedGrid: services.testFixedGrid,
+     faults: services.faults,
+@@ -288,12 +326,21 @@ export async function handleGetRound(
+ }
+ 
+ export async function handleGetRules(
+-  _db: DrizzleD1Database<typeof schema>,
++  db: DrizzleD1Database<typeof schema>,
+   mathVersionId: string,
+ ): Promise<Response> {
+-  const config = getMathVersionById(mathVersionId);
+-  if (!config) {
+-    return apiError("RULES_NOT_FOUND", `Math version ${mathVersionId} not found`);
++  try {
++    await seedProductionFrozenMathVersion(db);
++    const config = await loadExecutableMathVersionById(db, mathVersionId);
++    return Response.json(config);
++  } catch (error) {
++    if (
++      error instanceof MathVersionUnavailableError ||
++      error instanceof MathVersionValidationError ||
++      error instanceof MathVersionIntegrityError
++    ) {
++      return apiError("RULES_NOT_FOUND", `Math version ${mathVersionId} not found`);
++    }
++    throw error;
+   }
+-  return Response.json(config);
+ }
+diff --git a/lib/db-game.ts b/lib/db-game.ts
+index 6d6e98d..0adbf06 100644
+--- a/lib/db-game.ts
++++ b/lib/db-game.ts
+@@ -12,7 +12,16 @@ import * as schema from "../db/schema.ts";
+ import type { Clock } from "./clock.ts";
+ import { systemClock } from "./clock.ts";
+ import type { SpinResult } from "./round-service.ts";
+-import { INITIAL_MATH_VERSION } from "./math-config.ts";
++import {
++  buildProductionFrozenMathVersion,
++  hashMathVersionConfig,
++} from "./math-config.ts";
++import {
++  MathVersionUnavailableError,
++  parseAndValidateMathVersion,
++  type ExecutableMathVersion,
++  type MathVersionRow,
++} from "./math-version-loader.ts";
+ 
+ export type CreateSessionInput = {
+   playerId: string;
+@@ -394,20 +403,93 @@ async function sha256Hex(input: string): Promise<string> {
+     .join("");
+ }
+ 
+-export async function seedInitialMathVersion(
++const PRODUCTION_FROZEN_ACTIVATED_AT = "2024-01-01T00:00:00.000Z";
++
++function toMathVersionRow(
++  row: typeof schema.gameMathVersions.$inferSelect,
++): MathVersionRow {
++  return {
++    id: row.id,
++    sha256: row.sha256,
++    status: row.status,
++    configJson: row.configJson,
++    activatedAt: row.activatedAt,
++  };
++}
++
++/** List persisted math-version rows for selectMathVersion. */
++export async function listMathVersionRows(
+   db: DrizzleD1Database<typeof schema>,
+-): Promise<void> {
+-  const { hashMathVersionConfig } = await import("./math-config.ts");
+-  const config = INITIAL_MATH_VERSION;
++): Promise<MathVersionRow[]> {
++  const rows = await db.query.gameMathVersions.findMany();
++  return rows.map(toMathVersionRow);
++}
++
++export async function getMathVersionRow(
++  db: DrizzleD1Database<typeof schema>,
++  versionId: string,
++): Promise<MathVersionRow | undefined> {
++  const row = await db.query.gameMathVersions.findFirst({
++    where: eq(schema.gameMathVersions.id, versionId),
++  });
++  return row ? toMathVersionRow(row) : undefined;
++}
++
++/**
++ * Load a loader-issued ExecutableMathVersion by persisted id.
++ * Fail closed when the row is missing or not executable.
++ */
++export async function loadExecutableMathVersionById(
++  db: DrizzleD1Database<typeof schema>,
++  versionId: string,
++): Promise<ExecutableMathVersion> {
++  const row = await getMathVersionRow(db, versionId);
++  if (!row) {
++    throw new MathVersionUnavailableError(`math version ${versionId} not found`);
++  }
++  return parseAndValidateMathVersion(row);
++}
++
++/**
++ * Persist the R1-M3 production FROZEN math version.
++ * Replaces a stale DRAFT row with the same id so local/test DBs converge on
++ * the executable configuration. Does not enable real money.
++ */
++export async function seedProductionFrozenMathVersion(
++  db: DrizzleD1Database<typeof schema>,
++): Promise<ExecutableMathVersion> {
++  const config = buildProductionFrozenMathVersion({ version: "ab-math-1.0.0" });
++  const sha256 = await hashMathVersionConfig(config);
+   const existing = await db.query.gameMathVersions.findFirst({
+     where: eq(schema.gameMathVersions.id, config.version),
+   });
+-  if (existing) return;
+ 
+-  await db.insert(schema.gameMathVersions).values({
+-    id: config.version,
+-    sha256: await hashMathVersionConfig(config),
+-    status: config.status,
+-    configJson: JSON.stringify(config),
+-  });
++  if (!existing) {
++    await db.insert(schema.gameMathVersions).values({
++      id: config.version,
++      sha256,
++      status: "FROZEN",
++      configJson: JSON.stringify(config),
++      activatedAt: PRODUCTION_FROZEN_ACTIVATED_AT,
++    });
++  } else if (existing.status !== "FROZEN" || existing.sha256 !== sha256) {
++    await db
++      .update(schema.gameMathVersions)
++      .set({
++        sha256,
++        status: "FROZEN",
++        configJson: JSON.stringify(config),
++        activatedAt: existing.activatedAt ?? PRODUCTION_FROZEN_ACTIVATED_AT,
++      })
++      .where(eq(schema.gameMathVersions.id, config.version));
++  }
++
++  return loadExecutableMathVersionById(db, config.version);
++}
++
++/** @deprecated Use seedProductionFrozenMathVersion — kept for call-site migration. */
++export async function seedInitialMathVersion(
++  db: DrizzleD1Database<typeof schema>,
++): Promise<void> {
++  await seedProductionFrozenMathVersion(db);
+ }
+diff --git a/lib/math-config.ts b/lib/math-config.ts
+index c329dd2..59e0931 100644
+--- a/lib/math-config.ts
++++ b/lib/math-config.ts
+@@ -259,7 +259,52 @@ export const INITIAL_MATH_VERSION = buildInitialMathVersion({
+   status: "DRAFT",
+ });
+ 
++/**
++ * Production FROZEN math version for R1-M3.
++ *
++ * This is the persisted/executable configuration used by session creation and
++ * spin orchestration. realMoneyEnabled remains false — M3 does not enable
++ * real-money settlement.
++ */
++export function buildProductionFrozenMathVersion(overrides?: {
++  version?: string;
++  gameVersion?: string;
++  maxPayoutMultiplier?: number;
++}): MathVersionConfig {
++  const version = overrides?.version ?? "ab-math-1.0.0";
++  const base = buildInitialMathVersion({ version, status: "FROZEN" });
++
++  return {
++    ...base,
++    gameVersion: overrides?.gameVersion ?? base.gameVersion,
++    disclosure: {
++      status: "FROZEN",
++      targetRtp: 96.5,
++      originalRtpKnown: false,
++      realMoneyEnabled: false,
++      provisionalNotes: ["R1-M3 production FROZEN math version. Real-money settlement remains disabled."],
++    },
++    reelWeights: {
++      kind: "per-reel",
++      reels: base.reelWeights.reels,
++      note: "R1-M3 FROZEN per-reel weights. Not a real-money enablement.",
++    },
++    maxPayout: {
++      kind: "fixed",
++      totalBetMultiplier: overrides?.maxPayoutMultiplier ?? 2500,
++      note: "R1-M3 FROZEN max payout cap.",
++    },
++  };
++}
++
++export const PRODUCTION_FROZEN_MATH_VERSION = buildProductionFrozenMathVersion({
++  version: "ab-math-1.0.0",
++});
++
+ export function getMathVersionById(versionId: string): MathVersionConfig | undefined {
++  if (versionId === PRODUCTION_FROZEN_MATH_VERSION.version) {
++    return PRODUCTION_FROZEN_MATH_VERSION;
++  }
+   if (versionId === INITIAL_MATH_VERSION.version) return INITIAL_MATH_VERSION;
+   return undefined;
+ }
+diff --git a/tests/api-handlers.test.mjs b/tests/api-handlers.test.mjs
+index 24f9319..6b01ee2 100644
+--- a/tests/api-handlers.test.mjs
++++ b/tests/api-handlers.test.mjs
+@@ -214,7 +214,8 @@ test("get rules returns math config", async () => {
+   assert.equal(response.status, 200);
+   const body = await parseJson(response);
+   assert.equal(body.version, "ab-math-1.0.0");
+-  assert.equal(body.status, "DRAFT");
++  assert.equal(body.status, "FROZEN");
++  assert.equal(body.disclosure.realMoneyEnabled, false);
+ });
+ 
+ test("get rules returns 404 for unknown version", async () => {
+diff --git a/tests/d1-spin-atomic.test.mjs b/tests/d1-spin-atomic.test.mjs
+index d1cf364..3ec5be6 100644
+--- a/tests/d1-spin-atomic.test.mjs
++++ b/tests/d1-spin-atomic.test.mjs
+@@ -16,7 +16,7 @@ import {
+ } from "../lib/spin-orchestrator.ts";
+ import { detectSqliteDriver } from "../lib/db-atomic.ts";
+ import {
+-  INITIAL_MATH_VERSION,
++  PRODUCTION_FROZEN_MATH_VERSION,
+   hashMathVersionConfig,
+ } from "../lib/math-config.ts";
+ 
+@@ -69,7 +69,8 @@ async function seedGame(db, opts = {}) {
+   const playerId = opts.playerId ?? "p1";
+   const sessionId = opts.sessionId ?? "sess_d1_1";
+   const freeGames = opts.freeGames ?? 0;
+-  const sha = await hashMathVersionConfig(INITIAL_MATH_VERSION);
++  const config = PRODUCTION_FROZEN_MATH_VERSION;
++  const sha = await hashMathVersionConfig(config);
+   await db.insert(schema.players).values({
+     id: playerId,
+     walletAdapterRef: `wallet_${playerId}`,
+@@ -77,15 +78,16 @@ async function seedGame(db, opts = {}) {
+     status: "ACTIVE",
+   });
+   await db.insert(schema.gameMathVersions).values({
+-    id: INITIAL_MATH_VERSION.version,
++    id: config.version,
+     sha256: sha,
+-    status: "DRAFT",
+-    configJson: JSON.stringify(INITIAL_MATH_VERSION),
++    status: "FROZEN",
++    configJson: JSON.stringify(config),
++    activatedAt: "2024-01-01T00:00:00.000Z",
+   });
+   await db.insert(schema.gameSessions).values({
+     id: sessionId,
+     playerId,
+-    mathVersionId: INITIAL_MATH_VERSION.version,
++    mathVersionId: config.version,
+     status: "OPEN",
+     currency: "USD",
+     freeGamesRemaining: freeGames,
+diff --git a/tests/helpers/frozen-math-version.mjs b/tests/helpers/frozen-math-version.mjs
+index 1e5b1b9..19527d0 100644
+--- a/tests/helpers/frozen-math-version.mjs
++++ b/tests/helpers/frozen-math-version.mjs
+@@ -6,38 +6,18 @@
+  * carry the loader brand and are deep-frozen after SHA-256 verification.
+  */
+ 
+-import { buildInitialMathVersion, hashMathVersionConfig } from "../../lib/math-config.ts";
++import {
++  buildProductionFrozenMathVersion,
++  hashMathVersionConfig,
++} from "../../lib/math-config.ts";
+ import { parseAndValidateMathVersion } from "../../lib/math-version-loader.ts";
+ 
+ /**
+  * Build a mutable plain FROZEN candidate config for tests.
+- * This is not trusted for the production engine until loaded.
++ * Delegates to the production FROZEN builder so hashes match DB seeds.
+  */
+ export function buildFrozenMathVersion(overrides = {}) {
+-  const version = overrides.version ?? "ab-math-frozen-1.0.0";
+-  const base = buildInitialMathVersion({ version, status: "FROZEN" });
+-
+-  return {
+-    ...base,
+-    gameVersion: overrides.gameVersion ?? base.gameVersion,
+-    disclosure: {
+-      status: "FROZEN",
+-      targetRtp: 96.5,
+-      originalRtpKnown: false,
+-      realMoneyEnabled: false,
+-      provisionalNotes: ["Frozen math version for R1-M3-PRE testing."],
+-    },
+-    reelWeights: {
+-      kind: "per-reel",
+-      reels: base.reelWeights.reels,
+-      note: "Frozen per-reel weights for R1-M3-PRE testing.",
+-    },
+-    maxPayout: {
+-      kind: "fixed",
+-      totalBetMultiplier: overrides.maxPayoutMultiplier ?? 2500,
+-      note: "Frozen max payout for R1-M3-PRE testing.",
+-    },
+-  };
++  return buildProductionFrozenMathVersion(overrides);
+ }
+ 
+ /**
+@@ -51,8 +31,6 @@ export async function loadExecutableMathVersion(configOrOverrides = {}) {
+       ? structuredClone(configOrOverrides)
+       : buildFrozenMathVersion(configOrOverrides);
+ 
+-  // Ensure structural fields required for executability remain consistent when
+-  // callers mutate paylines / rooms on a cloned plain config before loading.
+   if (config.rooms) {
+     config.rooms = {
+       ...config.rooms,
+diff --git a/tests/math-version-consistency.test.mjs b/tests/math-version-consistency.test.mjs
+index ab00d9d..3c10350 100644
+--- a/tests/math-version-consistency.test.mjs
++++ b/tests/math-version-consistency.test.mjs
+@@ -159,11 +159,35 @@ test("session version mismatch rejects before claim and does not call wallet", a
+ test("DRAFT session must not execute with a different FROZEN executable", async () => {
+   const { db } = createTestDb();
+   await seedPlayer(db);
+-  const session = await openSession(db);
+   assert.equal(INITIAL_MATH_VERSION.status, "DRAFT");
+-  assert.equal(session.mathVersionId, INITIAL_MATH_VERSION.version);
++
++  // Persist a distinct DRAFT row and point a session at it (bypass selectMathVersion).
++  const draftId = "ab-math-draft-only";
++  const draft = {
++    ...INITIAL_MATH_VERSION,
++    version: draftId,
++    status: "DRAFT",
++  };
++  const { hashMathVersionConfig } = await import("../lib/math-config.ts");
++  await db.insert(schema.gameMathVersions).values({
++    id: draftId,
++    sha256: await hashMathVersionConfig(draft),
++    status: "DRAFT",
++    configJson: JSON.stringify(draft),
++    activatedAt: null,
++  });
++  await db.insert(schema.gameSessions).values({
++    id: "sess_draft_only",
++    playerId: "p1",
++    mathVersionId: draftId,
++    status: "OPEN",
++    currency: "USD",
++    freeGamesRemaining: 0,
++    expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
++  });
++
+   assert.equal(otherExecutableMath.status, "FROZEN");
+-  assert.notEqual(otherExecutableMath.version, session.mathVersionId);
++  assert.notEqual(otherExecutableMath.version, draftId);
+ 
+   const { wallet, settleCalls } = countingWallet();
+   const response = await handleSpin(
+@@ -171,7 +195,7 @@ test("DRAFT session must not execute with a different FROZEN executable", async
+     makeAuth(),
+     makeServices(wallet, { mathConfig: otherExecutableMath }),
+     {
+-      sessionId: session.sessionId,
++      sessionId: "sess_draft_only",
+       roomBase: 50,
+       betLevel: 1,
+       betMultiplier: 1,
+diff --git a/tests/r1-m2-v5-regression.test.mjs b/tests/r1-m2-v5-regression.test.mjs
+index 62349c3..4310434 100644
+--- a/tests/r1-m2-v5-regression.test.mjs
++++ b/tests/r1-m2-v5-regression.test.mjs
+@@ -9,7 +9,10 @@ import {
+   renewLease,
+   takeOverStalePending,
+ } from "../lib/spin-orchestrator.ts";
+-import { INITIAL_MATH_VERSION, hashMathVersionConfig } from "../lib/math-config.ts";
++import {
++  PRODUCTION_FROZEN_MATH_VERSION,
++  hashMathVersionConfig,
++} from "../lib/math-config.ts";
+ import { canonicalizeSpinRequest, hashSpinRequest } from "../lib/request-hash.ts";
+ import { TestRoundStore } from "../lib/round-store.ts";
+ import { TestWalletAdapter } from "../lib/wallet-adapter.ts";
+@@ -17,7 +20,8 @@ import { createTestDb } from "./db-helper.mjs";
+ import { testExecutableMath } from "./helpers/test-executable-math.mjs";
+ 
+ async function seed(db, freeGames = 0) {
+-  const sha = await hashMathVersionConfig(INITIAL_MATH_VERSION);
++  const config = PRODUCTION_FROZEN_MATH_VERSION;
++  const sha = await hashMathVersionConfig(config);
+   await db.insert(schema.players).values({
+     id: "v5_player",
+     walletAdapterRef: "wallet_v5_player",
+@@ -25,15 +29,16 @@ async function seed(db, freeGames = 0) {
+     status: "ACTIVE",
+   });
+   await db.insert(schema.gameMathVersions).values({
+-    id: INITIAL_MATH_VERSION.version,
++    id: config.version,
+     sha256: sha,
+-    status: "DRAFT",
+-    configJson: JSON.stringify(INITIAL_MATH_VERSION),
++    status: "FROZEN",
++    configJson: JSON.stringify(config),
++    activatedAt: "2024-01-01T00:00:00.000Z",
+   });
+   await db.insert(schema.gameSessions).values({
+     id: "v5_session",
+     playerId: "v5_player",
+-    mathVersionId: INITIAL_MATH_VERSION.version,
++    mathVersionId: config.version,
+     status: "OPEN",
+     currency: "USD",
+     freeGamesRemaining: freeGames,
+diff --git a/tests/r1-m3-acceptance.test.mjs b/tests/r1-m3-acceptance.test.mjs
+new file mode 100644
+index 0000000..1a078f9
+--- /dev/null
++++ b/tests/r1-m3-acceptance.test.mjs
+@@ -0,0 +1,242 @@
++/**
++ * Formal R1-M3 acceptance: selectMathVersion wiring, DB FROZEN persistence,
++ * and Session/Round/Recovery executable math unification.
++ */
++import assert from "node:assert/strict";
++import test from "node:test";
++import { and, eq } from "drizzle-orm";
++import {
++  handleCreateSession,
++  handleGetRules,
++  handleSpin,
++} from "../lib/api-handlers.ts";
++import {
++  listMathVersionRows,
++  loadExecutableMathVersionById,
++  seedProductionFrozenMathVersion,
++} from "../lib/db-game.ts";
++import { INITIAL_MATH_VERSION, PRODUCTION_FROZEN_MATH_VERSION } from "../lib/math-config.ts";
++import {
++  MathVersionUnavailableError,
++  selectMathVersion,
++} from "../lib/math-version-loader.ts";
++import { TestRoundStore } from "../lib/round-store.ts";
++import { TestWalletAdapter } from "../lib/wallet-adapter.ts";
++import { LEASE_TTL_MS } from "../lib/spin-orchestrator.ts";
++import { createTestDb } from "./db-helper.mjs";
++import { TestIdentityProvider } from "./helpers/test-identity-provider.mjs";
++import * as schema from "../db/schema.ts";
++
++function makeAuth(playerId = "p1") {
++  return {
++    identityProvider: new TestIdentityProvider(playerId),
++    request: new Request("http://localhost/v1/game/test"),
++  };
++}
++
++function makeServices(wallet, extras = {}) {
++  return {
++    walletAdapter: wallet,
++    roundStore: extras.roundStore ?? new TestRoundStore(),
++    allowRealMoney: false,
++    // Intentionally omit mathConfig so production DB-load path is exercised.
++    ...extras,
++  };
++}
++
++function fixedClock(iso) {
++  return { now: () => new Date(iso) };
++}
++
++async function seedPlayer(db, playerId = "p1", currency = "USD") {
++  await db.insert(schema.players).values({
++    id: playerId,
++    walletAdapterRef: `wallet_${playerId}`,
++    currency,
++    status: "ACTIVE",
++  });
++}
++
++const deadGrid = [
++  ["nine", "ten", "j", "q"],
++  ["ten", "j", "q", "k"],
++  ["j", "q", "k", "a"],
++  ["q", "k", "a", "nine"],
++  ["k", "a", "nine", "ten"],
++];
++
++test("seedProductionFrozenMathVersion persists executable FROZEN row", async () => {
++  const { db } = createTestDb();
++  const loaded = await seedProductionFrozenMathVersion(db);
++  assert.equal(loaded.status, "FROZEN");
++  assert.equal(loaded.version, PRODUCTION_FROZEN_MATH_VERSION.version);
++  assert.equal(loaded.disclosure.status, "FROZEN");
++  assert.equal(loaded.disclosure.realMoneyEnabled, false);
++
++  const row = await db.query.gameMathVersions.findFirst({
++    where: eq(schema.gameMathVersions.id, loaded.version),
++  });
++  assert.ok(row);
++  assert.equal(row.status, "FROZEN");
++  assert.ok(row.activatedAt);
++
++  // DRAFT prototype must not be what selectMathVersion returns.
++  assert.equal(INITIAL_MATH_VERSION.status, "DRAFT");
++  const selected = await selectMathVersion(await listMathVersionRows(db));
++  assert.equal(selected.version, loaded.version);
++  assert.equal(selected.status, "FROZEN");
++});
++
++test("selectMathVersion ignores DRAFT rows and fail-closes when none are FROZEN", async () => {
++  const { db } = createTestDb();
++  await db.insert(schema.gameMathVersions).values({
++    id: "draft-only",
++    sha256: "a".repeat(64),
++    status: "DRAFT",
++    configJson: JSON.stringify({ ...INITIAL_MATH_VERSION, version: "draft-only" }),
++    activatedAt: null,
++  });
++  await assert.rejects(
++    selectMathVersion(await listMathVersionRows(db)),
++    MathVersionUnavailableError,
++  );
++});
++
++test("createSession wires selectMathVersion into session.math_version_id", async () => {
++  const { db } = createTestDb();
++  await seedPlayer(db);
++  const response = await handleCreateSession(db, makeAuth(), {});
++  assert.equal(response.status, 200);
++  const body = await response.json();
++  assert.equal(body.mathVersionId, PRODUCTION_FROZEN_MATH_VERSION.version);
++
++  const session = await db.query.gameSessions.findFirst({
++    where: eq(schema.gameSessions.id, body.sessionId),
++  });
++  assert.equal(session.mathVersionId, body.mathVersionId);
++
++  const mathRow = await db.query.gameMathVersions.findFirst({
++    where: eq(schema.gameMathVersions.id, session.mathVersionId),
++  });
++  assert.equal(mathRow.status, "FROZEN");
++});
++
++test("spin without injected mathConfig loads ExecutableMathVersion from session", async () => {
++  const { db } = createTestDb();
++  await seedPlayer(db);
++  const sessionRes = await handleCreateSession(db, makeAuth(), {});
++  const session = await sessionRes.json();
++
++  const wallet = new TestWalletAdapter();
++  wallet.creditAvailable("p1", "USD", 10_000);
++  const response = await handleSpin(db, makeAuth(), makeServices(wallet), {
++    sessionId: session.sessionId,
++    roomBase: 50,
++    betLevel: 1,
++    betMultiplier: 1,
++    idempotencyKey: "m3-db-load",
++  });
++  assert.equal(response.status, 200);
++  const body = await response.json();
++  assert.equal(body.mathVersion, session.mathVersionId);
++
++  const round = await db.query.gameRounds.findFirst({
++    where: and(
++      eq(schema.gameRounds.playerId, "p1"),
++      eq(schema.gameRounds.idempotencyKey, "m3-db-load"),
++    ),
++  });
++  assert.ok(round);
++  assert.equal(round.mathVersionId, session.mathVersionId);
++  assert.equal(round.mathVersionId, body.mathVersion);
++  assert.equal(round.status, "SETTLED");
++});
++
++test("session / round / recovery share one executable math version", async () => {
++  const { db } = createTestDb();
++  await seedPlayer(db);
++  const t0 = "2026-12-01T00:00:00.000Z";
++  const sessionRes = await handleCreateSession(db, makeAuth(), {}, fixedClock(t0));
++  const session = await sessionRes.json();
++
++  const wallet = new TestWalletAdapter();
++  wallet.creditAvailable("p1", "USD", 10_000);
++
++  const stuck = await handleSpin(
++    db,
++    makeAuth(),
++    makeServices(wallet, {
++      clock: fixedClock(t0),
++      testFixedGrid: deadGrid,
++      faults: {
++        afterOutcomePersist: () => {
++          throw new Error("crash before wallet");
++        },
++      },
++    }),
++    {
++      sessionId: session.sessionId,
++      roomBase: 50,
++      betLevel: 1,
++      betMultiplier: 1,
++      idempotencyKey: "m3-recovery-unify",
++    },
++  );
++  assert.equal(stuck.status, 500);
++
++  const pending = await db.query.gameRounds.findFirst({
++    where: and(
++      eq(schema.gameRounds.playerId, "p1"),
++      eq(schema.gameRounds.idempotencyKey, "m3-recovery-unify"),
++    ),
++  });
++  assert.ok(pending);
++  assert.equal(pending.mathVersionId, session.mathVersionId);
++  assert.equal(pending.status, "PENDING");
++
++  const recovered = await handleSpin(
++    db,
++    makeAuth(),
++    makeServices(wallet, {
++      testFixedGrid: deadGrid,
++      clock: fixedClock(new Date(Date.parse(t0) + LEASE_TTL_MS + 1_000).toISOString()),
++    }),
++    {
++      sessionId: session.sessionId,
++      roomBase: 50,
++      betLevel: 1,
++      betMultiplier: 1,
++      idempotencyKey: "m3-recovery-unify",
++    },
++  );
++  assert.equal(recovered.status, 200);
++  const body = await recovered.json();
++  assert.equal(body.mathVersion, session.mathVersionId);
++  assert.equal(body.mathVersion, pending.mathVersionId);
++
++  const settled = await db.query.gameRounds.findFirst({
++    where: eq(schema.gameRounds.id, pending.id),
++  });
++  assert.equal(settled.status, "SETTLED");
++  assert.equal(settled.mathVersionId, session.mathVersionId);
++});
++
++test("rules endpoint serves loader-validated FROZEN config from DB", async () => {
++  const { db } = createTestDb();
++  await seedProductionFrozenMathVersion(db);
++  const response = await handleGetRules(db, PRODUCTION_FROZEN_MATH_VERSION.version);
++  assert.equal(response.status, 200);
++  const body = await response.json();
++  assert.equal(body.version, PRODUCTION_FROZEN_MATH_VERSION.version);
++  assert.equal(body.status, "FROZEN");
++  assert.equal(body.disclosure.realMoneyEnabled, false);
++});
++
++test("loadExecutableMathVersionById rejects unknown ids", async () => {
++  const { db } = createTestDb();
++  await seedProductionFrozenMathVersion(db);
++  await assert.rejects(
++    loadExecutableMathVersionById(db, "missing-version"),
++    MathVersionUnavailableError,
++  );
++});

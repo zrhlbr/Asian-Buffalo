@@ -9,7 +9,10 @@ import {
   renewLease,
   takeOverStalePending,
 } from "../lib/spin-orchestrator.ts";
-import { INITIAL_MATH_VERSION, hashMathVersionConfig } from "../lib/math-config.ts";
+import {
+  PRODUCTION_FROZEN_MATH_VERSION,
+  hashMathVersionConfig,
+} from "../lib/math-config.ts";
 import { canonicalizeSpinRequest, hashSpinRequest } from "../lib/request-hash.ts";
 import { TestRoundStore } from "../lib/round-store.ts";
 import { TestWalletAdapter } from "../lib/wallet-adapter.ts";
@@ -17,7 +20,8 @@ import { createTestDb } from "./db-helper.mjs";
 import { testExecutableMath } from "./helpers/test-executable-math.mjs";
 
 async function seed(db, freeGames = 0) {
-  const sha = await hashMathVersionConfig(INITIAL_MATH_VERSION);
+  const config = PRODUCTION_FROZEN_MATH_VERSION;
+  const sha = await hashMathVersionConfig(config);
   await db.insert(schema.players).values({
     id: "v5_player",
     walletAdapterRef: "wallet_v5_player",
@@ -25,15 +29,16 @@ async function seed(db, freeGames = 0) {
     status: "ACTIVE",
   });
   await db.insert(schema.gameMathVersions).values({
-    id: INITIAL_MATH_VERSION.version,
+    id: config.version,
     sha256: sha,
-    status: "DRAFT",
-    configJson: JSON.stringify(INITIAL_MATH_VERSION),
+    status: "FROZEN",
+    configJson: JSON.stringify(config),
+    activatedAt: "2024-01-01T00:00:00.000Z",
   });
   await db.insert(schema.gameSessions).values({
     id: "v5_session",
     playerId: "v5_player",
-    mathVersionId: INITIAL_MATH_VERSION.version,
+    mathVersionId: config.version,
     status: "OPEN",
     currency: "USD",
     freeGamesRemaining: freeGames,

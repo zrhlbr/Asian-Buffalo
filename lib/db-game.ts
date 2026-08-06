@@ -12,7 +12,16 @@ import * as schema from "../db/schema.ts";
 import type { Clock } from "./clock.ts";
 import { systemClock } from "./clock.ts";
 import type { SpinResult } from "./round-service.ts";
-import { INITIAL_MATH_VERSION } from "./math-config.ts";
+import {
+  buildProductionFrozenMathVersion,
+  hashMathVersionConfig,
+} from "./math-config.ts";
+import {
+  MathVersionUnavailableError,
+  parseAndValidateMathVersion,
+  type ExecutableMathVersion,
+  type MathVersionRow,
+} from "./math-version-loader.ts";
 
 export type CreateSessionInput = {
   playerId: string;
@@ -394,20 +403,93 @@ async function sha256Hex(input: string): Promise<string> {
     .join("");
 }
 
-export async function seedInitialMathVersion(
+const PRODUCTION_FROZEN_ACTIVATED_AT = "2024-01-01T00:00:00.000Z";
+
+function toMathVersionRow(
+  row: typeof schema.gameMathVersions.$inferSelect,
+): MathVersionRow {
+  return {
+    id: row.id,
+    sha256: row.sha256,
+    status: row.status,
+    configJson: row.configJson,
+    activatedAt: row.activatedAt,
+  };
+}
+
+/** List persisted math-version rows for selectMathVersion. */
+export async function listMathVersionRows(
   db: DrizzleD1Database<typeof schema>,
-): Promise<void> {
-  const { hashMathVersionConfig } = await import("./math-config.ts");
-  const config = INITIAL_MATH_VERSION;
+): Promise<MathVersionRow[]> {
+  const rows = await db.query.gameMathVersions.findMany();
+  return rows.map(toMathVersionRow);
+}
+
+export async function getMathVersionRow(
+  db: DrizzleD1Database<typeof schema>,
+  versionId: string,
+): Promise<MathVersionRow | undefined> {
+  const row = await db.query.gameMathVersions.findFirst({
+    where: eq(schema.gameMathVersions.id, versionId),
+  });
+  return row ? toMathVersionRow(row) : undefined;
+}
+
+/**
+ * Load a loader-issued ExecutableMathVersion by persisted id.
+ * Fail closed when the row is missing or not executable.
+ */
+export async function loadExecutableMathVersionById(
+  db: DrizzleD1Database<typeof schema>,
+  versionId: string,
+): Promise<ExecutableMathVersion> {
+  const row = await getMathVersionRow(db, versionId);
+  if (!row) {
+    throw new MathVersionUnavailableError(`math version ${versionId} not found`);
+  }
+  return parseAndValidateMathVersion(row);
+}
+
+/**
+ * Persist the R1-M3 production FROZEN math version.
+ * Replaces a stale DRAFT row with the same id so local/test DBs converge on
+ * the executable configuration. Does not enable real money.
+ */
+export async function seedProductionFrozenMathVersion(
+  db: DrizzleD1Database<typeof schema>,
+): Promise<ExecutableMathVersion> {
+  const config = buildProductionFrozenMathVersion({ version: "ab-math-1.0.0" });
+  const sha256 = await hashMathVersionConfig(config);
   const existing = await db.query.gameMathVersions.findFirst({
     where: eq(schema.gameMathVersions.id, config.version),
   });
-  if (existing) return;
 
-  await db.insert(schema.gameMathVersions).values({
-    id: config.version,
-    sha256: await hashMathVersionConfig(config),
-    status: config.status,
-    configJson: JSON.stringify(config),
-  });
+  if (!existing) {
+    await db.insert(schema.gameMathVersions).values({
+      id: config.version,
+      sha256,
+      status: "FROZEN",
+      configJson: JSON.stringify(config),
+      activatedAt: PRODUCTION_FROZEN_ACTIVATED_AT,
+    });
+  } else if (existing.status !== "FROZEN" || existing.sha256 !== sha256) {
+    await db
+      .update(schema.gameMathVersions)
+      .set({
+        sha256,
+        status: "FROZEN",
+        configJson: JSON.stringify(config),
+        activatedAt: existing.activatedAt ?? PRODUCTION_FROZEN_ACTIVATED_AT,
+      })
+      .where(eq(schema.gameMathVersions.id, config.version));
+  }
+
+  return loadExecutableMathVersionById(db, config.version);
+}
+
+/** @deprecated Use seedProductionFrozenMathVersion — kept for call-site migration. */
+export async function seedInitialMathVersion(
+  db: DrizzleD1Database<typeof schema>,
+): Promise<void> {
+  await seedProductionFrozenMathVersion(db);
 }

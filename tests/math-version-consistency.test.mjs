@@ -159,11 +159,35 @@ test("session version mismatch rejects before claim and does not call wallet", a
 test("DRAFT session must not execute with a different FROZEN executable", async () => {
   const { db } = createTestDb();
   await seedPlayer(db);
-  const session = await openSession(db);
   assert.equal(INITIAL_MATH_VERSION.status, "DRAFT");
-  assert.equal(session.mathVersionId, INITIAL_MATH_VERSION.version);
+
+  // Persist a distinct DRAFT row and point a session at it (bypass selectMathVersion).
+  const draftId = "ab-math-draft-only";
+  const draft = {
+    ...INITIAL_MATH_VERSION,
+    version: draftId,
+    status: "DRAFT",
+  };
+  const { hashMathVersionConfig } = await import("../lib/math-config.ts");
+  await db.insert(schema.gameMathVersions).values({
+    id: draftId,
+    sha256: await hashMathVersionConfig(draft),
+    status: "DRAFT",
+    configJson: JSON.stringify(draft),
+    activatedAt: null,
+  });
+  await db.insert(schema.gameSessions).values({
+    id: "sess_draft_only",
+    playerId: "p1",
+    mathVersionId: draftId,
+    status: "OPEN",
+    currency: "USD",
+    freeGamesRemaining: 0,
+    expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+  });
+
   assert.equal(otherExecutableMath.status, "FROZEN");
-  assert.notEqual(otherExecutableMath.version, session.mathVersionId);
+  assert.notEqual(otherExecutableMath.version, draftId);
 
   const { wallet, settleCalls } = countingWallet();
   const response = await handleSpin(
@@ -171,7 +195,7 @@ test("DRAFT session must not execute with a different FROZEN executable", async 
     makeAuth(),
     makeServices(wallet, { mathConfig: otherExecutableMath }),
     {
-      sessionId: session.sessionId,
+      sessionId: "sess_draft_only",
       roomBase: 50,
       betLevel: 1,
       betMultiplier: 1,

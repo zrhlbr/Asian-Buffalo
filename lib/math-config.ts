@@ -259,7 +259,52 @@ export const INITIAL_MATH_VERSION = buildInitialMathVersion({
   status: "DRAFT",
 });
 
+/**
+ * Production FROZEN math version for R1-M3.
+ *
+ * This is the persisted/executable configuration used by session creation and
+ * spin orchestration. realMoneyEnabled remains false — M3 does not enable
+ * real-money settlement.
+ */
+export function buildProductionFrozenMathVersion(overrides?: {
+  version?: string;
+  gameVersion?: string;
+  maxPayoutMultiplier?: number;
+}): MathVersionConfig {
+  const version = overrides?.version ?? "ab-math-1.0.0";
+  const base = buildInitialMathVersion({ version, status: "FROZEN" });
+
+  return {
+    ...base,
+    gameVersion: overrides?.gameVersion ?? base.gameVersion,
+    disclosure: {
+      status: "FROZEN",
+      targetRtp: 96.5,
+      originalRtpKnown: false,
+      realMoneyEnabled: false,
+      provisionalNotes: ["R1-M3 production FROZEN math version. Real-money settlement remains disabled."],
+    },
+    reelWeights: {
+      kind: "per-reel",
+      reels: base.reelWeights.reels,
+      note: "R1-M3 FROZEN per-reel weights. Not a real-money enablement.",
+    },
+    maxPayout: {
+      kind: "fixed",
+      totalBetMultiplier: overrides?.maxPayoutMultiplier ?? 2500,
+      note: "R1-M3 FROZEN max payout cap.",
+    },
+  };
+}
+
+export const PRODUCTION_FROZEN_MATH_VERSION = buildProductionFrozenMathVersion({
+  version: "ab-math-1.0.0",
+});
+
 export function getMathVersionById(versionId: string): MathVersionConfig | undefined {
+  if (versionId === PRODUCTION_FROZEN_MATH_VERSION.version) {
+    return PRODUCTION_FROZEN_MATH_VERSION;
+  }
   if (versionId === INITIAL_MATH_VERSION.version) return INITIAL_MATH_VERSION;
   return undefined;
 }

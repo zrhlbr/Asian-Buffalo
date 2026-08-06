@@ -214,7 +214,8 @@ test("get rules returns math config", async () => {
   assert.equal(response.status, 200);
   const body = await parseJson(response);
   assert.equal(body.version, "ab-math-1.0.0");
-  assert.equal(body.status, "DRAFT");
+  assert.equal(body.status, "FROZEN");
+  assert.equal(body.disclosure.realMoneyEnabled, false);
 });
 
 test("get rules returns 404 for unknown version", async () => {

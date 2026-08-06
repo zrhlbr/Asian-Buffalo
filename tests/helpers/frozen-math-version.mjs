@@ -6,38 +6,18 @@
  * carry the loader brand and are deep-frozen after SHA-256 verification.
  */
 
-import { buildInitialMathVersion, hashMathVersionConfig } from "../../lib/math-config.ts";
+import {
+  buildProductionFrozenMathVersion,
+  hashMathVersionConfig,
+} from "../../lib/math-config.ts";
 import { parseAndValidateMathVersion } from "../../lib/math-version-loader.ts";
 
 /**
  * Build a mutable plain FROZEN candidate config for tests.
- * This is not trusted for the production engine until loaded.
+ * Delegates to the production FROZEN builder so hashes match DB seeds.
  */
 export function buildFrozenMathVersion(overrides = {}) {
-  const version = overrides.version ?? "ab-math-frozen-1.0.0";
-  const base = buildInitialMathVersion({ version, status: "FROZEN" });
-
-  return {
-    ...base,
-    gameVersion: overrides.gameVersion ?? base.gameVersion,
-    disclosure: {
-      status: "FROZEN",
-      targetRtp: 96.5,
-      originalRtpKnown: false,
-      realMoneyEnabled: false,
-      provisionalNotes: ["Frozen math version for R1-M3-PRE testing."],
-    },
-    reelWeights: {
-      kind: "per-reel",
-      reels: base.reelWeights.reels,
-      note: "Frozen per-reel weights for R1-M3-PRE testing.",
-    },
-    maxPayout: {
-      kind: "fixed",
-      totalBetMultiplier: overrides.maxPayoutMultiplier ?? 2500,
-      note: "Frozen max payout for R1-M3-PRE testing.",
-    },
-  };
+  return buildProductionFrozenMathVersion(overrides);
 }
 
 /**
@@ -51,8 +31,6 @@ export async function loadExecutableMathVersion(configOrOverrides = {}) {
       ? structuredClone(configOrOverrides)
       : buildFrozenMathVersion(configOrOverrides);
 
-  // Ensure structural fields required for executability remain consistent when
-  // callers mutate paylines / rooms on a cloned plain config before loading.
   if (config.rooms) {
     config.rooms = {
       ...config.rooms,

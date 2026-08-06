@@ -11,8 +11,11 @@ import * as schema from "../db/schema.ts";
 import {
   createSession,
   getAuthorizedRound,
+  getSessionForPlayer,
   getTrustedPlayerContext,
-  seedInitialMathVersion,
+  listMathVersionRows,
+  loadExecutableMathVersionById,
+  seedProductionFrozenMathVersion,
 } from "./db-game.ts";
 import { systemClock, type Clock } from "./clock.ts";
 import {
@@ -21,8 +24,13 @@ import {
   IdentityUnavailableError,
   type IdentityProvider,
 } from "./identity.ts";
-import { INITIAL_MATH_VERSION, getMathVersionById } from "./math-config.ts";
 import type { ExecutableMathVersion } from "./math-version-loader.ts";
+import {
+  MathVersionIntegrityError,
+  MathVersionUnavailableError,
+  MathVersionValidationError,
+  selectMathVersion,
+} from "./math-version-loader.ts";
 import {
   validateCreateSessionRequest,
   validateSpinRequest,
@@ -157,27 +165,36 @@ export async function handleCreateSession(
     throw error;
   }
 
-  const mathVersionId = INITIAL_MATH_VERSION.version;
-  if (!getMathVersionById(mathVersionId)) {
-    return apiServiceUnavailable();
+  try {
+    await seedProductionFrozenMathVersion(db);
+    const selected = await selectMathVersion(await listMathVersionRows(db));
+    const session = await createSession(
+      db,
+      {
+        playerId,
+        mathVersionId: selected.version,
+        currency,
+      },
+      clock,
+    );
+
+    return Response.json({
+      sessionId: session.id,
+      mathVersionId: selected.version,
+      expiresAt: session.expiresAt,
+    });
+  } catch (error) {
+    if (error instanceof MathVersionUnavailableError) {
+      return apiError("MATH_VERSION_UNAVAILABLE", error.message, 503);
+    }
+    if (
+      error instanceof MathVersionValidationError ||
+      error instanceof MathVersionIntegrityError
+    ) {
+      return apiError("MATH_VERSION_UNAVAILABLE", error.message, 503);
+    }
+    throw error;
   }
-
-  await seedInitialMathVersion(db);
-  const session = await createSession(
-    db,
-    {
-      playerId,
-      mathVersionId,
-      currency,
-    },
-    clock,
-  );
-
-  return Response.json({
-    sessionId: session.id,
-    mathVersionId,
-    expiresAt: session.expiresAt,
-  });
 }
 
 export async function handleSpin(
@@ -204,13 +221,34 @@ export async function handleSpin(
   const canonicalPayload = canonicalizeSpinRequest(publicSpin);
   const requestHash = await hashSpinRequest(publicSpin);
 
-  await seedInitialMathVersion(db);
+  let mathConfig = services.mathConfig;
+  if (!mathConfig) {
+    try {
+      await seedProductionFrozenMathVersion(db);
+      const session = await getSessionForPlayer(db, publicSpin.sessionId, playerId);
+      if (!session) {
+        return apiError("SESSION_NOT_FOUND", "Session not found", 404);
+      }
+      mathConfig = await loadExecutableMathVersionById(db, session.mathVersionId);
+    } catch (error) {
+      if (error instanceof MathVersionUnavailableError) {
+        return apiError("MATH_VERSION_UNAVAILABLE", error.message, 503);
+      }
+      if (
+        error instanceof MathVersionValidationError ||
+        error instanceof MathVersionIntegrityError
+      ) {
+        return apiError("MATH_VERSION_UNAVAILABLE", error.message, 503);
+      }
+      throw error;
+    }
+  }
 
   const orchServices: SpinOrchestratorServices = {
     walletAdapter: services.walletAdapter,
     roundStore: services.roundStore,
     allowRealMoney: services.allowRealMoney,
-    mathConfig: services.mathConfig,
+    mathConfig,
     clock: services.clock,
     testFixedGrid: services.testFixedGrid,
     faults: services.faults,
@@ -288,12 +326,21 @@ export async function handleGetRound(
 }
 
 export async function handleGetRules(
-  _db: DrizzleD1Database<typeof schema>,
+  db: DrizzleD1Database<typeof schema>,
   mathVersionId: string,
 ): Promise<Response> {
-  const config = getMathVersionById(mathVersionId);
-  if (!config) {
-    return apiError("RULES_NOT_FOUND", `Math version ${mathVersionId} not found`);
+  try {
+    await seedProductionFrozenMathVersion(db);
+    const config = await loadExecutableMathVersionById(db, mathVersionId);
+    return Response.json(config);
+  } catch (error) {
+    if (
+      error instanceof MathVersionUnavailableError ||
+      error instanceof MathVersionValidationError ||
+      error instanceof MathVersionIntegrityError
+    ) {
+      return apiError("RULES_NOT_FOUND", `Math version ${mathVersionId} not found`);
+    }
+    throw error;
   }
-  return Response.json(config);
 }
