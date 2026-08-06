@@ -5,6 +5,10 @@ import handler from "vinext/server/app-router-entry";
 interface Env {
   ASSETS: Fetcher;
   DB: D1Database;
+  /** Explicit only — never defaulted on by this worker. */
+  AB_ALLOW_TEST_IDENTITY?: string;
+  AB_TEST_PLAYER_ID?: string;
+  AB_FORCE_FAIL_CLOSED_IDENTITY?: string;
   IMAGES: {
     input(stream: ReadableStream): {
       transform(options: Record<string, unknown>): {
@@ -14,19 +18,32 @@ interface Env {
   };
 }
 
+/**
+ * Minimal bridge: Cloudflare/Miniflare bindings → process.env so
+ * `AB_ALLOW_TEST_IDENTITY` is visible to runtime-identity.
+ * Does not invent defaults; unset bindings stay unset (fail-closed).
+ */
+function bridgeExplicitIdentityEnv(env: Env): void {
+  if (typeof process === "undefined" || !process.env) return;
+  if (env.AB_ALLOW_TEST_IDENTITY !== undefined) {
+    process.env.AB_ALLOW_TEST_IDENTITY = env.AB_ALLOW_TEST_IDENTITY;
+  }
+  if (env.AB_TEST_PLAYER_ID !== undefined) {
+    process.env.AB_TEST_PLAYER_ID = env.AB_TEST_PLAYER_ID;
+  }
+  if (env.AB_FORCE_FAIL_CLOSED_IDENTITY !== undefined) {
+    process.env.AB_FORCE_FAIL_CLOSED_IDENTITY = env.AB_FORCE_FAIL_CLOSED_IDENTITY;
+  }
+}
+
 interface ExecutionContext {
   waitUntil(promise: Promise<unknown>): void;
   passThroughOnException(): void;
 }
 
-// Image security config. SVG sources with .svg extension auto-skip the
-// optimization endpoint on the client side (served directly, no proxy).
-// To route SVGs through the optimizer (with security headers), set
-// dangerouslyAllowSVG: true in next.config.js and uncomment below:
-// const imageConfig: ImageConfig = { dangerouslyAllowSVG: true };
-
 const worker = {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+    bridgeExplicitIdentityEnv(env);
     const url = new URL(request.url);
 
     if (url.pathname === "/_vinext/image") {

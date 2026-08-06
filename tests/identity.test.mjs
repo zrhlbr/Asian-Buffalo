@@ -75,9 +75,11 @@ test("production routes wire fail-closed identity and never import test provider
     "utf8",
   );
   const handlers = readFileSync(join(repoRoot, "lib/api-handlers.ts"), "utf8");
+  const runtimeIdentity = readFileSync(join(repoRoot, "lib/runtime-identity.ts"), "utf8");
 
   for (const source of [sessionRoute, spinRoute, roundRoute]) {
     assert.match(source, /createProductionIdentityProvider/);
+    assert.match(source, /createRuntimeIdentityProvider/);
     assert.doesNotMatch(source, /from ["'].*lib\/identity/);
     assert.doesNotMatch(source, /test-identity-provider/);
     assert.doesNotMatch(source, /TestIdentityProvider/);
@@ -90,6 +92,12 @@ test("production routes wire fail-closed identity and never import test provider
   assert.doesNotMatch(handlers, /identityProvider\s*=/);
   assert.match(handlers, /identityProvider:\s*IdentityProvider/);
   assert.match(handlers, /export \{ createProductionIdentityProvider \}/);
+
+  // Runtime gate must fail closed unless AB_ALLOW_TEST_IDENTITY=1.
+  assert.match(runtimeIdentity, /AB_ALLOW_TEST_IDENTITY/);
+  assert.match(runtimeIdentity, /createProductionIdentityProvider/);
+  assert.doesNotMatch(runtimeIdentity, /headers\.get\(/);
+  assert.doesNotMatch(runtimeIdentity, /x-player-id/);
 });
 
 test("unconfigured production provider fails closed with generic 503", async () => {

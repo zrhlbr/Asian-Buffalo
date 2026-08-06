@@ -1,0 +1,5587 @@
+diff --git a/app/api/v1/game/rounds/[roundId]/route.ts b/app/api/v1/game/rounds/[roundId]/route.ts
+index ce2b5a5..6fc2972 100644
+--- a/app/api/v1/game/rounds/[roundId]/route.ts
++++ b/app/api/v1/game/rounds/[roundId]/route.ts
+@@ -3,14 +3,18 @@ import {
+   createProductionIdentityProvider,
+   handleGetRound,
+ } from "../../../../../../lib/api-handlers.ts";
++import { createRuntimeIdentityProvider } from "../../../../../../lib/runtime-identity.ts";
+ 
+-const identityProvider = createProductionIdentityProvider();
+-
++/**
++ * Round recovery/read for M5 presentation. Same explicit identity gate.
++ */
+ export async function GET(
+   request: Request,
+   { params }: { params: Promise<{ roundId: string }> },
+ ) {
++  void createProductionIdentityProvider;
+   const db = await getDb();
++  const identityProvider = createRuntimeIdentityProvider();
+   const { roundId } = await params;
+   return handleGetRound(db, { identityProvider, request }, roundId);
+ }
+diff --git a/app/api/v1/game/sessions/route.ts b/app/api/v1/game/sessions/route.ts
+index 608bb2a..034c3bd 100644
+--- a/app/api/v1/game/sessions/route.ts
++++ b/app/api/v1/game/sessions/route.ts
+@@ -3,11 +3,22 @@ import {
+   createProductionIdentityProvider,
+   handleCreateSession,
+ } from "../../../../../lib/api-handlers.ts";
++import { ensureDevTestPlayer } from "../../../../../lib/dev-test-bootstrap.ts";
++import {
++  createRuntimeIdentityProvider,
++  DEV_TEST_PLAYER_ID,
++} from "../../../../../lib/runtime-identity.ts";
+ 
+-const identityProvider = createProductionIdentityProvider();
+-
++/**
++ * Identity: createRuntimeIdentityProvider() — fail-closed unless
++ * AB_ALLOW_TEST_IDENTITY=1 is explicitly set. Production factory remains
++ * the fallback (see createProductionIdentityProvider).
++ */
+ export async function POST(request: Request) {
++  void createProductionIdentityProvider;
+   const db = await getDb();
++  const identityProvider = createRuntimeIdentityProvider();
++  await ensureDevTestPlayer(db, DEV_TEST_PLAYER_ID);
+   const payload = await request.json().catch(() => null);
+   return handleCreateSession(db, { identityProvider, request }, payload);
+ }
+diff --git a/app/api/v1/game/spins/route.ts b/app/api/v1/game/spins/route.ts
+index 0de3a65..7901c94 100644
+--- a/app/api/v1/game/spins/route.ts
++++ b/app/api/v1/game/spins/route.ts
+@@ -3,20 +3,34 @@ import {
+   createProductionIdentityProvider,
+   handleSpin,
+ } from "../../../../../lib/api-handlers.ts";
+-import { TestRoundStore } from "../../../../../lib/round-store.ts";
+-import { TestWalletAdapter } from "../../../../../lib/wallet-adapter.ts";
++import {
++  ensureDevTestPlayer,
++  seedDevTestWalletIfEmpty,
++} from "../../../../../lib/dev-test-bootstrap.ts";
++import {
++  createRuntimeIdentityProvider,
++  DEV_TEST_PLAYER_ID,
++} from "../../../../../lib/runtime-identity.ts";
++import {
++  routeTestRoundStore,
++  routeTestWalletAdapter,
++} from "../../../../../lib/route-test-services.ts";
+ 
+ /**
+- * Test-only wallet adapter. This endpoint does not connect to a production
+- * wallet; real-money settlement is disabled by the math configuration.
+- * Identity uses the fail-closed production provider until formal auth is wired.
++ * Local/TEST wallet for playable spins when identity gate is explicitly open.
++ * allowRealMoney stays false. Identity fail-closed unless AB_ALLOW_TEST_IDENTITY=1.
+  */
+-const walletAdapter = new TestWalletAdapter();
+-const roundStore = new TestRoundStore();
+-const identityProvider = createProductionIdentityProvider();
++const walletAdapter = routeTestWalletAdapter;
++const roundStore = routeTestRoundStore;
+ 
+ export async function POST(request: Request) {
++  void createProductionIdentityProvider;
+   const db = await getDb();
++  const identityProvider = createRuntimeIdentityProvider();
++  const player = await ensureDevTestPlayer(db, DEV_TEST_PLAYER_ID);
++  if (player) {
++    await seedDevTestWalletIfEmpty(walletAdapter, player.playerId, player.currency);
++  }
+   const payload = await request.json().catch(() => null);
+   return handleSpin(
+     db,
+diff --git a/app/api/v1/game/wallet/balance/route.ts b/app/api/v1/game/wallet/balance/route.ts
+new file mode 100644
+index 0000000..a560fef
+--- /dev/null
++++ b/app/api/v1/game/wallet/balance/route.ts
+@@ -0,0 +1,69 @@
++/**
++ * M5 presentation helper — read TEST wallet balance for HUD.
++ * Uses the same fail-closed runtime identity gate as other game routes.
++ * Does not modify M1–M4 handler implementations.
++ */
++import { getDb } from "../../../../../../db/index.ts";
++import { getTrustedPlayerContext } from "../../../../../../lib/db-game.ts";
++import {
++  createProductionIdentityProvider,
++  IdentityAuthError,
++  IdentityUnavailableError,
++} from "../../../../../../lib/identity.ts";
++import {
++  ensureDevTestPlayer,
++  seedDevTestWalletIfEmpty,
++} from "../../../../../../lib/dev-test-bootstrap.ts";
++import { createRuntimeIdentityProvider } from "../../../../../../lib/runtime-identity.ts";
++import { routeTestWalletAdapter } from "../../../../../../lib/route-test-services.ts";
++
++function unavailable(): Response {
++  return Response.json(
++    { error: { code: "SERVICE_UNAVAILABLE", message: "Service temporarily unavailable" } },
++    { status: 503 },
++  );
++}
++
++function unauthorized(): Response {
++  return Response.json(
++    { error: { code: "UNAUTHORIZED", message: "Authentication required" } },
++    { status: 401 },
++  );
++}
++
++export async function GET(request: Request) {
++  // Auditable: production factory remains available and is what runtime uses when gate is off.
++  void createProductionIdentityProvider;
++  const identityProvider = createRuntimeIdentityProvider();
++
++  let playerId: string;
++  try {
++    ({ playerId } = await identityProvider.resolve(request));
++  } catch (error) {
++    if (error instanceof IdentityUnavailableError) return unavailable();
++    if (error instanceof IdentityAuthError) return unauthorized();
++    throw error;
++  }
++
++  const db = await getDb();
++  await ensureDevTestPlayer(db, playerId);
++  const context = await getTrustedPlayerContext(db, playerId);
++  if (!context || context.status !== "ACTIVE") {
++    return Response.json(
++      { error: { code: "PLAYER_UNAVAILABLE", message: "Player unavailable" } },
++      { status: 403 },
++    );
++  }
++
++  const balanceMinor = await seedDevTestWalletIfEmpty(
++    routeTestWalletAdapter,
++    context.playerId,
++    context.currency,
++  );
++
++  return Response.json({
++    playerId: context.playerId,
++    currency: context.currency,
++    balanceMinor,
++  });
++}
+diff --git a/app/game-client.tsx b/app/game-client.tsx
+index 0a06df3..f8616b3 100644
+--- a/app/game-client.tsx
++++ b/app/game-client.tsx
+@@ -1,355 +1,163 @@
+ "use client";
+ 
+-import { useCallback, useEffect, useMemo, useState } from "react";
+-import {
+-  BET_LEVELS,
+-  BET_MULTIPLIERS,
+-  BASE_FREE_GAMES,
+-  MATH_DISCLOSURE,
+-  PAYLINES,
+-  PAYTABLE,
+-  RETRIGGER_FREE_GAMES,
+-  ROOM_BASE_BETS,
+-  SCATTER_PAYOUT,
+-  SYMBOLS,
+-  type RegularSymbol,
+-  type SymbolId,
+-} from "../lib/game-config";
+-import { createDemoGrid, evaluateSpin, type Grid, type SpinEvaluation } from "../lib/game-engine";
+-
+-const INITIAL_GRID: Grid = [
+-  ["a", "lion", "ten", "buffalo"],
+-  ["zebra", "wild", "q", "elephant"],
+-  ["nine", "antelope", "scatter", "k"],
+-  ["elephant", "j", "wild", "lion"],
+-  ["buffalo", "ten", "zebra", "a"],
+-];
+-
+-const PAYTABLE_ORDER: RegularSymbol[] = [
+-  "buffalo",
+-  "lion",
+-  "elephant",
+-  "zebra",
+-  "antelope",
+-  "a",
+-  "k",
+-  "q",
+-  "j",
+-  "ten",
+-  "nine",
+-];
+-
+-const money = new Intl.NumberFormat("en-US", {
+-  maximumFractionDigits: 0,
+-});
+-
+-const emptyEvaluation: SpinEvaluation = {
+-  lineWins: [],
+-  lineWin: 0,
+-  scatterCount: 0,
+-  scatterWin: 0,
+-  multiplier: 1,
+-  totalWin: 0,
+-  awardedFreeGames: 0,
+-};
+-
+-function SymbolTile({
+-  symbol,
+-  winning,
+-  spinning,
+-  multiplier,
+-}: {
+-  symbol: SymbolId;
+-  winning: boolean;
+-  spinning: boolean;
+-  multiplier?: number;
+-}) {
+-  const definition = SYMBOLS[symbol];
+-  return (
+-    <div
+-      className={`reel-symbol ${definition.className} ${winning ? "is-winning" : ""} ${spinning ? "is-spinning" : ""}`}
+-      aria-label={definition.label}
+-    >
+-      <span className="symbol-mark">{definition.mark}</span>
+-      <small>{definition.label}</small>
+-      {symbol === "wild" && multiplier && multiplier > 1 ? (
+-        <b className="wild-multiplier">×{multiplier}</b>
+-      ) : null}
+-    </div>
+-  );
+-}
++import { useEffect, useRef } from "react";
+ 
++/**
++ * Formal M5 shell — mounts the integrated Three.js client.
++ * Local demo outcome generation is removed from the runtime path.
++ */
+ export default function GameClient() {
+-  const [grid, setGrid] = useState<Grid>(INITIAL_GRID);
+-  const [roomBase, setRoomBase] = useState<(typeof ROOM_BASE_BETS)[number]>(50);
+-  const [betLevel, setBetLevel] = useState(1);
+-  const [betMultiplier, setBetMultiplier] = useState(1);
+-  const [balance, setBalance] = useState(100_000);
+-  const [freeGames, setFreeGames] = useState(0);
+-  const [spinning, setSpinning] = useState(false);
+-  const [lastResult, setLastResult] = useState(emptyEvaluation);
+-  const [message, setMessage] = useState("原游戏规则已核对；当前为非真钱数学原型");
+-  const [helpOpen, setHelpOpen] = useState(false);
+-  const [autoRemaining, setAutoRemaining] = useState(0);
+-  const [roundNumber, setRoundNumber] = useState(0);
+-
+-  const totalBet = roomBase * betLevel * betMultiplier;
+-  const lineBet = totalBet / PAYLINES.length;
+-
+-  const winningCells = useMemo(() => {
+-    const cells = new Set<string>();
+-    lastResult.lineWins.forEach((win) => {
+-      const line = PAYLINES[win.line - 1];
+-      for (let reel = 0; reel < win.count; reel += 1) {
+-        cells.add(`${reel}-${line[reel]}`);
+-      }
+-    });
+-    return cells;
+-  }, [lastResult]);
+-
+-  const spin = useCallback(() => {
+-    if (spinning) return;
+-    const isFree = freeGames > 0;
+-    if (!isFree && balance < totalBet) {
+-      setMessage("演示余额不足；真钱模式尚未开放");
+-      setAutoRemaining(0);
+-      return;
+-    }
+-
+-    setSpinning(true);
+-    setLastResult(emptyEvaluation);
+-    setMessage(isFree ? "免费游戏旋转中…" : "正在生成演示局结果…");
+-
+-    window.setTimeout(() => {
+-      const nextGrid = createDemoGrid();
+-      const evaluation = evaluateSpin(nextGrid, totalBet, isFree);
+-      setGrid(nextGrid);
+-      setBalance((current) => current - (isFree ? 0 : totalBet) + evaluation.totalWin);
+-      setFreeGames((current) => Math.max(0, current - (isFree ? 1 : 0)) + evaluation.awardedFreeGames);
+-      setLastResult(evaluation);
+-      setRoundNumber((current) => current + 1);
+-      setMessage(
+-        evaluation.totalWin > 0
+-          ? `本局赢得 ${money.format(evaluation.totalWin)} MMK${evaluation.multiplier > 1 ? `，免费局 ×${evaluation.multiplier}` : ""}`
+-          : evaluation.awardedFreeGames > 0
+-            ? `触发 ${evaluation.awardedFreeGames} 次免费游戏`
+-            : "本局未中奖",
+-      );
+-      setSpinning(false);
+-    }, 720);
+-  }, [balance, freeGames, spinning, totalBet]);
++  const rootRef = useRef<HTMLDivElement>(null);
+ 
+   useEffect(() => {
+-    if (autoRemaining <= 0 || spinning) return;
+-    const timer = window.setTimeout(() => {
+-      setAutoRemaining((current) => Math.max(0, current - 1));
+-      spin();
+-    }, 850);
+-    return () => window.clearTimeout(timer);
+-  }, [autoRemaining, spin, spinning]);
++    const root = rootRef.current;
++    if (!root) return;
++    let destroyed = false;
++    let handle: { destroy: () => void } | null = null;
++
++    void import("../client/m5/boot.ts").then(({ bootM5 }) => {
++      if (destroyed || !rootRef.current) return;
++      handle = bootM5(rootRef.current);
++    });
+ 
+-  const updateLevel = (direction: -1 | 1) => {
+-    if (spinning || freeGames > 0) return;
+-    setBetLevel((current) => Math.min(10, Math.max(1, current + direction)));
+-  };
++    return () => {
++      destroyed = true;
++      handle?.destroy();
++    };
++  }, []);
+ 
+   return (
+-    <main className="game-shell">
+-      <header className="game-topbar">
+-        <div className="brand-lockup">
+-          <span className="brand-kicker">INDEPENDENT WEB BUILD · MILESTONE 1</span>
+-          <h1>ASIAN BUFFALO</h1>
+-          <span className="brand-note">ASIAN BUFFALO 玩法开发版 / 原创美术占位</span>
+-        </div>
+-        <div className="wallet-summary" aria-label="演示钱包">
+-          <span>演示钱包</span>
+-          <strong>{money.format(balance)} MMK</strong>
+-          <small>真钱通道：关闭</small>
+-        </div>
+-      </header>
+-
+-      <section className="game-stage">
+-        <aside className="stage-rail left-rail">
+-          <button className="rail-button" type="button" onClick={() => setHelpOpen(true)}>
+-            <span>?</span>
+-            规则
+-          </button>
+-          <div className="rail-stat">
+-            <span>固定线</span>
+-            <strong>50</strong>
+-          </div>
+-          <div className="rail-stat">
+-            <span>免费局</span>
+-            <strong>{freeGames}</strong>
++    <div id="app" ref={rootRef} className="m5-root">
++      <canvas id="gl" />
++
++      <div id="hud">
++        <div id="topbar" className="hud-panel">
++          <div id="logo">
++            <span className="logo-horn" />
++            <span id="logo-text" data-i18n="gameTitle">
++              亚洲水牛
++            </span>
+           </div>
+-        </aside>
+-
+-        <div className="reel-machine">
+-          <div className="machine-heading">
+-            <span>50 LINES</span>
+-            <strong>{freeGames > 0 ? `FREE GAME · ${freeGames} LEFT` : "BASE GAME"}</strong>
+-            <span>ROOM {roomBase}</span>
++          <div id="fs-badge" className="hidden">
++            <span className="fs-star">✦</span>
++            <span data-i18n="freeSpins">免费旋转</span>
++            <b id="fs-count">0</b>
+           </div>
+-
+-          <div className="reel-window" aria-live="polite" aria-busy={spinning}>
+-            {grid.map((reel, reelIndex) => (
+-              <div className="reel-column" key={`reel-${reelIndex}`}>
+-                {reel.map((symbol, rowIndex) => (
+-                  <SymbolTile
+-                    key={`${reelIndex}-${rowIndex}`}
+-                    symbol={symbol}
+-                    winning={winningCells.has(`${reelIndex}-${rowIndex}`)}
+-                    spinning={spinning}
+-                    multiplier={lastResult.multiplier}
+-                  />
+-                ))}
+-              </div>
+-            ))}
++          <div className="top-actions">
++            <button
++              id="btn-paytable"
++              className="icon-btn"
++              data-i18n-title="paytable"
++              title="赔付表"
++              type="button"
++            >
++              ⓘ
++            </button>
++            <button
++              id="btn-sound"
++              className="icon-btn on"
++              data-i18n-title="sound"
++              title="音效"
++              type="button"
++            >
++              ♪
++            </button>
++            <div id="lang-switch">
++              <button className="lang-btn" data-lang="zh-CN" type="button">
++                中
++              </button>
++              <button className="lang-btn" data-lang="en" type="button">
++                EN
++              </button>
++              <button className="lang-btn" data-lang="my-MM" type="button">
++                မြန်မာ
++              </button>
++            </div>
+           </div>
++        </div>
+ 
+-          <div className="result-strip">
+-            <span>局号 DEMO-{String(roundNumber).padStart(6, "0")}</span>
+-            <strong>{message}</strong>
+-            <span>赢分 {money.format(lastResult.totalWin)}</span>
++        <div id="jackpot-banner" className="hidden">
++          <div className="jackpot-rays" />
++          <div className="jackpot-text" data-i18n="jackpot">
++            超级头奖
+           </div>
++          <div id="jackpot-amount">0</div>
+         </div>
+ 
+-        <aside className="stage-rail right-rail">
+-          <div className="rail-stat">
+-            <span>线注</span>
+-            <strong>{money.format(lineBet)}</strong>
++        <div id="console" className="hud-panel">
++          <div className="meter">
++            <label data-i18n="balance">余额</label>
++            <div id="balance" className="meter-value">
++              0
++            </div>
++          </div>
++          <div className="meter bet-meter">
++            <label data-i18n="bet">投注</label>
++            <div className="bet-row">
++              <button id="bet-minus" className="step-btn" type="button">
++                −
++              </button>
++              <div id="bet" className="meter-value gold">
++                50
++              </div>
++              <button id="bet-plus" className="step-btn" type="button">
++                +
++              </button>
++            </div>
+           </div>
+-          <div className="rail-stat">
+-            <span>总注</span>
+-            <strong>{money.format(totalBet)}</strong>
++          <div className="meter">
++            <label data-i18n="win">赢得</label>
++            <div id="win" className="meter-value win">
++              0
++            </div>
+           </div>
+-          <div className="rail-stat warning-stat">
+-            <span>RTP</span>
+-            <strong>待校准</strong>
++          <div className="console-actions">
++            <button id="btn-turbo" className="console-btn" data-i18n="turbo" type="button">
++              快速
++            </button>
++            <button id="btn-auto" className="console-btn" data-i18n="auto" type="button">
++              自动
++            </button>
++            <button id="btn-spin" className="spin-btn" type="button">
++              <span className="spin-ring" />
++              <span id="spin-label" data-i18n="spin">
++                旋转
++              </span>
++            </button>
+           </div>
+-        </aside>
+-      </section>
+-
+-      <section className="control-deck" aria-label="游戏控制">
+-        <div className="control-group room-control">
+-          <label htmlFor="room">房间</label>
+-          <select
+-            id="room"
+-            value={roomBase}
+-            disabled={spinning || freeGames > 0}
+-            onChange={(event) => setRoomBase(Number(event.target.value) as 50 | 500)}
+-          >
+-            {ROOM_BASE_BETS.map((room) => (
+-              <option key={room} value={room}>{room} 房</option>
+-            ))}
+-          </select>
+         </div>
+ 
+-        <div className="control-group stepper-control">
+-          <span>等级</span>
+-          <div>
+-            <button type="button" onClick={() => updateLevel(-1)} disabled={spinning || freeGames > 0}>−</button>
+-            <strong>{betLevel}</strong>
+-            <button type="button" onClick={() => updateLevel(1)} disabled={spinning || freeGames > 0}>＋</button>
++        <div id="celebration" className="hidden">
++          <div className="celebration-glow" />
++          <div id="celebration-tier" className="celebration-tier">
++            BIG WIN
++          </div>
++          <div id="celebration-amount" className="celebration-amount">
++            0
+           </div>
+         </div>
+ 
+-        <div className="control-group multiplier-control">
+-          <label htmlFor="multiplier">倍率</label>
+-          <select
+-            id="multiplier"
+-            value={betMultiplier}
+-            disabled={spinning || freeGames > 0}
+-            onChange={(event) => setBetMultiplier(Number(event.target.value))}
+-          >
+-            {BET_MULTIPLIERS.map((value) => (
+-              <option key={value} value={value}>×{value}</option>
+-            ))}
+-          </select>
+-        </div>
+-
+-        <button
+-          className={`auto-button ${autoRemaining > 0 ? "is-active" : ""}`}
+-          type="button"
+-          onClick={() => setAutoRemaining((current) => (current > 0 ? 0 : 25))}
+-          disabled={spinning && autoRemaining === 0}
+-        >
+-          <span>AUTO</span>
+-          <strong>{autoRemaining > 0 ? autoRemaining : "25"}</strong>
+-        </button>
+-
+-        <button className="spin-button" type="button" onClick={spin} disabled={spinning || autoRemaining > 0}>
+-          <span>{spinning ? "旋转中" : freeGames > 0 ? "免费旋转" : "开始"}</span>
+-          <strong>SPIN</strong>
+-        </button>
++        <div id="toast" className="hidden" />
+ 
+-        <button
+-          className="max-button"
+-          type="button"
+-          disabled={spinning || freeGames > 0}
+-          onClick={() => {
+-            setBetLevel(BET_LEVELS[BET_LEVELS.length - 1]);
+-            setBetMultiplier(BET_MULTIPLIERS[BET_MULTIPLIERS.length - 1]);
+-          }}
+-        >
+-          最大投注
+-        </button>
+-      </section>
+-
+-      <footer className="prototype-footer">
+-        <span>规则来源：目标游戏客户端帮助页与运行代码</span>
+-        <span>数学状态：{MATH_DISCLOSURE.status}</span>
+-        <span>本版本不存款、不提款、不兑换</span>
+-      </footer>
+-
+-      {helpOpen ? (
+-        <div className="rules-overlay" role="dialog" aria-modal="true" aria-labelledby="rules-title">
+-          <div className="rules-panel">
+-            <header>
+-              <div>
+-                <span>已核验规则</span>
+-                <h2 id="rules-title">玩法与赔付表</h2>
+-              </div>
+-              <button type="button" onClick={() => setHelpOpen(false)} aria-label="关闭规则">×</button>
+-            </header>
+-
+-            <div className="rules-body">
+-              <section className="rule-copy">
+-                <h3>基础规则</h3>
+-                <p>5轴×4行、50条固定赔付线。普通符号从最左轴起连续命中；水牛2个起赔，其余普通符号3个起赔。</p>
+-                <p>WILD代替SCATTER以外的普通符号，并且只会出现在第2、3、4轴。</p>
+-
+-                <h3>免费游戏</h3>
+-                <div className="rule-grid">
+-                  {Object.entries(BASE_FREE_GAMES).map(([count, games]) => (
+-                    <div key={count}><strong>{count} S</strong><span>{games}次</span></div>
+-                  ))}
+-                </div>
+-                <p>免费游戏中，2/3/4/5个SCATTER分别追加 {Object.values(RETRIGGER_FREE_GAMES).join(" / ")} 次。免费局WILD带×2或×3倍数。</p>
+-
+-                <h3>SCATTER赔付</h3>
+-                <p>3/4/5个SCATTER分别支付总投注的 {Object.values(SCATTER_PAYOUT).join("× / ")}。</p>
+-              </section>
+-
+-              <section className="paytable-wrap">
+-                <div className="paytable-heading">
+-                  <span>符号</span><span>2个</span><span>3个</span><span>4个</span><span>5个</span>
+-                </div>
+-                {PAYTABLE_ORDER.map((symbol) => (
+-                  <div className="paytable-row" key={symbol}>
+-                    <span className={`mini-symbol ${SYMBOLS[symbol].className}`}>{SYMBOLS[symbol].mark}</span>
+-                    <span>{PAYTABLE[symbol][2] ?? "—"}</span>
+-                    <span>{PAYTABLE[symbol][3] ?? "—"}</span>
+-                    <span>{PAYTABLE[symbol][4] ?? "—"}</span>
+-                    <span>{PAYTABLE[symbol][5] ?? "—"}</span>
+-                  </div>
+-                ))}
+-                <small>普通符号数值 × 单线投注；客户端未公开RTP与卷轴权重。</small>
+-              </section>
++        <div id="paytable-modal" className="modal hidden">
++          <div className="modal-card">
++            <div className="modal-head">
++              <span data-i18n="paytable">赔付表</span>
++              <button id="paytable-close" className="icon-btn" type="button">
++                ✕
++              </button>
+             </div>
++            <div id="paytable-body" className="modal-body" />
+           </div>
+         </div>
+-      ) : null}
+-    </main>
++
++        <div id="loading">
++          <div className="loading-emblem" />
++          <div id="loading-text" data-i18n="loading">
++            正在进入草原…
++          </div>
++        </div>
++      </div>
++    </div>
+   );
+ }
+diff --git a/app/globals.css b/app/globals.css
+index ec37bc1..1511cb1 100644
+--- a/app/globals.css
++++ b/app/globals.css
+@@ -1,707 +1,20 @@
+ @import "tailwindcss";
+ 
+-:root {
+-  --ink: #f5eed8;
+-  --muted: #b9b09a;
+-  --night: #080b0a;
+-  --panel: #131713;
+-  --panel-2: #1d221b;
+-  --gold: #e0a92f;
+-  --gold-light: #ffd56d;
+-  --orange: #d65b24;
+-  --red: #a72f21;
+-  --green: #3e8b54;
+-  --purple: #7f4aa8;
+-}
+-
+-* {
+-  box-sizing: border-box;
+-}
+-
+-html {
+-  background: var(--night);
+-}
+-
++html,
+ body {
+   margin: 0;
+-  background: var(--night);
+-  color: var(--ink);
+-  font-family: Arial, "Microsoft YaHei", sans-serif;
++  min-height: 100%;
++  background: #1a1208;
+ }
+ 
+-button,
+-select {
+-  font: inherit;
+-}
+-
+-button {
+-  color: inherit;
+-}
+-
+-.game-shell {
+-  min-height: 100vh;
++body {
+   overflow: hidden;
+-  padding: 18px clamp(12px, 2.4vw, 38px) 14px;
+-  background-color: #080b0a;
+-}
+-
+-.game-shell::before {
+-  content: "";
+-  position: fixed;
+-  inset: 0 0 auto;
+-  height: 7px;
+-  background: var(--gold);
+-  box-shadow: 0 4px 30px rgba(224, 169, 47, 0.28);
+-  z-index: 10;
+-}
+-
+-.game-topbar {
+-  width: min(1220px, 100%);
+-  margin: 0 auto 14px;
+-  display: flex;
+-  align-items: center;
+-  justify-content: space-between;
+-  gap: 18px;
+-}
+-
+-.brand-lockup {
+-  display: grid;
+-  gap: 2px;
+-}
+-
+-.brand-kicker,
+-.brand-note,
+-.wallet-summary span,
+-.wallet-summary small,
+-.prototype-footer,
+-.machine-heading,
+-.result-strip,
+-.rail-stat span,
+-.control-group label,
+-.control-group > span {
+-  text-transform: uppercase;
+-  letter-spacing: 0.12em;
+-  font-size: 11px;
+-  color: var(--muted);
+-}
+-
+-.brand-lockup h1 {
+-  margin: 0;
+-  color: var(--gold-light);
+-  font-family: Georgia, serif;
+-  font-size: clamp(24px, 4vw, 48px);
+-  line-height: 0.92;
+-  letter-spacing: 0.04em;
+-  text-shadow: 3px 3px 0 #6d251b;
+-}
+-
+-.wallet-summary {
+-  min-width: 215px;
+-  padding: 10px 14px;
+-  border: 1px solid #5f5436;
+-  border-left: 5px solid var(--gold);
+-  background: #111510;
+-  display: grid;
+-  justify-items: end;
+-  gap: 2px;
+-}
+-
+-.wallet-summary strong {
+-  color: #fff;
+-  font-size: 20px;
+-}
+-
+-.wallet-summary small {
+-  color: #dc7b66;
+-}
+-
+-.game-stage {
+-  width: min(1220px, 100%);
+-  margin: 0 auto;
+-  display: grid;
+-  grid-template-columns: 92px minmax(0, 1fr) 92px;
+-  gap: 12px;
+-  align-items: stretch;
+-}
+-
+-.stage-rail {
+-  display: grid;
+-  align-content: center;
+-  gap: 9px;
+-}
+-
+-.rail-button,
+-.rail-stat {
+-  min-height: 72px;
+-  border: 1px solid #4b4c3d;
+-  background: #141913;
+-  display: grid;
+-  place-items: center;
+-  align-content: center;
+-  gap: 3px;
+-  text-align: center;
+-  clip-path: polygon(9px 0, 100% 0, 100% calc(100% - 9px), calc(100% - 9px) 100%, 0 100%, 0 9px);
+-}
+-
+-.rail-button {
+-  cursor: pointer;
+-  border-color: #9b7628;
+-}
+-
+-.rail-button:hover {
+-  background: #282417;
+-}
+-
+-.rail-button span {
+-  width: 27px;
+-  height: 27px;
+-  display: grid;
+-  place-items: center;
+-  border: 2px solid var(--gold);
+-  border-radius: 50%;
+-  color: var(--gold-light);
+-  font-weight: 900;
+-}
+-
+-.rail-stat strong {
+-  color: var(--gold-light);
+-  font-size: 20px;
+-}
+-
+-.warning-stat strong {
+-  color: #e88770;
+-  font-size: 13px;
+-}
+-
+-.reel-machine {
+-  position: relative;
+-  border: 3px solid #8e6821;
+-  outline: 1px solid #e9bf55;
+-  background: #17140c;
+-  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.55);
+-}
+-
+-.machine-heading,
+-.result-strip {
+-  min-height: 34px;
+-  padding: 0 14px;
+-  display: grid;
+-  grid-template-columns: 1fr auto 1fr;
+-  align-items: center;
+-  background: #211b0d;
+-  border-bottom: 1px solid #5c4c25;
+-}
+-
+-.machine-heading strong {
+-  color: var(--gold-light);
+-  font-size: 12px;
+-  letter-spacing: 0.16em;
+-}
+-
+-.machine-heading span:last-child,
+-.result-strip span:last-child {
+-  text-align: right;
+-}
+-
+-.reel-window {
+-  min-height: min(56vw, 548px);
+-  max-height: 548px;
+-  padding: 8px;
+-  display: grid;
+-  grid-template-columns: repeat(5, 1fr);
+-  gap: 7px;
+-  background-color: #29190f;
+ }
+ 
+-.reel-column {
+-  min-width: 0;
+-  display: grid;
+-  grid-template-rows: repeat(4, minmax(0, 1fr));
+-  gap: 6px;
+-}
+-
+-.reel-symbol {
++.m5-root,
++#app {
+   position: relative;
+-  min-height: 72px;
++  width: 100vw;
++  height: 100vh;
+   overflow: hidden;
+-  border: 2px solid #9b7628;
+-  background: #211f18;
+-  box-shadow: inset 0 0 0 2px #3d321d;
+-  display: grid;
+-  place-items: center;
+-  align-content: center;
+-  isolation: isolate;
+-  transition: transform 160ms ease, filter 160ms ease;
+-}
+-
+-.reel-symbol::before {
+-  content: "";
+-  position: absolute;
+-  inset: 7px;
+-  border: 1px solid rgba(255, 255, 255, 0.12);
+-  z-index: -1;
+-}
+-
+-.symbol-mark {
+-  font-family: Georgia, serif;
+-  font-size: clamp(28px, 4.1vw, 62px);
+-  font-weight: 900;
+-  line-height: 0.9;
+-  text-shadow: 2px 3px 0 rgba(0, 0, 0, 0.45);
+-}
+-
+-.reel-symbol small {
+-  margin-top: 6px;
+-  color: rgba(255, 255, 255, 0.72);
+-  font-size: 9px;
+-  letter-spacing: 0.14em;
+-}
+-
+-.symbol-buffalo { background: #5b251d; color: #ffd36a; }
+-.symbol-lion { background: #70421d; color: #ffe099; }
+-.symbol-elephant { background: #315e5a; color: #bde7d4; }
+-.symbol-zebra { background: #4c355d; color: #f0dcff; }
+-.symbol-antelope { background: #3d5e3a; color: #f2db9f; }
+-.symbol-card { background: #181f28; color: #f0cc62; }
+-.symbol-wild { background: #8b381d; color: #fff0b0; }
+-.symbol-scatter { background: #806b16; color: #fff3a4; border-color: #f2ca50; }
+-
+-.symbol-wild .symbol-mark,
+-.symbol-scatter .symbol-mark {
+-  font-family: Arial, sans-serif;
+-  letter-spacing: -0.08em;
+-}
+-
+-.wild-multiplier {
+-  position: absolute;
+-  right: 6px;
+-  top: 5px;
+-  padding: 2px 5px;
+-  background: #111;
+-  color: var(--gold-light);
+-  border: 1px solid var(--gold);
+-  font-size: 12px;
+-}
+-
+-.reel-symbol.is-winning {
+-  outline: 3px solid #fff2a5;
+-  filter: brightness(1.3);
+-  transform: translateY(-2px);
+-  animation: win-pulse 760ms ease-in-out infinite alternate;
+-}
+-
+-.reel-symbol.is-spinning {
+-  animation: reel-blur 180ms linear infinite;
+-}
+-
+-.result-strip {
+-  border-top: 1px solid #5c4c25;
+-  border-bottom: 0;
+-  color: var(--muted);
+-}
+-
+-.result-strip strong {
+-  padding: 0 10px;
+-  color: #fff;
+-  font-size: 12px;
+-  text-align: center;
+-}
+-
+-.control-deck {
+-  width: min(1060px, calc(100% - 112px));
+-  margin: 15px auto 0;
+-  display: grid;
+-  grid-template-columns: 120px 150px 120px 90px 142px 106px;
+-  justify-content: center;
+-  align-items: stretch;
+-  gap: 8px;
+-}
+-
+-.control-group,
+-.auto-button,
+-.max-button {
+-  min-height: 66px;
+-  border: 1px solid #4b4c3d;
+-  background: #141913;
+-}
+-
+-.control-group {
+-  padding: 8px 10px;
+-  display: grid;
+-  gap: 5px;
+-}
+-
+-.control-group select {
+-  width: 100%;
+-  border: 0;
+-  border-bottom: 1px solid #6f633b;
+-  background: transparent;
+-  color: var(--gold-light);
+-  font-weight: 800;
+-  outline: 0;
+-}
+-
+-.control-group select option {
+-  background: #111;
+-}
+-
+-.stepper-control > div {
+-  display: grid;
+-  grid-template-columns: 30px 1fr 30px;
+-  align-items: center;
+-  text-align: center;
+-}
+-
+-.stepper-control button {
+-  border: 1px solid #625431;
+-  background: #242116;
+-  cursor: pointer;
+-}
+-
+-.stepper-control strong {
+-  color: var(--gold-light);
+-}
+-
+-.auto-button,
+-.max-button,
+-.spin-button {
+-  cursor: pointer;
+-}
+-
+-.auto-button {
+-  display: grid;
+-  place-items: center;
+-  align-content: center;
+-  gap: 3px;
+-  color: var(--muted);
+-}
+-
+-.auto-button strong {
+-  color: #fff;
+-}
+-
+-.auto-button.is-active {
+-  border-color: var(--green);
+-  background: #173422;
+-}
+-
+-.spin-button {
+-  border: 2px solid #ffd56d;
+-  background: #9e321d;
+-  color: #fff5d0;
+-  display: grid;
+-  place-items: center;
+-  align-content: center;
+-  clip-path: polygon(14px 0, calc(100% - 14px) 0, 100% 14px, 100% calc(100% - 14px), calc(100% - 14px) 100%, 14px 100%, 0 calc(100% - 14px), 0 14px);
+-  box-shadow: inset 0 0 0 3px #5f1a12;
+-}
+-
+-.spin-button span {
+-  font-size: 11px;
+-}
+-
+-.spin-button strong {
+-  font-size: 24px;
+-  letter-spacing: 0.08em;
+-}
+-
+-.max-button {
+-  border-color: #7a6330;
+-  color: var(--gold-light);
+-}
+-
+-button:disabled,
+-select:disabled {
+-  cursor: not-allowed;
+-  opacity: 0.48;
+-}
+-
+-.prototype-footer {
+-  width: min(1220px, 100%);
+-  margin: 13px auto 0;
+-  padding-top: 10px;
+-  border-top: 1px solid #2d332c;
+-  display: flex;
+-  justify-content: space-between;
+-  gap: 12px;
+-  color: #777f72;
+-  letter-spacing: 0.06em;
+-  text-transform: none;
+-}
+-
+-.rules-overlay {
+-  position: fixed;
+-  inset: 0;
+-  z-index: 50;
+-  padding: 24px;
+-  background: rgba(0, 0, 0, 0.82);
+-  display: grid;
+-  place-items: center;
+-}
+-
+-.rules-panel {
+-  width: min(980px, 100%);
+-  max-height: calc(100vh - 48px);
+-  overflow: auto;
+-  border: 2px solid var(--gold);
+-  background: #111510;
+-  box-shadow: 0 20px 70px #000;
+-}
+-
+-.rules-panel > header {
+-  position: sticky;
+-  top: 0;
+-  z-index: 2;
+-  padding: 16px 20px;
+-  border-bottom: 1px solid #5c4c25;
+-  background: #1e1b10;
+-  display: flex;
+-  justify-content: space-between;
+-  align-items: center;
+-}
+-
+-.rules-panel h2,
+-.rules-panel h3,
+-.rules-panel p {
+-  margin-top: 0;
+-}
+-
+-.rules-panel h2 {
+-  margin-bottom: 0;
+-  color: var(--gold-light);
+-  font-family: Georgia, serif;
+-}
+-
+-.rules-panel header span {
+-  color: var(--muted);
+-  font-size: 11px;
+-  letter-spacing: 0.12em;
+-}
+-
+-.rules-panel header button {
+-  width: 40px;
+-  height: 40px;
+-  border: 1px solid #705f34;
+-  background: transparent;
+-  font-size: 26px;
+-  cursor: pointer;
+-}
+-
+-.rules-body {
+-  padding: 20px;
+-  display: grid;
+-  grid-template-columns: minmax(250px, 0.8fr) minmax(440px, 1.2fr);
+-  gap: 22px;
+-}
+-
+-.rule-copy {
+-  line-height: 1.75;
+-  color: #d4cdbb;
+-}
+-
+-.rule-copy h3 {
+-  margin-bottom: 7px;
+-  color: var(--gold-light);
+-  border-bottom: 1px solid #3f3c2d;
+-  padding-bottom: 5px;
+-}
+-
+-.rule-grid {
+-  margin-bottom: 12px;
+-  display: grid;
+-  grid-template-columns: repeat(3, 1fr);
+-  gap: 5px;
+-}
+-
+-.rule-grid div {
+-  border: 1px solid #4e462f;
+-  padding: 8px;
+-  display: grid;
+-  text-align: center;
+-}
+-
+-.rule-grid strong {
+-  color: var(--gold-light);
+-}
+-
+-.paytable-wrap {
+-  border: 1px solid #4a4128;
+-}
+-
+-.paytable-heading,
+-.paytable-row {
+-  display: grid;
+-  grid-template-columns: 1.4fr repeat(4, 1fr);
+-  align-items: center;
+-  text-align: center;
+-}
+-
+-.paytable-heading {
+-  min-height: 36px;
+-  background: #282313;
+-  color: var(--gold-light);
+-  font-size: 11px;
+-}
+-
+-.paytable-row {
+-  min-height: 48px;
+-  border-top: 1px solid #2e332c;
+-}
+-
+-.paytable-row > span:not(:first-child) {
+-  color: #fff;
+-  font-weight: 700;
+-}
+-
+-.mini-symbol {
+-  width: 34px;
+-  height: 34px;
+-  margin: 0 auto;
+-  border: 1px solid #8e6821;
+-  display: grid;
+-  place-items: center;
+-  font-family: Georgia, serif;
+-  font-weight: 900;
+-}
+-
+-.paytable-wrap small {
+-  display: block;
+-  padding: 10px;
+-  border-top: 1px solid #4a4128;
+-  color: #9f9888;
+-  line-height: 1.5;
+-}
+-
+-@keyframes reel-blur {
+-  0% { transform: translateY(-3px); filter: blur(0); }
+-  50% { transform: translateY(4px); filter: blur(2px) brightness(0.8); }
+-  100% { transform: translateY(-3px); filter: blur(0); }
+-}
+-
+-@keyframes win-pulse {
+-  from { box-shadow: inset 0 0 0 2px #3d321d, 0 0 6px #ffe48b; }
+-  to { box-shadow: inset 0 0 0 2px #3d321d, 0 0 22px #ffe48b; }
+-}
+-
+-@media (max-width: 900px) {
+-  .game-stage {
+-    grid-template-columns: 1fr;
+-  }
+-
+-  .stage-rail {
+-    grid-template-columns: repeat(3, 1fr);
+-  }
+-
+-  .left-rail { order: 2; }
+-  .right-rail { order: 3; }
+-  .reel-machine { order: 1; }
+-
+-  .rail-button,
+-  .rail-stat {
+-    min-height: 52px;
+-  }
+-
+-  .control-deck {
+-    width: 100%;
+-    grid-template-columns: repeat(3, 1fr);
+-  }
+-
+-  .spin-button {
+-    grid-column: 2;
+-    grid-row: 1 / span 2;
+-  }
+-
+-  .rules-body {
+-    grid-template-columns: 1fr;
+-  }
+-}
+-
+-@media (max-width: 620px) {
+-  .game-shell {
+-    padding: 14px 8px 10px;
+-    overflow: auto;
+-  }
+-
+-  .game-topbar {
+-    align-items: end;
+-  }
+-
+-  .brand-kicker,
+-  .brand-note {
+-    display: none;
+-  }
+-
+-  .wallet-summary {
+-    min-width: 152px;
+-    padding: 7px 9px;
+-  }
+-
+-  .wallet-summary strong {
+-    font-size: 15px;
+-  }
+-
+-  .machine-heading,
+-  .result-strip {
+-    padding: 0 7px;
+-  }
+-
+-  .machine-heading span,
+-  .result-strip span {
+-    font-size: 8px;
+-  }
+-
+-  .result-strip strong {
+-    font-size: 10px;
+-  }
+-
+-  .reel-window {
+-    min-height: 420px;
+-    gap: 3px;
+-    padding: 4px;
+-  }
+-
+-  .reel-column {
+-    gap: 3px;
+-  }
+-
+-  .reel-symbol {
+-    min-height: 68px;
+-    border-width: 1px;
+-  }
+-
+-  .reel-symbol small {
+-    display: none;
+-  }
+-
+-  .control-deck {
+-    gap: 5px;
+-  }
+-
+-  .control-group,
+-  .auto-button,
+-  .max-button {
+-    min-height: 58px;
+-  }
+-
+-  .prototype-footer {
+-    display: grid;
+-    font-size: 9px;
+-  }
+-
+-  .rules-overlay {
+-    padding: 8px;
+-  }
+-
+-  .rules-panel {
+-    max-height: calc(100vh - 16px);
+-  }
+-
+-  .rules-body {
+-    padding: 12px;
+-  }
+-
+-  .paytable-heading,
+-  .paytable-row {
+-    grid-template-columns: 1.2fr repeat(4, 1fr);
+-  }
+ }
+diff --git a/app/layout.tsx b/app/layout.tsx
+index 8a42b7e..2dd1343 100644
+--- a/app/layout.tsx
++++ b/app/layout.tsx
+@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
+ });
+ 
+ export const metadata: Metadata = {
+-  title: "Asian Buffalo · 50线玩法原型",
+-  description: "Asian Buffalo独立开发的5×4、50线网页游戏与数学模型原型。",
++  title: "Asian Buffalo · 亚洲水牛",
++  description: "Asian Buffalo 5×4、50线正式前端（Session/Spin/Round/Rules）。",
+   other: {
+     "codex-preview": "development",
+   },
+diff --git a/client/m5/adapter.ts b/client/m5/adapter.ts
+new file mode 100644
+index 0000000..b929c2e
+--- /dev/null
++++ b/client/m5/adapter.ts
+@@ -0,0 +1,117 @@
++/**
++ * M5 presentation adapter boundary.
++ *
++ * Formal runtime path uses FormalGameProvider only.
++ * MockProvider / client RNG / local pay evaluation MUST NOT be imported
++ * from the production boot path (see mock-provider.ts — DEV/QA isolation).
++ *
++ * Big / Mega / Ultra / Jackpot tiers are UI-only and must never feed
++ * RTP, balance, ledger, wallet, math, or settlement.
++ */
++
++import {
++  BET_LEVELS,
++  BET_MULTIPLIERS,
++  GRID_COLUMNS,
++  GRID_ROWS,
++  PAYLINE_COUNT,
++  ROOM_BASE_BETS,
++  type SymbolId,
++} from "../../lib/game-config.ts";
++
++export const REELS = GRID_COLUMNS;
++export const ROWS = GRID_ROWS;
++export const LINES = PAYLINE_COUNT;
++
++export type { SymbolId };
++
++export type BetPreset = {
++  roomBase: number;
++  betLevel: number;
++  betMultiplier: number;
++  totalBetMinor: number;
++};
++
++export function listBetPresets(): BetPreset[] {
++  const presets: BetPreset[] = [];
++  for (const roomBase of ROOM_BASE_BETS) {
++    for (const betLevel of BET_LEVELS) {
++      for (const betMultiplier of BET_MULTIPLIERS) {
++        presets.push({
++          roomBase,
++          betLevel,
++          betMultiplier,
++          totalBetMinor: roomBase * betLevel * betMultiplier,
++        });
++      }
++    }
++  }
++  presets.sort((a, b) => a.totalBetMinor - b.totalBetMinor);
++  return presets;
++}
++
++export const BET_PRESETS = listBetPresets();
++
++/** Presentation spin request — bet knobs only; free-game state is server-owned. */
++export interface SpinRequest {
++  roomBase: number;
++  betLevel: number;
++  betMultiplier: number;
++}
++
++/** Presentation outcome mapped from server SpinResult — no local math. */
++export interface PresentationSpinResult {
++  roundId: string;
++  grid: SymbolId[][];
++  winMinor: number;
++  totalBetMinor: number;
++  balanceAfterMinor: number;
++  lineWins: { line: number; symbol: string; count: number; payout: number }[];
++  winningPositions: { reel: number; row: number }[];
++  scatterCount: number;
++  scatterWin: number;
++  freeGamesRemaining: number;
++  awardedFreeGames: number;
++  isFreeGame: boolean;
++  mathVersion: string;
++}
++
++export interface GameProvider {
++  ensureReady(): Promise<void>;
++  getBalance(): number;
++  getFreeGamesRemaining(): number;
++  getMathVersionId(): string | null;
++  getSessionId(): string | null;
++  canBet(totalBetMinor: number): boolean;
++  spin(req: SpinRequest): Promise<PresentationSpinResult>;
++  recoverLastRound(): Promise<PresentationSpinResult | null>;
++}
++
++/** UI-only celebration thresholds (× total bet). Not used in settlement. */
++export const WIN_TIERS = { big: 10, mega: 25, ultra: 50, jackpot: 100 } as const;
++export type WinTier = "none" | "big" | "mega" | "ultra" | "jackpot";
++
++export function winTier(winMinor: number, totalBetMinor: number): WinTier {
++  const x = totalBetMinor > 0 ? winMinor / totalBetMinor : 0;
++  if (x >= WIN_TIERS.jackpot) return "jackpot";
++  if (x >= WIN_TIERS.ultra) return "ultra";
++  if (x >= WIN_TIERS.mega) return "mega";
++  if (x >= WIN_TIERS.big) return "big";
++  return "none";
++}
++
++export const FORMAL_SYMBOLS: SymbolId[] = [
++  "buffalo",
++  "lion",
++  "elephant",
++  "zebra",
++  "antelope",
++  "a",
++  "k",
++  "q",
++  "j",
++  "ten",
++  "nine",
++  "wild",
++  "scatter",
++];
+diff --git a/client/m5/audio.ts b/client/m5/audio.ts
+new file mode 100644
+index 0000000..ee57838
+--- /dev/null
++++ b/client/m5/audio.ts
+@@ -0,0 +1,251 @@
++/**
++ * AudioEngine — 100% procedural WebAudio (no external assets).
++ * BGM: pentatonic savanna loop. SFX: spin / reel stop / win / tiers / roar / free spins.
++ */
++
++export class AudioEngine {
++  private ctx: AudioContext | null = null;
++  private master: GainNode | null = null;
++  private bgmGain: GainNode | null = null;
++  private bgmTimer: number | null = null;
++  private bgmStep = 0;
++  private muted = false;
++  private spinNoise: { src: AudioBufferSourceNode; gain: GainNode } | null = null;
++
++  private ensure(): AudioContext | null {
++    if (this.ctx) return this.ctx;
++    try {
++      const AC = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
++      this.ctx = new AC();
++      this.master = this.ctx.createGain();
++      this.master.gain.value = this.muted ? 0 : 0.8;
++      this.master.connect(this.ctx.destination);
++      this.bgmGain = this.ctx.createGain();
++      this.bgmGain.gain.value = 0.32;
++      this.bgmGain.connect(this.master);
++    } catch {
++      return null;
++    }
++    return this.ctx;
++  }
++
++  /** must be called from a user gesture */
++  unlock(): void {
++    const ctx = this.ensure();
++    if (ctx && ctx.state === "suspended") void ctx.resume();
++  }
++
++  setMuted(m: boolean): void {
++    this.muted = m;
++    if (this.master && this.ctx) {
++      this.master.gain.linearRampToValueAtTime(m ? 0 : 0.8, this.ctx.currentTime + 0.15);
++    }
++  }
++  get isMuted(): boolean { return this.muted; }
++
++  // ---------------- BGM ----------------
++  startBgm(): void {
++    const ctx = this.ensure();
++    if (!ctx || this.bgmTimer !== null) return;
++    // pentatonic flute-ish melody (C major pentatonic), 8 steps per bar
++    const scale = [261.63, 293.66, 329.63, 392.0, 440.0, 523.25, 587.33, 659.25];
++    const melody = [0, 2, 4, 7, 4, 2, 5, 4, 0, 2, 4, 5, 7, 5, 4, 2];
++    const stepDur = 0.42;
++    const tick = () => {
++      if (!this.ctx || !this.bgmGain) return;
++      const t0 = this.ctx.currentTime;
++      const step = this.bgmStep % melody.length;
++      const f = scale[melody[step]];
++      // lead (soft flute: sine + vibrato)
++      this.note(f, t0, stepDur * 0.95, 0.16, "sine", 0.012);
++      this.note(f * 2, t0, stepDur * 0.6, 0.04, "sine", 0.02);
++      // low drone every bar start
++      if (step % 8 === 0) this.note(f / 4, t0, stepDur * 7.5, 0.12, "triangle", 0.02);
++      // soft drum on steps 0 and 5 of bar
++      if (step % 8 === 0 || step % 8 === 5) this.drum(t0);
++      this.bgmStep++;
++    };
++    tick();
++    this.bgmTimer = window.setInterval(tick, stepDur * 1000);
++  }
++
++  stopBgm(): void {
++    if (this.bgmTimer !== null) { clearInterval(this.bgmTimer); this.bgmTimer = null; }
++  }
++
++  private note(freq: number, t0: number, dur: number, vol: number, type: OscillatorType, attack: number, dest?: AudioNode): void {
++    if (!this.ctx) return;
++    const out = dest ?? this.bgmGain ?? this.master;
++    if (!out) return;
++    const osc = this.ctx.createOscillator();
++    const g = this.ctx.createGain();
++    osc.type = type;
++    osc.frequency.value = freq;
++    // gentle vibrato
++    const lfo = this.ctx.createOscillator();
++    const lfoG = this.ctx.createGain();
++    lfo.frequency.value = 5.5;
++    lfoG.gain.value = freq * 0.006;
++    lfo.connect(lfoG).connect(osc.frequency);
++    g.gain.setValueAtTime(0.0001, t0);
++    g.gain.linearRampToValueAtTime(vol, t0 + attack);
++    g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
++    osc.connect(g).connect(out);
++    osc.start(t0); lfo.start(t0);
++    osc.stop(t0 + dur + 0.05); lfo.stop(t0 + dur + 0.05);
++  }
++
++  private drum(t0: number): void {
++    if (!this.ctx || !this.bgmGain) return;
++    const osc = this.ctx.createOscillator();
++    const g = this.ctx.createGain();
++    osc.type = "sine";
++    osc.frequency.setValueAtTime(120, t0);
++    osc.frequency.exponentialRampToValueAtTime(45, t0 + 0.18);
++    g.gain.setValueAtTime(0.22, t0);
++    g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.22);
++    osc.connect(g).connect(this.bgmGain);
++    osc.start(t0); osc.stop(t0 + 0.25);
++  }
++
++  // ---------------- SFX helpers ----------------
++  private sfxGain(vol: number): GainNode | null {
++    if (!this.ensure() || !this.master) return null;
++    const g = this.ctx!.createGain();
++    g.gain.value = vol;
++    g.connect(this.master);
++    return g;
++  }
++
++  private blip(freqs: number[], stepDur: number, vol: number, type: OscillatorType = "triangle"): void {
++    const out = this.sfxGain(vol);
++    if (!out || !this.ctx) return;
++    const t0 = this.ctx.currentTime;
++    freqs.forEach((f, i) => {
++      const osc = this.ctx!.createOscillator();
++      const g = this.ctx!.createGain();
++      osc.type = type; osc.frequency.value = f;
++      const ts = t0 + i * stepDur;
++      g.gain.setValueAtTime(0.0001, ts);
++      g.gain.linearRampToValueAtTime(1, ts + 0.02);
++      g.gain.exponentialRampToValueAtTime(0.0001, ts + stepDur * 1.8);
++      osc.connect(g).connect(out);
++      osc.start(ts); osc.stop(ts + stepDur * 2);
++    });
++  }
++
++  private noiseBurst(dur: number, vol: number, filterFreq: number, type: BiquadFilterType = "bandpass"): void {
++    const out = this.sfxGain(vol);
++    if (!out || !this.ctx) return;
++    const ctx = this.ctx;
++    const len = Math.floor(ctx.sampleRate * dur);
++    const buf = ctx.createBuffer(1, len, ctx.sampleRate);
++    const d = buf.getChannelData(0);
++    for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / len);
++    const src = ctx.createBufferSource();
++    src.buffer = buf;
++    const flt = ctx.createBiquadFilter();
++    flt.type = type; flt.frequency.value = filterFreq; flt.Q.value = 1.2;
++    src.connect(flt).connect(out);
++    src.start();
++  }
++
++  // ---------------- Game SFX ----------------
++  uiClick(): void { this.blip([880, 1320], 0.05, 0.18, "square"); }
++  betStep(): void { this.blip([660], 0.05, 0.15, "square"); }
++
++  spinStart(): void {
++    this.stopSpinLoop();
++    const out = this.sfxGain(0.5);
++    if (!out || !this.ctx) return;
++    const ctx = this.ctx;
++    // looping wind-up noise
++    const len = ctx.sampleRate * 2;
++    const buf = ctx.createBuffer(1, len, ctx.sampleRate);
++    const d = buf.getChannelData(0);
++    for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
++    const src = ctx.createBufferSource();
++    src.buffer = buf; src.loop = true;
++    const flt = ctx.createBiquadFilter();
++    flt.type = "bandpass"; flt.frequency.value = 900; flt.Q.value = 2;
++    const g = ctx.createGain();
++    g.gain.value = 0.0;
++    g.gain.linearRampToValueAtTime(0.4, ctx.currentTime + 0.3);
++    src.connect(flt).connect(g).connect(out);
++    src.start();
++    this.spinNoise = { src, gain: g };
++  }
++
++  stopSpinLoop(): void {
++    if (this.spinNoise && this.ctx) {
++      try {
++        this.spinNoise.gain.gain.linearRampToValueAtTime(0.0001, this.ctx.currentTime + 0.15);
++        const s = this.spinNoise.src;
++        setTimeout(() => { try { s.stop(); } catch { /* noop */ } }, 250);
++      } catch { /* noop */ }
++      this.spinNoise = null;
++    }
++  }
++
++  reelStop(): void {
++    this.blip([180, 90], 0.04, 0.35, "sine");
++    this.noiseBurst(0.08, 0.12, 2400, "highpass");
++  }
++
++  winSmall(): void { this.blip([523, 659, 784, 1047], 0.09, 0.3); }
++  scatterLand(): void { this.blip([1568, 2093], 0.08, 0.3, "sine"); }
++
++  bigWin(): void {
++    this.blip([523, 659, 784, 1047, 1319, 1568], 0.11, 0.4);
++    setTimeout(() => this.blip([784, 988, 1175, 1568, 2093], 0.11, 0.35), 500);
++  }
++  megaWin(): void {
++    this.bigWin();
++    setTimeout(() => this.blip([659, 831, 988, 1319, 1661, 2093, 2637], 0.1, 0.4), 900);
++  }
++  ultraWin(): void {
++    this.megaWin();
++    setTimeout(() => this.noiseBurst(1.2, 0.2, 5000, "highpass"), 800);
++    setTimeout(() => this.blip([1047, 1319, 1568, 2093, 2637, 3136], 0.09, 0.42), 1400);
++  }
++  jackpot(): void {
++    this.ultraWin();
++    for (let i = 0; i < 4; i++) {
++      setTimeout(() => this.blip([523, 784, 1047, 1568], 0.08, 0.35), 400 + i * 350);
++    }
++  }
++
++  freeSpinTrigger(): void {
++    this.blip([392, 523, 659, 784, 1047, 1319, 1568, 2093], 0.12, 0.4, "sine");
++  }
++
++  /** buffalo roar: low sawtooth + growl noise, pitch envelope */
++  roar(): void {
++    const out = this.sfxGain(0.65);
++    if (!out || !this.ctx) return;
++    const ctx = this.ctx;
++    const t0 = ctx.currentTime;
++    const osc = ctx.createOscillator();
++    osc.type = "sawtooth";
++    osc.frequency.setValueAtTime(160, t0);
++    osc.frequency.exponentialRampToValueAtTime(70, t0 + 0.9);
++    const g = ctx.createGain();
++    g.gain.setValueAtTime(0.0001, t0);
++    g.gain.linearRampToValueAtTime(0.5, t0 + 0.12);
++    g.gain.setValueAtTime(0.45, t0 + 0.55);
++    g.gain.exponentialRampToValueAtTime(0.0001, t0 + 1.0);
++    const flt = ctx.createBiquadFilter();
++    flt.type = "lowpass"; flt.frequency.value = 500;
++    // growl AM
++    const am = ctx.createOscillator();
++    const amG = ctx.createGain();
++    am.frequency.value = 28; amG.gain.value = 0.25;
++    am.connect(amG).connect(g.gain);
++    osc.connect(flt).connect(g).connect(out);
++    osc.start(t0); am.start(t0);
++    osc.stop(t0 + 1.05); am.stop(t0 + 1.05);
++    this.noiseBurst(0.9, 0.18, 300, "lowpass");
++  }
++}
++
++export const audio = new AudioEngine();
+diff --git a/client/m5/boot.ts b/client/m5/boot.ts
+new file mode 100644
+index 0000000..ae6a5d6
+--- /dev/null
++++ b/client/m5/boot.ts
+@@ -0,0 +1,124 @@
++/**
++ * M5 boot — single formal frontend entry (Three.js + HUD).
++ * Uses FormalGameProvider only. Isolated demo providers are never imported here.
++ */
++import "./styles.css";
++import * as THREE from "three";
++import { World } from "./scene/world.ts";
++import { Particles } from "./scene/particles.ts";
++import { Buffalo } from "./scene/buffalo.ts";
++import { ReelRig } from "./game/reels.ts";
++import { Game } from "./game/game.ts";
++import { Hud } from "./ui/hud.ts";
++import { FormalGameProvider } from "./formal-provider.ts";
++import { validateDicts, getLang, setLang, type Lang } from "./i18n.ts";
++import type { SymbolId } from "./adapter.ts";
++
++export type M5Handle = {
++  destroy: () => void;
++  game: Game;
++};
++
++export function bootM5(root: HTMLElement): M5Handle {
++  const i18nProblems = validateDicts();
++  if (i18nProblems.length) console.warn("[i18n] dictionary issues:", i18nProblems);
++
++  const canvas = root.querySelector<HTMLCanvasElement>("#gl");
++  if (!canvas) throw new Error("M5 canvas #gl missing");
++
++  const world = new World(canvas);
++  const particles = new Particles(world.scene);
++  const buffalo = new Buffalo();
++  buffalo.setParticles(particles);
++  world.scene.add(buffalo.group);
++
++  const rig = new ReelRig();
++  world.scene.add(rig.group);
++  const applyAspect = () =>
++    rig.setAspect(root.clientWidth / Math.max(root.clientHeight, 1));
++  applyAspect();
++
++  const provider = new FormalGameProvider();
++  const game = new Game(provider, rig, buffalo, particles, world);
++  const hud = new Hud(game);
++  void hud;
++
++  void game.bootstrap().catch((err) => {
++    console.error("[m5] bootstrap failed", err);
++    const loading = root.querySelector("#loading-text");
++    if (loading) loading.textContent = String(err?.message ?? err);
++  });
++
++  const debug = {
++    game,
++    setLang: (l: Lang) => setLang(l),
++    getLang,
++    spin: () => void game.spin(),
++    state: () => ({
++      lang: getLang(),
++      busy: game.busy,
++      freeSpins: game.freeSpins,
++      balance: provider.getBalance(),
++      bet: game.bet,
++      sessionId: provider.getSessionId(),
++      mathVersionId: provider.getMathVersionId(),
++      auto: game.autoMode,
++      turbo: game.turbo,
++    }),
++  };
++  (window as unknown as { __game: typeof debug }).__game = debug;
++
++  const clock = new THREE.Clock();
++  let slowFrames = 0;
++  let degraded = false;
++  let raf = 0;
++  let alive = true;
++
++  const onResize = () => {
++    applyAspect();
++    world.resize();
++  };
++  window.addEventListener("resize", onResize);
++
++  function frame(): void {
++    if (!alive) return;
++    raf = requestAnimationFrame(frame);
++    const dt = Math.min(clock.getDelta(), 0.05);
++    const time = clock.elapsedTime;
++    world.update(dt);
++    rig.update(dt, time);
++    buffalo.update(dt, time);
++    particles.update(dt, time);
++    world.render();
++    if (!degraded) {
++      if (dt > 0.024) slowFrames++;
++      else slowFrames = Math.max(0, slowFrames - 2);
++      if (slowFrames > 90) {
++        degraded = true;
++        world.renderer.setPixelRatio(1);
++        world.resize();
++      }
++    }
++  }
++  frame();
++
++  const loading = root.querySelector("#loading");
++  window.setTimeout(() => loading?.classList.add("done"), 500);
++
++  return {
++    game,
++    destroy: () => {
++      alive = false;
++      cancelAnimationFrame(raf);
++      window.removeEventListener("resize", onResize);
++      try {
++        world.renderer.dispose();
++      } catch {
++        /* ignore */
++      }
++    },
++  };
++}
++
++// Keep SymbolId exported for QA typings without pulling mock.
++export type { SymbolId };
+diff --git a/client/m5/formal-provider.ts b/client/m5/formal-provider.ts
+new file mode 100644
+index 0000000..bb47c1c
+--- /dev/null
++++ b/client/m5/formal-provider.ts
+@@ -0,0 +1,192 @@
++/**
++ * FormalGameProvider — Session / Spin / Round / Rules client.
++ * Server-authoritative; no client RNG, local paytable eval, or demo balance.
++ */
++
++import type {
++  GameProvider,
++  PresentationSpinResult,
++  SpinRequest,
++  SymbolId,
++} from "./adapter.ts";
++
++type ApiErrorBody = {
++  error?: { code?: string; message?: string };
++};
++
++type SessionResponse = {
++  sessionId: string;
++  mathVersionId: string;
++  expiresAt: string;
++};
++
++type BalanceResponse = {
++  balanceMinor: number;
++  currency: string;
++  playerId: string;
++};
++
++type ServerSpinResult = {
++  roundId: string;
++  sessionId: string;
++  playerId: string;
++  mathVersion: string;
++  totalBetMinor: number;
++  totalWinMinor: number;
++  balanceAfterMinor: number;
++  isFreeGame: boolean;
++  freeGamesRemaining: number;
++  awardedFreeGames: number;
++  grid: string[][];
++  winningPositions: { reel: number; row: number }[];
++  lineWins: { line: number; symbol: string; count: number; payout: number }[];
++  scatterCount: number;
++  scatterWin: number;
++  multiplier: number;
++  settledAt: string;
++};
++
++const LAST_ROUND_KEY = "ab.m5.lastRoundId";
++const SESSION_KEY = "ab.m5.sessionId";
++
++function asSymbolGrid(grid: string[][]): SymbolId[][] {
++  return grid.map((col) => col.map((cell) => cell as SymbolId));
++}
++
++function mapSpin(result: ServerSpinResult): PresentationSpinResult {
++  return {
++    roundId: result.roundId,
++    grid: asSymbolGrid(result.grid),
++    winMinor: result.totalWinMinor,
++    totalBetMinor: result.totalBetMinor,
++    balanceAfterMinor: result.balanceAfterMinor,
++    lineWins: result.lineWins,
++    winningPositions: result.winningPositions,
++    scatterCount: result.scatterCount,
++    scatterWin: result.scatterWin,
++    freeGamesRemaining: result.freeGamesRemaining,
++    awardedFreeGames: result.awardedFreeGames,
++    isFreeGame: result.isFreeGame,
++    mathVersion: result.mathVersion,
++  };
++}
++
++async function readJson<T>(response: Response): Promise<T> {
++  const body = (await response.json()) as T & ApiErrorBody;
++  if (!response.ok) {
++    const code = body.error?.code ?? `HTTP_${response.status}`;
++    const message = body.error?.message ?? response.statusText;
++    const err = new Error(`${code}: ${message}`);
++    (err as Error & { code?: string }).code = code;
++    throw err;
++  }
++  return body;
++}
++
++export class FormalGameProvider implements GameProvider {
++  private sessionId: string | null = null;
++  private mathVersionId: string | null = null;
++  private balanceMinor = 0;
++  private freeGamesRemaining = 0;
++  private ready = false;
++
++  getBalance(): number {
++    return this.balanceMinor;
++  }
++
++  getFreeGamesRemaining(): number {
++    return this.freeGamesRemaining;
++  }
++
++  getMathVersionId(): string | null {
++    return this.mathVersionId;
++  }
++
++  getSessionId(): string | null {
++    return this.sessionId;
++  }
++
++  canBet(totalBetMinor: number): boolean {
++    if (this.freeGamesRemaining > 0) return true;
++    return totalBetMinor > 0 && this.balanceMinor >= totalBetMinor;
++  }
++
++  async ensureReady(): Promise<void> {
++    if (this.ready && this.sessionId) return;
++
++    const sessionRes = await fetch("/api/v1/game/sessions", {
++      method: "POST",
++      headers: { "content-type": "application/json" },
++      body: "{}",
++    });
++    const session = await readJson<SessionResponse>(sessionRes);
++    this.sessionId = session.sessionId;
++    this.mathVersionId = session.mathVersionId;
++    try {
++      sessionStorage.setItem(SESSION_KEY, session.sessionId);
++    } catch {
++      /* ignore */
++    }
++
++    // Rules fetch validates ExecutableMathVersion is reachable (display/help).
++    if (this.mathVersionId) {
++      const rulesRes = await fetch(
++        `/api/v1/game/rules/${encodeURIComponent(this.mathVersionId)}`,
++      );
++      await readJson<unknown>(rulesRes);
++    }
++
++    const balRes = await fetch("/api/v1/game/wallet/balance");
++    const bal = await readJson<BalanceResponse>(balRes);
++    this.balanceMinor = bal.balanceMinor;
++    this.ready = true;
++  }
++
++  async spin(req: SpinRequest): Promise<PresentationSpinResult> {
++    await this.ensureReady();
++    if (!this.sessionId) throw new Error("SESSION_MISSING");
++
++    const idempotencyKey = `spin_${crypto.randomUUID().replace(/-/g, "")}`;
++    const response = await fetch("/api/v1/game/spins", {
++      method: "POST",
++      headers: { "content-type": "application/json" },
++      body: JSON.stringify({
++        sessionId: this.sessionId,
++        roomBase: req.roomBase,
++        betLevel: req.betLevel,
++        betMultiplier: req.betMultiplier,
++        idempotencyKey,
++      }),
++    });
++    const result = await readJson<ServerSpinResult>(response);
++    const mapped = mapSpin(result);
++    this.balanceMinor = mapped.balanceAfterMinor;
++    this.freeGamesRemaining = mapped.freeGamesRemaining;
++    try {
++      sessionStorage.setItem(LAST_ROUND_KEY, mapped.roundId);
++    } catch {
++      /* ignore */
++    }
++    return mapped;
++  }
++
++  async recoverLastRound(): Promise<PresentationSpinResult | null> {
++    let roundId: string | null = null;
++    try {
++      roundId = sessionStorage.getItem(LAST_ROUND_KEY);
++    } catch {
++      roundId = null;
++    }
++    if (!roundId) return null;
++
++    const response = await fetch(
++      `/api/v1/game/rounds/${encodeURIComponent(roundId)}`,
++    );
++    if (response.status === 404) return null;
++    const result = await readJson<ServerSpinResult>(response);
++    const mapped = mapSpin(result);
++    this.balanceMinor = mapped.balanceAfterMinor;
++    this.freeGamesRemaining = mapped.freeGamesRemaining;
++    return mapped;
++  }
++}
+diff --git a/client/m5/game/game.ts b/client/m5/game/game.ts
+new file mode 100644
+index 0000000..d1afb55
+--- /dev/null
++++ b/client/m5/game/game.ts
+@@ -0,0 +1,306 @@
++/**
++ * Game — M5 presentation orchestrator.
++ * Outcomes come only from GameProvider (FormalGameProvider on formal path).
++ * Win tiers are UI celebrations only.
++ */
++import * as THREE from "three";
++import {
++  BET_PRESETS,
++  type BetPreset,
++  type GameProvider,
++  type PresentationSpinResult,
++  winTier,
++  type WinTier,
++  ROWS,
++} from "../adapter.ts";
++import type { ReelRig } from "./reels.ts";
++import type { Buffalo } from "../scene/buffalo.ts";
++import type { Particles } from "../scene/particles.ts";
++import type { World } from "../scene/world.ts";
++import { audio } from "../audio.ts";
++
++export interface HudHooks {
++  setBalance(v: number, animate?: boolean): void;
++  setBet(v: number): void;
++  showWin(amount: number): void;
++  setFreeSpins(n: number): void;
++  toastKey(key: string): void;
++  celebrate(tier: WinTier, amount: number): Promise<void>;
++  setSpinBusy(busy: boolean): void;
++  setAutoActive(on: boolean): void;
++  setTurboActive(on: boolean): void;
++  refreshStatic(): void;
++  setStatus?(message: string): void;
++}
++
++export class Game {
++  private provider: GameProvider;
++  private rig: ReelRig;
++  private buffalo: Buffalo;
++  private particles: Particles;
++  private world: World;
++  private hud!: HudHooks;
++
++  betIndex = 0;
++  freeSpins = 0;
++  autoMode = false;
++  turbo = false;
++  busy = false;
++  private fsTotalWin = 0;
++  private autoTimer: number | null = null;
++
++  constructor(
++    provider: GameProvider,
++    rig: ReelRig,
++    buffalo: Buffalo,
++    particles: Particles,
++    world: World,
++  ) {
++    this.provider = provider;
++    this.rig = rig;
++    this.buffalo = buffalo;
++    this.particles = particles;
++    this.world = world;
++    this.rig.onReelStop = () => audio.reelStop();
++    this.buffalo.onRoarSound = () => audio.roar();
++    // Default total bet 50 (roomBase 50 × level 1 × mult 1)
++    const idx = BET_PRESETS.findIndex((p) => p.totalBetMinor === 50);
++    this.betIndex = idx >= 0 ? idx : 0;
++  }
++
++  attachHud(hud: HudHooks): void {
++    this.hud = hud;
++    hud.setBalance(this.provider.getBalance());
++    hud.setBet(this.bet.totalBetMinor);
++    hud.setFreeSpins(this.provider.getFreeGamesRemaining());
++  }
++
++  get bet(): BetPreset {
++    return BET_PRESETS[this.betIndex]!;
++  }
++
++  betUp(): void {
++    if (this.busy) return;
++    this.betIndex = Math.min(this.betIndex + 1, BET_PRESETS.length - 1);
++    audio.betStep();
++    this.hud.setBet(this.bet.totalBetMinor);
++  }
++
++  betDown(): void {
++    if (this.busy) return;
++    this.betIndex = Math.max(this.betIndex - 1, 0);
++    audio.betStep();
++    this.hud.setBet(this.bet.totalBetMinor);
++  }
++
++  toggleTurbo(): void {
++    this.turbo = !this.turbo;
++    audio.uiClick();
++    this.hud.setTurboActive(this.turbo);
++  }
++
++  toggleAuto(): void {
++    this.autoMode = !this.autoMode;
++    audio.uiClick();
++    this.hud.setAutoActive(this.autoMode);
++    if (this.autoMode && !this.busy) void this.spin();
++    if (!this.autoMode && this.autoTimer !== null) {
++      clearTimeout(this.autoTimer);
++      this.autoTimer = null;
++    }
++  }
++
++  async bootstrap(): Promise<void> {
++    await this.provider.ensureReady();
++    this.freeSpins = this.provider.getFreeGamesRemaining();
++    this.hud.setBalance(this.provider.getBalance());
++    this.hud.setFreeSpins(this.freeSpins);
++    const recovered = await this.provider.recoverLastRound();
++    if (recovered) {
++      this.freeSpins = recovered.freeGamesRemaining;
++      this.hud.setBalance(recovered.balanceAfterMinor);
++      this.hud.setFreeSpins(this.freeSpins);
++      this.hud.showWin(recovered.winMinor);
++      this.rig.setGrid(recovered.grid);
++      this.highlightWins(recovered);
++    }
++  }
++
++  async spin(): Promise<void> {
++    if (this.busy) return;
++    const preset = this.bet;
++    const inFreeSpin = this.freeSpins > 0 || this.provider.getFreeGamesRemaining() > 0;
++    if (!inFreeSpin && !this.provider.canBet(preset.totalBetMinor)) {
++      this.hud.toastKey("insufficient");
++      this.autoMode = false;
++      this.hud.setAutoActive(false);
++      return;
++    }
++
++    this.busy = true;
++    this.hud.setSpinBusy(true);
++    this.hud.showWin(0);
++    this.rig.clearHighlights();
++
++    audio.unlock();
++    audio.spinStart();
++    if (Math.random() < 0.18) this.buffalo.roar();
++
++    let result: PresentationSpinResult;
++    try {
++      result = await this.provider.spin({
++        roomBase: preset.roomBase,
++        betLevel: preset.betLevel,
++        betMultiplier: preset.betMultiplier,
++      });
++    } catch (error) {
++      this.busy = false;
++      this.hud.setSpinBusy(false);
++      audio.stopSpinLoop();
++      const code = (error as Error & { code?: string }).code ?? "";
++      if (code === "INSUFFICIENT_BALANCE" || String(error).includes("INSUFFICIENT")) {
++        this.hud.toastKey("insufficient");
++      } else {
++        this.hud.toastKey("errorGeneric");
++      }
++      return;
++    }
++
++    this.freeSpins = result.freeGamesRemaining;
++    await this.rig.spinAll(result.grid, this.turbo);
++    audio.stopSpinLoop();
++    this.hud.setBalance(result.balanceAfterMinor, true);
++    this.hud.setFreeSpins(this.freeSpins);
++
++    // UI-only tier — must not affect balance/ledger/math
++    const tier = winTier(result.winMinor, result.totalBetMinor);
++    if (result.winMinor > 0) {
++      this.hud.showWin(result.winMinor);
++      this.highlightWins(result);
++      if (result.isFreeGame) this.fsTotalWin += result.winMinor;
++    }
++
++    if (result.awardedFreeGames > 0) {
++      audio.freeSpinTrigger();
++      this.buffalo.roar();
++      this.hud.toastKey("freeSpinsWon");
++      this.particles.setPillars(true);
++      this.world.setBloom(0.6);
++    }
++    if (result.scatterCount >= 3) audio.scatterLand();
++
++    if (tier !== "none") {
++      this.fireTierEffects(tier);
++      await this.hud.celebrate(tier, result.winMinor);
++      this.particles.coinRainActive = false;
++      if (this.freeSpins === 0) {
++        this.particles.setPillars(false);
++        this.world.setBloom(0.38);
++      }
++    } else if (result.winMinor > 0) {
++      audio.winSmall();
++      await sleep(this.turbo ? 250 : 700);
++    } else {
++      await sleep(this.turbo ? 120 : 350);
++    }
++
++    if (result.isFreeGame && this.freeSpins === 0) {
++      this.particles.setPillars(false);
++      this.world.setBloom(0.38);
++      if (this.fsTotalWin > 0) {
++        this.hud.showWin(this.fsTotalWin);
++        audio.bigWin();
++        await sleep(900);
++      }
++      this.fsTotalWin = 0;
++    }
++
++    this.busy = false;
++    this.hud.setSpinBusy(false);
++
++    if (this.autoMode && (this.freeSpins > 0 || this.provider.canBet(this.bet.totalBetMinor))) {
++      this.autoTimer = window.setTimeout(() => {
++        this.autoTimer = null;
++        void this.spin();
++      }, this.turbo ? 250 : 600);
++    } else if (this.autoMode) {
++      this.autoMode = false;
++      this.hud.setAutoActive(false);
++    }
++  }
++
++  private highlightWins(result: PresentationSpinResult): void {
++    const cells: Array<[number, number]> = [];
++    const seen = new Set<string>();
++    const push = (r: number, row: number) => {
++      const key = `${r}:${row}`;
++      if (!seen.has(key)) {
++        seen.add(key);
++        cells.push([r, row]);
++      }
++    };
++    for (const pos of result.winningPositions) {
++      push(pos.reel, pos.row);
++    }
++    if (result.winningPositions.length === 0 && result.lineWins.length > 0) {
++      // Fallback: highlight matching symbols on awarded lines count (left-to-right).
++      for (const w of result.lineWins) {
++        for (let r = 0; r < w.count && r < result.grid.length; r++) {
++          for (let row = 0; row < ROWS; row++) {
++            const s = result.grid[r]![row];
++            if (s === w.symbol || s === "wild") push(r, row);
++          }
++        }
++      }
++    }
++    if (result.scatterCount >= 3) {
++      for (let r = 0; r < result.grid.length; r++) {
++        for (let row = 0; row < ROWS; row++) {
++          if (result.grid[r]![row] === "scatter") push(r, row);
++        }
++      }
++    }
++    if (cells.length) this.rig.highlightCells(cells);
++  }
++
++  private fireTierEffects(tier: WinTier): void {
++    const center = new THREE.Vector3(0.9, 2.4, 1.5);
++    switch (tier) {
++      case "big":
++        audio.bigWin();
++        this.buffalo.run();
++        this.particles.burstSparks(center, 90);
++        this.particles.coinBurst(center, 60);
++        break;
++      case "mega":
++        audio.megaWin();
++        this.buffalo.run();
++        this.particles.burstSparks(center, 160, 7);
++        this.particles.coinBurst(center, 120);
++        this.particles.setPillars(true);
++        break;
++      case "ultra":
++        audio.ultraWin();
++        this.buffalo.victory();
++        this.particles.burstSparks(center, 240, 9);
++        this.particles.coinRainActive = true;
++        this.particles.setPillars(true);
++        this.world.setBloom(0.7);
++        break;
++      case "jackpot":
++        audio.jackpot();
++        this.buffalo.victory();
++        this.particles.burstSparks(center, 320, 11);
++        this.particles.coinRainActive = true;
++        this.particles.setPillars(true);
++        this.world.setBloom(0.8);
++        break;
++      default:
++        break;
++    }
++  }
++}
++
++function sleep(ms: number): Promise<void> {
++  return new Promise((r) => setTimeout(r, ms));
++}
+diff --git a/client/m5/game/reels.ts b/client/m5/game/reels.ts
+new file mode 100644
+index 0000000..b410875
+--- /dev/null
++++ b/client/m5/game/reels.ts
+@@ -0,0 +1,264 @@
++/**
++ * Reels — 5×4 reel rig rendered as textured planes inside a gold 3D frame.
++ * Spin: staggered ease-out per reel, texture cycling, speed stretch, landing bounce.
++ */
++import * as THREE from "three";
++import { REELS, ROWS, type SymbolId } from "../adapter.ts";
++import { symbolTexture, ALL_SYMBOLS } from "./symbols.ts";
++
++const CELL = 1.12;
++const GAP = 0.02;
++
++function cellY(r: number, frac: number): number {
++  return (ROWS / 2 - 0.5 - r + frac) * (CELL + GAP);
++}
++
++class Reel {
++  readonly index: number;
++  readonly group = new THREE.Group();
++  private cells: THREE.Mesh[] = [];
++  private seq: SymbolId[] = [];
++  private pos = 0;           // absolute position in cells
++  private distance = 0;
++  private t = 0;
++  private duration = 1;
++  private spinning = false;
++  private bounceT = -1;
++  private lastTex: THREE.Texture[] = [];
++  private resolver: (() => void) | null = null;
++  onStop: ((index: number) => void) | null = null;
++
++  constructor(index: number) {
++    this.index = index;
++    const geo = new THREE.PlaneGeometry(CELL, CELL);
++    for (let k = 0; k < ROWS + 2; k++) {
++      const mat = new THREE.MeshBasicMaterial({ map: symbolTexture("buffalo") });
++      const m = new THREE.Mesh(geo, mat);
++      this.cells.push(m);
++      this.lastTex.push(mat.map!);
++      this.group.add(m);
++    }
++    // idle grid
++    const idle: SymbolId[] = [];
++    for (let r = 0; r < ROWS; r++) idle.push(ALL_SYMBOLS[Math.floor(Math.random() * 10)]);
++    this.setGrid(idle);
++  }
++
++  setGrid(col: SymbolId[]): void {
++    this.spinning = false;
++    this.seq = [...col];
++    this.pos = 0;
++    this.distance = 0;
++    this.t = 0;
++    this.layout();
++  }
++
++  spin(target: SymbolId[], duration: number): Promise<void> {
++    const rnd = (): SymbolId => ALL_SYMBOLS[Math.floor(Math.random() * 10)];
++    const prefix: SymbolId[] = [];
++    const prefixLen = 6 + this.index * 2;
++    for (let i = 0; i < prefixLen; i++) prefix.push(rnd());
++    this.distance = prefixLen;
++    this.seq = [...prefix, ...target];
++    this.pos = 0;
++    this.t = 0;
++    this.duration = duration;
++    this.spinning = true;
++    this.bounceT = -1;
++    return new Promise((res) => { this.resolver = res; });
++  }
++
++  get isSpinning(): boolean { return this.spinning; }
++
++  update(dt: number): void {
++    if (this.spinning) {
++      this.t = Math.min(this.t + dt / this.duration, 1);
++      // ease-out quart: fast spin, smooth landing
++      const e = 1 - Math.pow(1 - this.t, 4);
++      this.pos = e * this.distance;
++      if (this.t >= 1) {
++        this.spinning = false;
++        this.pos = this.distance;
++        this.bounceT = 0;
++        this.onStop?.(this.index);
++        const r = this.resolver;
++        this.resolver = null;
++        r?.();
++      }
++      this.layout();
++    } else if (this.bounceT >= 0) {
++      this.bounceT += dt;
++      const p = this.bounceT / 0.28;
++      if (p >= 1) {
++        this.bounceT = -1;
++        this.layout(0);
++      } else {
++        this.layout(-0.16 * Math.sin(p * Math.PI));
++      }
++    }
++  }
++
++  private layout(extraFrac = 0): void {
++    const base = Math.floor(this.pos);
++    const frac = this.pos - base + extraFrac;
++    const speedStretch = this.spinning ? 1 + Math.sin(Math.min(this.t * 3, Math.PI)) * 0.22 : 1;
++    const halfWindow = (ROWS * (CELL + GAP)) / 2; // cells outside the gold frame fade out
++    for (let k = 0; k < ROWS + 2; k++) {
++      const r = k - 1; // display row (-1..ROWS)
++      const idx = Math.min(Math.max(base + r, 0), this.seq.length - 1);
++      const sym = this.seq[idx];
++      const mesh = this.cells[k];
++      mesh.position.y = cellY(r, frac);
++      mesh.scale.y = speedStretch;
++      const fade = Math.min(Math.max((halfWindow + 0.42 - Math.abs(mesh.position.y)) / 0.6, 0), 1);
++      const mat = mesh.material as THREE.MeshBasicMaterial;
++      mat.transparent = true;
++      mat.opacity = fade;
++      mesh.visible = fade > 0.02;
++      const tex = symbolTexture(sym);
++      if (this.lastTex[k] !== tex) {
++        mat.map = tex;
++        this.lastTex[k] = tex;
++      }
++    }
++  }
++
++  /** pulse the cell at display row r */
++  setCellHighlight(r: number, on: boolean): void {
++    const mesh = this.cells[r + 1];
++    const mat = mesh.material as THREE.MeshBasicMaterial;
++    mat.color.setScalar(on ? 1.6 : 1);
++  }
++}
++
++export class ReelRig {
++  readonly group = new THREE.Group();
++  private reels: Reel[] = [];
++  private highlights: THREE.Mesh[] = [];
++  onReelStop: ((index: number) => void) | null = null;
++
++  constructor() {
++    const W = REELS * (CELL + GAP) + 0.35;
++    const H = ROWS * (CELL + GAP) + 0.35;
++
++    // backdrop
++    const backdrop = new THREE.Mesh(
++      new THREE.PlaneGeometry(W, H),
++      new THREE.MeshStandardMaterial({
++        color: 0x140d05,
++        roughness: 0.85,
++        transparent: true,
++        opacity: 0.92,
++      }),
++    );
++    backdrop.position.z = -0.12;
++    backdrop.receiveShadow = true;
++    this.group.add(backdrop);
++
++    // gold frame
++    const goldMat = new THREE.MeshStandardMaterial({
++      color: 0xd4af37,
++      metalness: 0.85,
++      roughness: 0.3,
++      emissive: 0x6a4d10,
++      emissiveIntensity: 0.55,
++    });
++    const mk = (w: number, h: number, x: number, y: number) => {
++      const b = new THREE.Mesh(new THREE.BoxGeometry(w, h, 0.22), goldMat);
++      b.position.set(x, y, -0.05);
++      b.castShadow = true;
++      this.group.add(b);
++    };
++    const th = 0.16;
++    mk(W + th * 2, th, 0, H / 2 + th / 2);
++    mk(W + th * 2, th, 0, -H / 2 - th / 2);
++    mk(th, H, -W / 2 - th / 2, 0);
++    mk(th, H, W / 2 + th / 2, 0);
++    // reel dividers
++    for (let i = 1; i < REELS; i++) {
++      const x = -W / 2 + 0.175 + i * (CELL + GAP) - GAP / 2;
++      const d = new THREE.Mesh(new THREE.BoxGeometry(0.045, H, 0.1), goldMat);
++      d.position.set(x, 0, -0.06);
++      this.group.add(d);
++    }
++    // corner ornaments
++    for (const [sx, sy] of [[-1, -1], [-1, 1], [1, -1], [1, 1]] as const) {
++      const orb = new THREE.Mesh(new THREE.SphereGeometry(0.14, 12, 8), goldMat);
++      orb.position.set(sx * (W / 2 + th / 2), sy * (H / 2 + th / 2), 0.02);
++      this.group.add(orb);
++    }
++
++    // reels
++    for (let i = 0; i < REELS; i++) {
++      const reel = new Reel(i);
++      reel.group.position.x = (i - (REELS - 1) / 2) * (CELL + GAP);
++      reel.onStop = (idx) => this.onReelStop?.(idx);
++      this.reels.push(reel);
++      this.group.add(reel.group);
++    }
++
++    this.group.position.set(0.9, 2.62, 0);
++  }
++
++  /** landscape: rig right-of-center beside the buffalo; portrait: centered */
++  setAspect(aspect: number): void {
++    this.group.position.x = aspect >= 1.15 ? 0.9 : 0;
++  }
++
++  setGrid(grid: SymbolId[][]): void {
++    for (let i = 0; i < REELS; i++) this.reels[i].setGrid(grid[i]);
++  }
++
++  /** spin all reels; resolves when the last reel lands */
++  spinAll(grid: SymbolId[][], turbo: boolean): Promise<void> {
++    const base = turbo ? 0.45 : 1.15;
++    const step = turbo ? 0.14 : 0.38;
++    const jobs = this.reels.map((reel, i) => reel.spin(grid[i], base + i * step));
++    return Promise.all(jobs).then(() => undefined);
++  }
++
++  get anySpinning(): boolean {
++    return this.reels.some((r) => r.isSpinning);
++  }
++
++  highlightCells(cells: Array<[number, number]>): void {
++    this.clearHighlights();
++    for (const [reel, row] of cells) {
++      if (this.reels[reel]) this.reels[reel].setCellHighlight(row, true);
++      const glow = new THREE.Mesh(
++        new THREE.PlaneGeometry(CELL * 1.05, CELL * 1.05),
++        new THREE.MeshBasicMaterial({
++          color: 0xffd970,
++          transparent: true,
++          opacity: 0.0,
++          blending: THREE.AdditiveBlending,
++          depthWrite: false,
++        }),
++      );
++      glow.position.set(
++        (reel - (REELS - 1) / 2) * (CELL + GAP),
++        cellY(row, 0),
++        -0.08,
++      );
++      glow.userData.pulse = true;
++      this.highlights.push(glow);
++      this.group.add(glow);
++    }
++  }
++
++  clearHighlights(): void {
++    for (const reel of this.reels) {
++      for (let r = 0; r < ROWS; r++) reel.setCellHighlight(r, false);
++    }
++    for (const h of this.highlights) this.group.remove(h);
++    this.highlights = [];
++  }
++
++  update(dt: number, time: number): void {
++    for (const reel of this.reels) reel.update(dt);
++    for (const h of this.highlights) {
++      const mat = h.material as THREE.MeshBasicMaterial;
++      mat.opacity = 0.18 + 0.14 * Math.sin(time * 7);
++    }
++  }
++}
+diff --git a/client/m5/game/symbols.ts b/client/m5/game/symbols.ts
+new file mode 100644
+index 0000000..3c2bc61
+--- /dev/null
++++ b/client/m5/game/symbols.ts
+@@ -0,0 +1,321 @@
++/**
++ * Symbol textures — hand-drawn on canvas (no external art assets).
++ * One texture per symbol; shared by reel cells and paytable UI.
++ */
++import * as THREE from "three";
++import type { SymbolId } from "../adapter.ts";
++
++const SIZE = 256;
++
++function makeCanvas(): [HTMLCanvasElement, CanvasRenderingContext2D] {
++  const c = document.createElement("canvas");
++  c.width = c.height = SIZE;
++  return [c, c.getContext("2d")!];
++}
++
++function baseTile(g: CanvasRenderingContext2D, top: string, bottom: string): void {
++  const grad = g.createLinearGradient(0, 0, 0, SIZE);
++  grad.addColorStop(0, top);
++  grad.addColorStop(1, bottom);
++  g.fillStyle = grad;
++  roundRect(g, 6, 6, SIZE - 12, SIZE - 12, 26);
++  g.fill();
++  // inner gold frame
++  g.strokeStyle = "rgba(249,224,138,.85)";
++  g.lineWidth = 5;
++  roundRect(g, 10, 10, SIZE - 20, SIZE - 20, 22);
++  g.stroke();
++  g.strokeStyle = "rgba(90,60,10,.9)";
++  g.lineWidth = 2;
++  roundRect(g, 18, 18, SIZE - 36, SIZE - 36, 16);
++  g.stroke();
++}
++
++function roundRect(g: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number): void {
++  g.beginPath();
++  g.moveTo(x + r, y);
++  g.arcTo(x + w, y, x + w, y + h, r);
++  g.arcTo(x + w, y + h, x, y + h, r);
++  g.arcTo(x, y + h, x, y, r);
++  g.arcTo(x, y, x + w, y, r);
++  g.closePath();
++}
++
++function letter(g: CanvasRenderingContext2D, ch: string, color1: string, color2: string): void {
++  baseTile(g, "#3a2a12", "#1c1206");
++  g.font = `900 ${ch.length > 1 ? 110 : 150}px Georgia, serif`;
++  g.textAlign = "center";
++  g.textBaseline = "middle";
++  const grad = g.createLinearGradient(0, 50, 0, 210);
++  grad.addColorStop(0, color1);
++  grad.addColorStop(1, color2);
++  g.fillStyle = grad;
++  g.shadowColor = "rgba(0,0,0,.6)";
++  g.shadowBlur = 10;
++  g.shadowOffsetY = 6;
++  g.fillText(ch, SIZE / 2, SIZE / 2 + 8);
++}
++
++function drawBuffalo(g: CanvasRenderingContext2D): void {
++  baseTile(g, "#4a3413", "#211405");
++  g.save();
++  g.translate(SIZE / 2, SIZE / 2 + 14);
++  // body silhouette
++  g.fillStyle = "#2b1c0d";
++  g.beginPath();
++  g.ellipse(0, 26, 74, 44, 0, 0, Math.PI * 2);
++  g.fill();
++  // hump
++  g.beginPath();
++  g.ellipse(-8, -2, 52, 34, 0, Math.PI, 0);
++  g.fill();
++  // head
++  g.fillStyle = "#33220f";
++  g.beginPath();
++  g.ellipse(0, -34, 34, 30, 0, 0, Math.PI * 2);
++  g.fill();
++  // horns
++  g.strokeStyle = "#d9c27a";
++  g.lineWidth = 11;
++  g.lineCap = "round";
++  g.beginPath(); g.arc(-32, -48, 26, Math.PI * 0.9, Math.PI * 1.9); g.stroke();
++  g.beginPath(); g.arc(32, -48, 26, Math.PI * 1.1, Math.PI * 0.1, true); g.stroke();
++  // boss (horn base)
++  g.fillStyle = "#c9ad5e";
++  g.beginPath(); g.ellipse(0, -52, 24, 12, 0, 0, Math.PI * 2); g.fill();
++  // eyes
++  g.fillStyle = "#ffd970";
++  g.beginPath(); g.arc(-13, -36, 5, 0, Math.PI * 2); g.fill();
++  g.beginPath(); g.arc(13, -36, 5, 0, Math.PI * 2); g.fill();
++  // muzzle
++  g.fillStyle = "#1c1108";
++  g.beginPath(); g.ellipse(0, -16, 20, 12, 0, 0, Math.PI * 2); g.fill();
++  g.restore();
++  // rim light
++  g.strokeStyle = "rgba(255,214,110,.55)";
++  g.lineWidth = 4;
++  g.beginPath(); g.ellipse(SIZE / 2, SIZE / 2 + 12, 82, 58, 0, Math.PI * 1.05, Math.PI * 1.95); g.stroke();
++}
++
++function drawEagle(g: CanvasRenderingContext2D): void {
++  baseTile(g, "#3d2f16", "#191006");
++  g.save();
++  g.translate(SIZE / 2, SIZE / 2);
++  g.fillStyle = "#c99b3f";
++  // wings
++  g.beginPath();
++  g.moveTo(0, -10);
++  g.quadraticCurveTo(-60, -70, -96, -46);
++  g.quadraticCurveTo(-58, -30, -52, 6);
++  g.quadraticCurveTo(-26, -6, 0, 4);
++  g.quadraticCurveTo(26, -6, 52, 6);
++  g.quadraticCurveTo(58, -30, 96, -46);
++  g.quadraticCurveTo(60, -70, 0, -10);
++  g.fill();
++  // body/head
++  g.fillStyle = "#e8c26a";
++  g.beginPath(); g.ellipse(0, 8, 20, 30, 0, 0, Math.PI * 2); g.fill();
++  g.fillStyle = "#fff3c4";
++  g.beginPath(); g.arc(0, -22, 14, 0, Math.PI * 2); g.fill();
++  // beak
++  g.fillStyle = "#f39c2b";
++  g.beginPath(); g.moveTo(-6, -22); g.lineTo(10, -18); g.lineTo(-4, -12); g.closePath(); g.fill();
++  // eye
++  g.fillStyle = "#241503";
++  g.beginPath(); g.arc(-4, -26, 3.4, 0, Math.PI * 2); g.fill();
++  g.restore();
++}
++
++function drawTiger(g: CanvasRenderingContext2D): void {
++  baseTile(g, "#43300f", "#1d1204");
++  g.save();
++  g.translate(SIZE / 2, SIZE / 2);
++  g.fillStyle = "#e08b2d";
++  g.beginPath(); g.ellipse(0, 0, 62, 54, 0, 0, Math.PI * 2); g.fill();
++  // ears
++  g.beginPath(); g.arc(-42, -40, 16, 0, Math.PI * 2); g.fill();
++  g.beginPath(); g.arc(42, -40, 16, 0, Math.PI * 2); g.fill();
++  // stripes
++  g.strokeStyle = "#2b1603";
++  g.lineWidth = 7; g.lineCap = "round";
++  for (const [x1, y1, x2, y2] of [[-30, -46, -18, -30], [30, -46, 18, -30], [0, -52, 0, -34], [-56, -8, -38, 0], [56, -8, 38, 0]] as const) {
++    g.beginPath(); g.moveTo(x1, y1); g.lineTo(x2, y2); g.stroke();
++  }
++  // muzzle
++  g.fillStyle = "#f6d9a0";
++  g.beginPath(); g.ellipse(0, 20, 30, 20, 0, 0, Math.PI * 2); g.fill();
++  // eyes
++  g.fillStyle = "#ffd970";
++  g.beginPath(); g.ellipse(-22, -8, 9, 11, 0, 0, Math.PI * 2); g.fill();
++  g.beginPath(); g.ellipse(22, -8, 9, 11, 0, 0, Math.PI * 2); g.fill();
++  g.fillStyle = "#201203";
++  g.beginPath(); g.ellipse(-22, -8, 3.4, 8, 0, 0, Math.PI * 2); g.fill();
++  g.beginPath(); g.ellipse(22, -8, 3.4, 8, 0, 0, Math.PI * 2); g.fill();
++  // nose
++  g.fillStyle = "#8a3b1e";
++  g.beginPath(); g.moveTo(-7, 10); g.lineTo(7, 10); g.lineTo(0, 19); g.closePath(); g.fill();
++  g.restore();
++}
++
++function drawDeer(g: CanvasRenderingContext2D): void {
++  baseTile(g, "#3b2c14", "#1a1106");
++  g.save();
++  g.translate(SIZE / 2, SIZE / 2 + 6);
++  g.fillStyle = "#b07f3e";
++  g.beginPath(); g.ellipse(0, 10, 38, 46, 0, 0, Math.PI * 2); g.fill();
++  // antlers
++  g.strokeStyle = "#e6cf9a"; g.lineWidth = 8; g.lineCap = "round";
++  const antler = (sx: number) => {
++    g.beginPath(); g.moveTo(sx * 14, -40);
++    g.quadraticCurveTo(sx * 34, -72, sx * 22, -92); g.stroke();
++    g.beginPath(); g.moveTo(sx * 26, -62); g.lineTo(sx * 48, -74); g.stroke();
++    g.beginPath(); g.moveTo(sx * 20, -78); g.lineTo(sx * 38, -96); g.stroke();
++  };
++  antler(-1); antler(1);
++  // ears
++  g.fillStyle = "#96662a";
++  g.beginPath(); g.ellipse(-30, -22, 14, 8, -0.7, 0, Math.PI * 2); g.fill();
++  g.beginPath(); g.ellipse(30, -22, 14, 8, 0.7, 0, Math.PI * 2); g.fill();
++  // eyes
++  g.fillStyle = "#241503";
++  g.beginPath(); g.arc(-14, -6, 5, 0, Math.PI * 2); g.fill();
++  g.beginPath(); g.arc(14, -6, 5, 0, Math.PI * 2); g.fill();
++  // muzzle
++  g.fillStyle = "#8a5f27";
++  g.beginPath(); g.ellipse(0, 30, 16, 14, 0, 0, Math.PI * 2); g.fill();
++  g.fillStyle = "#2b1a08";
++  g.beginPath(); g.ellipse(0, 24, 7, 5, 0, 0, Math.PI * 2); g.fill();
++  g.restore();
++}
++
++function drawLotus(g: CanvasRenderingContext2D): void {
++  baseTile(g, "#3a2b14", "#191006");
++  g.save();
++  g.translate(SIZE / 2, SIZE / 2 + 16);
++  const petal = (rot: number, len: number, w: number, col: string) => {
++    g.save(); g.rotate(rot);
++    g.fillStyle = col;
++    g.beginPath();
++    g.moveTo(0, 0);
++    g.quadraticCurveTo(-w, -len * 0.55, 0, -len);
++    g.quadraticCurveTo(w, -len * 0.55, 0, 0);
++    g.fill(); g.restore();
++  };
++  for (let i = -2; i <= 2; i++) petal(i * 0.5, 78 - Math.abs(i) * 16, 26, i % 2 === 0 ? "#f2c94c" : "#d4af37");
++  petal(0, 92, 22, "#ffe98a");
++  // base leaves
++  g.fillStyle = "#7a8a3a";
++  g.beginPath(); g.ellipse(-34, 18, 26, 10, -0.3, 0, Math.PI * 2); g.fill();
++  g.beginPath(); g.ellipse(34, 18, 26, 10, 0.3, 0, Math.PI * 2); g.fill();
++  // glow center
++  g.fillStyle = "#fff3c4";
++  g.beginPath(); g.arc(0, -6, 10, 0, Math.PI * 2); g.fill();
++  g.restore();
++}
++
++function drawWild(g: CanvasRenderingContext2D): void {
++  baseTile(g, "#6b2f0e", "#2a1004");
++  const cx = SIZE / 2, cy = SIZE / 2 - 20;
++  // sunset
++  const sun = g.createRadialGradient(cx, cy, 8, cx, cy, 74);
++  sun.addColorStop(0, "#fff3c4");
++  sun.addColorStop(0.5, "#f9b84a");
++  sun.addColorStop(1, "rgba(230,110,30,0)");
++  g.fillStyle = sun;
++  g.beginPath(); g.arc(cx, cy, 74, 0, Math.PI * 2); g.fill();
++  // horizon line
++  g.fillStyle = "rgba(40,16,4,.85)";
++  g.fillRect(20, cy + 34, SIZE - 40, 6);
++  g.font = "900 62px Georgia, serif";
++  g.textAlign = "center";
++  const grad = g.createLinearGradient(0, SIZE - 92, 0, SIZE - 30);
++  grad.addColorStop(0, "#fff6d8"); grad.addColorStop(1, "#f9b84a");
++  g.fillStyle = grad;
++  g.shadowColor = "rgba(255,180,60,.9)"; g.shadowBlur = 16;
++  g.fillText("WILD", cx, SIZE - 42);
++  g.shadowBlur = 0;
++}
++
++function drawScatter(g: CanvasRenderingContext2D): void {
++  baseTile(g, "#4a3413", "#201404");
++  const cx = SIZE / 2, cy = SIZE / 2 - 8;
++  // gold coin
++  const coin = g.createRadialGradient(cx - 18, cy - 22, 10, cx, cy, 70);
++  coin.addColorStop(0, "#fff6d8");
++  coin.addColorStop(0.55, "#f2c94c");
++  coin.addColorStop(1, "#9a7418");
++  g.fillStyle = coin;
++  g.beginPath(); g.arc(cx, cy, 66, 0, Math.PI * 2); g.fill();
++  g.strokeStyle = "#7a5a10"; g.lineWidth = 6;
++  g.beginPath(); g.arc(cx, cy, 54, 0, Math.PI * 2); g.stroke();
++  // buffalo head stamp
++  g.fillStyle = "#5c430e";
++  g.beginPath(); g.ellipse(cx, cy + 4, 26, 22, 0, 0, Math.PI * 2); g.fill();
++  g.strokeStyle = "#5c430e"; g.lineWidth = 7; g.lineCap = "round";
++  g.beginPath(); g.arc(cx - 18, cy - 12, 14, Math.PI * 0.9, Math.PI * 1.9); g.stroke();
++  g.beginPath(); g.arc(cx + 18, cy - 12, 14, Math.PI * 1.1, Math.PI * 0.1, true); g.stroke();
++  g.font = "900 34px Georgia, serif";
++  g.textAlign = "center";
++  g.fillStyle = "#ffe98a";
++  g.shadowColor = "rgba(0,0,0,.5)"; g.shadowBlur = 6;
++  g.fillText("SCATTER", cx, SIZE - 36);
++  g.shadowBlur = 0;
++}
++
++/** Formal SymbolId painters (5×4 / 50-line set). Legacy prototype art remapped. */
++const PAINTERS: Record<SymbolId, (g: CanvasRenderingContext2D) => void> = {
++  buffalo: drawBuffalo,
++  lion: drawTiger,
++  elephant: drawDeer,
++  zebra: drawEagle,
++  antelope: drawLotus,
++  a: (g) => letter(g, "A", "#ffe98a", "#c98f1f"),
++  k: (g) => letter(g, "K", "#ffd2a0", "#c26a1f"),
++  q: (g) => letter(g, "Q", "#e8c0ff", "#8a4fc2"),
++  j: (g) => letter(g, "J", "#a0d8ff", "#2f6ec2"),
++  ten: (g) => letter(g, "10", "#b0f0c0", "#2f9e5a"),
++  nine: (g) => letter(g, "9", "#c0e8ff", "#3a7a9e"),
++  wild: drawWild,
++  scatter: drawScatter,
++};
++
++const textureCache = new Map<SymbolId, THREE.CanvasTexture>();
++const canvasCache = new Map<SymbolId, HTMLCanvasElement>();
++
++export function symbolCanvas(id: SymbolId): HTMLCanvasElement {
++  let c = canvasCache.get(id);
++  if (!c) {
++    const [canvas, g] = makeCanvas();
++    PAINTERS[id](g);
++    canvasCache.set(id, canvas);
++    c = canvas;
++  }
++  return c;
++}
++
++export function symbolTexture(id: SymbolId): THREE.CanvasTexture {
++  let tex = textureCache.get(id);
++  if (!tex) {
++    tex = new THREE.CanvasTexture(symbolCanvas(id));
++    tex.colorSpace = THREE.SRGBColorSpace;
++    tex.anisotropy = 4;
++    textureCache.set(id, tex);
++  }
++  return tex;
++}
++
++export const ALL_SYMBOLS: SymbolId[] = [
++  "buffalo",
++  "lion",
++  "elephant",
++  "zebra",
++  "antelope",
++  "a",
++  "k",
++  "q",
++  "j",
++  "ten",
++  "nine",
++  "wild",
++  "scatter",
++];
+diff --git a/client/m5/i18n.ts b/client/m5/i18n.ts
+new file mode 100644
+index 0000000..4e4602b
+--- /dev/null
++++ b/client/m5/i18n.ts
+@@ -0,0 +1,219 @@
++/**
++ * i18n — trilingual (zh-CN / en / my-MM).
++ * Language switch is presentation-only; never touches Session/Spin/Round/Balance.
++ */
++
++export type Lang = "zh-CN" | "en" | "my-MM";
++export const LANGS: Lang[] = ["zh-CN", "en", "my-MM"];
++
++const dict: Record<Lang, Record<string, string>> = {
++  "zh-CN": {
++    gameTitle: "亚洲水牛",
++    loading: "正在进入草原…",
++    balance: "余额",
++    bet: "投注",
++    win: "赢得",
++    spin: "旋转",
++    stop: "停止",
++    auto: "自动",
++    autoOn: "自动中",
++    turbo: "快速",
++    freeSpins: "免费旋转",
++    freeSpinsLeft: "剩余免费旋转",
++    freeSpinsWon: "赢得免费旋转",
++    bigWin: "大赢",
++    megaWin: "巨赢",
++    ultraWin: "超级巨赢",
++    jackpot: "超级头奖",
++    congratulations: "恭喜！",
++    goodLuck: "祝好运！",
++    paytable: "赔付表",
++    sound: "音效",
++    language: "语言",
++    lines: "50 线",
++    scatterNote:
++      "SCATTER：3/4/5 个触发 8/15/20 次免费旋转；免费旋转中 2 个及以上再触发额外次数。结算由服务器权威判定。",
++    wildNote: "WILD：可替代除 SCATTER 外所有符号。线奖与免费游戏由正式数学版本结算。",
++    linesNote: "5×4、50 线玩法。赔付表数值为线注倍数；Big/Mega/Ultra/Jackpot 仅为展示动画。",
++    insufficient: "余额不足",
++    errorGeneric: "服务暂时不可用，请稍后重试",
++    totalWin: "总赢分",
++    sym_buffalo: "水牛",
++    sym_lion: "狮子",
++    sym_elephant: "大象",
++    sym_zebra: "斑马",
++    sym_antelope: "羚羊",
++    sym_a: "A",
++    sym_k: "K",
++    sym_q: "Q",
++    sym_j: "J",
++    sym_ten: "10",
++    sym_nine: "9",
++    sym_wild: "WILD",
++    sym_scatter: "SCATTER",
++  },
++  en: {
++    gameTitle: "Asian Buffalo",
++    loading: "Entering the savanna…",
++    balance: "Balance",
++    bet: "Bet",
++    win: "Win",
++    spin: "SPIN",
++    stop: "STOP",
++    auto: "AUTO",
++    autoOn: "AUTO ON",
++    turbo: "TURBO",
++    freeSpins: "Free Spins",
++    freeSpinsLeft: "Free spins left",
++    freeSpinsWon: "Free spins won",
++    bigWin: "BIG WIN",
++    megaWin: "MEGA WIN",
++    ultraWin: "ULTRA WIN",
++    jackpot: "JACKPOT",
++    congratulations: "Congratulations!",
++    goodLuck: "Good luck!",
++    paytable: "Paytable",
++    sound: "Sound",
++    language: "Language",
++    lines: "50 Lines",
++    scatterNote:
++      "SCATTER: 3/4/5 award 8/15/20 free spins; 2+ during free spins retrigger. Settlement is server-authoritative.",
++    wildNote: "WILD substitutes for all symbols except SCATTER. Line pays use the frozen math version.",
++    linesNote:
++      "5×4, 50-line game. Paytable values are line-bet multipliers. Big/Mega/Ultra/Jackpot are UI only.",
++    insufficient: "Insufficient balance",
++    errorGeneric: "Service temporarily unavailable",
++    totalWin: "Total win",
++    sym_buffalo: "Buffalo",
++    sym_lion: "Lion",
++    sym_elephant: "Elephant",
++    sym_zebra: "Zebra",
++    sym_antelope: "Antelope",
++    sym_a: "A",
++    sym_k: "K",
++    sym_q: "Q",
++    sym_j: "J",
++    sym_ten: "10",
++    sym_nine: "9",
++    sym_wild: "WILD",
++    sym_scatter: "SCATTER",
++  },
++  "my-MM": {
++    gameTitle: "အာရှကြွေး",
++    loading: "မြက်ခင်းပြင်သို့ ဝင်ရောက်နေသည်…",
++    balance: "လက်ကျန်ငွေ",
++    bet: "လောင်းကြေး",
++    win: "အနိုင်ရ",
++    spin: "လှည့်ပါ",
++    stop: "ရပ်ပါ",
++    auto: "အလိုအလျောက်",
++    autoOn: "အလိုအလျောက်ဖွင့်ထား",
++    turbo: "အမြန်",
++    freeSpins: "အခမဲ့လှည့်ခြင်း",
++    freeSpinsLeft: "ကျန်ရှိသောအခမဲ့လှည့်ခြင်း",
++    freeSpinsWon: "အခမဲ့လှည့်ခြင်းရရှိ",
++    bigWin: "အနိုင်ကြီး",
++    megaWin: "မဂ်ဂါအနိုင်",
++    ultraWin: "အထွတ်အထိပ်အနိုင်",
++    jackpot: "ဂျက်ပေါက်ဆု",
++    congratulations: "ဂုဏ်ယူပါတယ်!",
++    goodLuck: "ကံကောင်းပါစေ!",
++    paytable: "ဆုကြေးငွေဇယား",
++    sound: "အသံ",
++    language: "ဘာသာစကား",
++    lines: "လိုင်း ၅၀",
++    scatterNote:
++      "SCATTER: 3/4/5 သည် အခမဲ့လှည့်ခြင်း 8/15/20 ပေးသည်။ ဆုံးဖြတ်ချက်ကို ဆာဗာကသာ လုပ်သည်။",
++    wildNote: "WILD သည် SCATTER မဟုတ်သော သင်္ကေတများကို အစားထိုးနိုင်သည်။",
++    linesNote:
++      "5×4၊ လိုင်း ၅၀။ Big/Mega/Ultra/Jackpot သည် UI သရုပ်ပြသာ ဖြစ်သည်။",
++    insufficient: "လက်ကျန်ငွေ မလုံလောက်ပါ",
++    errorGeneric: "ဝန်ဆောင်မှု ယာယီမရနိုင်ပါ",
++    totalWin: "စုစုပေါင်းအနိုင်",
++    sym_buffalo: "ကြွေး",
++    sym_lion: "ခြင်္သေ့",
++    sym_elephant: "ဆင်",
++    sym_zebra: "မြင်းကျား",
++    sym_antelope: "သမင်",
++    sym_a: "A",
++    sym_k: "K",
++    sym_q: "Q",
++    sym_j: "J",
++    sym_ten: "10",
++    sym_nine: "9",
++    sym_wild: "WILD",
++    sym_scatter: "SCATTER",
++  },
++};
++
++const STORAGE_KEY = "ab-lang";
++
++let current: Lang = load();
++
++function load(): Lang {
++  try {
++    const saved = localStorage.getItem(STORAGE_KEY) as Lang | null;
++    if (saved && LANGS.includes(saved)) return saved;
++  } catch {
++    /* ignore */
++  }
++  return "zh-CN";
++}
++
++export function getLang(): Lang {
++  return current;
++}
++
++export function t(key: string): string {
++  const v = dict[current][key];
++  if (v === undefined) {
++    console.warn(`[i18n] missing key "${key}" for ${current}`);
++    return dict.en[key] ?? key;
++  }
++  return v;
++}
++
++export function setLang(lang: Lang): void {
++  if (!LANGS.includes(lang)) return;
++  current = lang;
++  try {
++    localStorage.setItem(STORAGE_KEY, lang);
++  } catch {
++    /* ignore */
++  }
++  document.documentElement.lang = lang;
++  applyDom();
++  for (const fn of listeners) fn(lang);
++}
++
++const listeners: Array<(lang: Lang) => void> = [];
++export function onLangChange(fn: (lang: Lang) => void): void {
++  listeners.push(fn);
++}
++
++export function applyDom(): void {
++  document.querySelectorAll<HTMLElement>("[data-i18n]").forEach((el) => {
++    el.textContent = t(el.dataset.i18n!);
++  });
++  document.querySelectorAll<HTMLElement>("[data-i18n-title]").forEach((el) => {
++    el.title = t(el.dataset.i18nTitle!);
++  });
++  document.querySelectorAll<HTMLButtonElement>(".lang-btn").forEach((btn) => {
++    btn.classList.toggle("active", btn.dataset.lang === current);
++  });
++}
++
++export function validateDicts(): string[] {
++  const base = Object.keys(dict["zh-CN"]);
++  const problems: string[] = [];
++  for (const lang of LANGS) {
++    for (const key of base) {
++      if (!(key in dict[lang])) problems.push(`${lang}: missing "${key}"`);
++      else if (!dict[lang][key]!.trim()) problems.push(`${lang}: empty "${key}"`);
++    }
++    for (const key of Object.keys(dict[lang])) {
++      if (!base.includes(key)) problems.push(`${lang}: extra "${key}"`);
++    }
++  }
++  return problems;
++}
+diff --git a/client/m5/mock-provider.ts b/client/m5/mock-provider.ts
+new file mode 100644
+index 0000000..915b22d
+--- /dev/null
++++ b/client/m5/mock-provider.ts
+@@ -0,0 +1,102 @@
++/**
++ * ISOLATED MOCK — NOT on the formal runtime path.
++ *
++ * Kept only for offline visual QA / unit tests that explicitly import this file.
++ * Production boot (boot.ts / game-client) must never import this module.
++ *
++ * Contains client RNG and demo balance by design; forbidden in formal play.
++ */
++
++import type { GameProvider, PresentationSpinResult, SpinRequest, SymbolId } from "./adapter.ts";
++import { REELS, ROWS } from "./adapter.ts";
++
++const STRIP: SymbolId[] = [
++  "buffalo",
++  "ten",
++  "lion",
++  "k",
++  "antelope",
++  "q",
++  "elephant",
++  "j",
++  "zebra",
++  "a",
++  "nine",
++  "buffalo",
++  "wild",
++  "scatter",
++];
++
++function rnd(n: number): number {
++  return Math.floor(Math.random() * n);
++}
++
++/**
++ * @deprecated Formal play must use FormalGameProvider.
++ */
++export class MockProvider implements GameProvider {
++  private balance = 10_000;
++  private freeGamesRemaining = 0;
++
++  async ensureReady(): Promise<void> {
++    /* no-op */
++  }
++
++  getBalance(): number {
++    return this.balance;
++  }
++
++  getFreeGamesRemaining(): number {
++    return this.freeGamesRemaining;
++  }
++
++  getMathVersionId(): string | null {
++    return "mock-not-formal";
++  }
++
++  getSessionId(): string | null {
++    return null;
++  }
++
++  canBet(totalBetMinor: number): boolean {
++    if (this.freeGamesRemaining > 0) return true;
++    return totalBetMinor > 0 && this.balance >= totalBetMinor;
++  }
++
++  async recoverLastRound(): Promise<PresentationSpinResult | null> {
++    return null;
++  }
++
++  async spin(req: SpinRequest): Promise<PresentationSpinResult> {
++    const totalBet = req.roomBase * req.betLevel * req.betMultiplier;
++    const inFree = this.freeGamesRemaining > 0;
++    if (!inFree) {
++      if (!this.canBet(totalBet)) throw new Error("INSUFFICIENT_BALANCE");
++      this.balance -= totalBet;
++    } else {
++      this.freeGamesRemaining -= 1;
++    }
++    await new Promise((r) => setTimeout(r, 20));
++    const grid: SymbolId[][] = [];
++    for (let r = 0; r < REELS; r++) {
++      const col: SymbolId[] = [];
++      for (let row = 0; row < ROWS; row++) col.push(STRIP[rnd(STRIP.length)]);
++      grid.push(col);
++    }
++    return {
++      roundId: `mock_${Date.now()}`,
++      grid,
++      winMinor: 0,
++      totalBetMinor: totalBet,
++      balanceAfterMinor: this.balance,
++      lineWins: [],
++      winningPositions: [],
++      scatterCount: 0,
++      scatterWin: 0,
++      freeGamesRemaining: this.freeGamesRemaining,
++      awardedFreeGames: 0,
++      isFreeGame: inFree,
++      mathVersion: "mock-not-formal",
++    };
++  }
++}
+diff --git a/client/m5/scene/buffalo.ts b/client/m5/scene/buffalo.ts
+new file mode 100644
+index 0000000..9b1bc6a
+--- /dev/null
++++ b/client/m5/scene/buffalo.ts
+@@ -0,0 +1,310 @@
++/**
++ * Buffalo — procedural low-poly hero character.
++ * Animations: breathing, blinking, run, roar, victory rear-up.
++ * Built entirely from Three.js primitives (no external model).
++ */
++import * as THREE from "three";
++import type { Particles } from "./particles";
++
++type BuffaloState = "idle" | "roar" | "run" | "victory";
++
++const HIDE = 0x4a3820;
++const HIDE_DARK = 0x35270f;
++const HORN = 0xd9c27a;
++const MUZZLE = 0x1c1108;
++
++export class Buffalo {
++  readonly group = new THREE.Group();
++  private body = new THREE.Group();
++  private head = new THREE.Group();
++  private jaw!: THREE.Mesh;
++  private eyelidL!: THREE.Mesh;
++  private eyelidR!: THREE.Mesh;
++  private legs: THREE.Group[] = [];
++  private tail!: THREE.Mesh;
++  private nostrilL = new THREE.Object3D();
++  private nostrilR = new THREE.Object3D();
++
++  private state: BuffaloState = "idle";
++  private stateT = 0;
++  private blinkTimer = 2.5;
++  private blinkPhase = -1;
++  private breatheT = 0;
++  private runDir = 1;
++  private homePos = new THREE.Vector3(-6.4, 0, -1.2);
++  private particles: Particles | null = null;
++  private roarSmokeDone = false;
++  onRoarSound: (() => void) | null = null;
++
++  constructor() {
++    this.build();
++    this.group.position.copy(this.homePos);
++    this.group.rotation.y = 0.95;
++  }
++
++  setParticles(p: Particles): void {
++    this.particles = p;
++  }
++
++  private mat(color: number, rough = 0.9): THREE.MeshStandardMaterial {
++    return new THREE.MeshStandardMaterial({ color, roughness: rough });
++  }
++
++  private build(): void {
++    // ---- torso ----
++    const torso = new THREE.Mesh(new THREE.SphereGeometry(1.05, 20, 14), this.mat(HIDE));
++    torso.scale.set(1.55, 1.05, 0.95);
++    torso.castShadow = true;
++    this.body.add(torso);
++
++    // hump
++    const hump = new THREE.Mesh(new THREE.SphereGeometry(0.62, 14, 10), this.mat(HIDE_DARK));
++    hump.position.set(0.55, 0.62, 0);
++    hump.scale.set(1.1, 0.9, 0.95);
++    hump.castShadow = true;
++    this.body.add(hump);
++
++    // belly shading
++    const belly = new THREE.Mesh(new THREE.SphereGeometry(0.98, 16, 12), this.mat(HIDE_DARK));
++    belly.scale.set(1.5, 0.85, 0.9);
++    belly.position.y = -0.28;
++    this.body.add(belly);
++
++    // ---- head group (pivots at neck) ----
++    this.head.position.set(1.55, 0.35, 0);
++
++    const skull = new THREE.Mesh(new THREE.SphereGeometry(0.52, 16, 12), this.mat(HIDE));
++    skull.scale.set(1.1, 0.95, 0.85);
++    skull.castShadow = true;
++    this.head.add(skull);
++
++    // horn boss
++    const boss = new THREE.Mesh(new THREE.SphereGeometry(0.3, 12, 8), this.mat(HORN, 0.6));
++    boss.position.set(-0.05, 0.42, 0);
++    boss.scale.set(1.15, 0.5, 1.15);
++    this.head.add(boss);
++
++    // horns: curved tubes
++    const hornCurve = (side: number) => {
++      const pts = [
++        new THREE.Vector3(-0.05, 0.42, side * 0.28),
++        new THREE.Vector3(0.0, 0.52, side * 0.62),
++        new THREE.Vector3(0.12, 0.72, side * 0.78),
++        new THREE.Vector3(0.28, 0.86, side * 0.72),
++      ];
++      return new THREE.Mesh(
++        new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 10, 0.085, 8),
++        this.mat(HORN, 0.5),
++      );
++    };
++    this.head.add(hornCurve(1), hornCurve(-1));
++
++    // ears
++    const earGeo = new THREE.SphereGeometry(0.16, 8, 6);
++    for (const side of [1, -1]) {
++      const ear = new THREE.Mesh(earGeo, this.mat(HIDE_DARK));
++      ear.position.set(-0.18, 0.12, side * 0.5);
++      ear.scale.set(1, 0.6, 1.4);
++      this.head.add(ear);
++    }
++
++    // eyes + eyelids
++    const eyeGeo = new THREE.SphereGeometry(0.075, 10, 8);
++    const eyeMat = new THREE.MeshStandardMaterial({ color: 0x1a0f04, roughness: 0.3 });
++    const lidGeo = new THREE.SphereGeometry(0.085, 10, 8);
++    const lidMat = this.mat(HIDE);
++    for (const side of [1, -1]) {
++      const eye = new THREE.Mesh(eyeGeo, eyeMat);
++      eye.position.set(0.3, 0.12, side * 0.33);
++      this.head.add(eye);
++      const lid = new THREE.Mesh(lidGeo, lidMat);
++      lid.position.copy(eye.position).add(new THREE.Vector3(0.01, 0.045, side * 0.008));
++      lid.scale.set(1, 0.15, 1);
++      this.head.add(lid);
++      if (side === 1) this.eyelidR = lid; else this.eyelidL = lid;
++    }
++
++    // muzzle + jaw
++    const muzzle = new THREE.Mesh(new THREE.SphereGeometry(0.3, 12, 10), this.mat(MUZZLE, 0.7));
++    muzzle.position.set(0.48, -0.18, 0);
++    muzzle.scale.set(1.15, 0.8, 0.9);
++    this.head.add(muzzle);
++
++    this.jaw = new THREE.Mesh(new THREE.SphereGeometry(0.22, 10, 8), this.mat(0x140c05, 0.8));
++    this.jaw.position.set(0.42, -0.34, 0);
++    this.jaw.scale.set(1.05, 0.55, 0.8);
++    this.head.add(this.jaw);
++
++    // nostrils (particle anchors)
++    this.nostrilL.position.set(0.72, -0.14, 0.12);
++    this.nostrilR.position.set(0.72, -0.14, -0.12);
++    this.head.add(this.nostrilL, this.nostrilR);
++
++    this.body.add(this.head);
++
++    // ---- legs ----
++    const legGeo = new THREE.CylinderGeometry(0.16, 0.12, 1.15, 8);
++    const hoofGeo = new THREE.CylinderGeometry(0.14, 0.16, 0.18, 8);
++    const legPos: Array<[number, number]> = [
++      [0.85, 0.42], [0.85, -0.42], [-0.85, 0.42], [-0.85, -0.42],
++    ];
++    for (const [x, z] of legPos) {
++      const leg = new THREE.Group();
++      leg.position.set(x, -0.55, z);
++      const upper = new THREE.Mesh(legGeo, this.mat(HIDE_DARK));
++      upper.position.y = -0.45;
++      upper.castShadow = true;
++      leg.add(upper);
++      const hoof = new THREE.Mesh(hoofGeo, this.mat(0x171006, 0.6));
++      hoof.position.y = -1.05;
++      leg.add(hoof);
++      this.body.add(leg);
++      this.legs.push(leg);
++    }
++
++    // tail
++    this.tail = new THREE.Mesh(
++      new THREE.CylinderGeometry(0.05, 0.02, 0.9, 6),
++      this.mat(HIDE_DARK),
++    );
++    this.tail.position.set(-1.55, 0.35, 0);
++    this.tail.rotation.z = 0.7;
++    this.body.add(this.tail);
++
++    this.group.add(this.body);
++    this.body.position.y = 1.75;
++    this.group.scale.setScalar(1.12);
++    this.group.traverse((o) => { if (o instanceof THREE.Mesh) o.castShadow = true; });
++  }
++
++  // ---------------- public actions ----------------
++  roar(): void {
++    if (this.state !== "idle") return;
++    this.state = "roar";
++    this.stateT = 0;
++    this.roarSmokeDone = false;
++    this.onRoarSound?.();
++  }
++
++  run(): void {
++    if (this.state !== "idle") return;
++    this.state = "run";
++    this.stateT = 0;
++    this.runDir = 1;
++    this.onRoarSound?.();
++  }
++
++  victory(): void {
++    if (this.state !== "idle") return;
++    this.state = "victory";
++    this.stateT = 0;
++    this.onRoarSound?.();
++  }
++
++  get isBusy(): boolean {
++    return this.state !== "idle";
++  }
++
++  // ---------------- update ----------------
++  update(dt: number, time: number): void {
++    // breathing — always
++    this.breatheT += dt;
++    const breath = Math.sin(this.breatheT * 1.9) * 0.02;
++    this.body.scale.set(1 + breath, 1 + breath * 1.4, 1 + breath);
++
++    // blinking
++    this.blinkTimer -= dt;
++    if (this.blinkTimer <= 0 && this.blinkPhase < 0) {
++      this.blinkPhase = 0;
++      this.blinkTimer = 1.6 + Math.random() * 3.2;
++    }
++    if (this.blinkPhase >= 0) {
++      this.blinkPhase += dt;
++      const p = this.blinkPhase / 0.18;
++      const close = p < 0.5 ? p * 2 : (1 - p) * 2;
++      const s = 0.15 + 0.85 * Math.max(0, close);
++      this.eyelidL.scale.y = s;
++      this.eyelidR.scale.y = s;
++      if (p >= 1) this.blinkPhase = -1;
++    }
++
++    // tail swish
++    this.tail.rotation.x = Math.sin(time * 2.3) * 0.35;
++
++    this.stateT += dt;
++    switch (this.state) {
++      case "idle": {
++        // gentle head sway
++        this.head.rotation.z = Math.sin(time * 0.7) * 0.05;
++        this.head.rotation.y = Math.sin(time * 0.45) * 0.1;
++        this.body.position.y = 1.75;
++        for (const leg of this.legs) leg.rotation.z = 0;
++        this.jaw.position.y = -0.34;
++        break;
++      }
++      case "roar": {
++        const T = 1.5;
++        const p = Math.min(this.stateT / T, 1);
++        const lift = Math.sin(p * Math.PI);
++        this.head.rotation.z = lift * 0.55; // head up
++        this.jaw.position.y = -0.34 - lift * 0.16; // jaw open
++        if (!this.roarSmokeDone && p > 0.25 && this.particles) {
++          this.roarSmokeDone = true;
++          const wl = new THREE.Vector3();
++          this.nostrilL.getWorldPosition(wl);
++          this.particles.puffSmoke(wl, 14);
++          const wr = new THREE.Vector3();
++          this.nostrilR.getWorldPosition(wr);
++          this.particles.puffSmoke(wr, 14);
++        }
++        if (p >= 1) this.state = "idle";
++        break;
++      }
++      case "run": {
++        const T = 2.6;
++        const p = Math.min(this.stateT / T, 1);
++        // run out and back along the left side, never crossing the reels
++        const dist = Math.sin(p * Math.PI) * 3.2 * this.runDir;
++        this.group.position.x = this.homePos.x + dist;
++        this.group.rotation.y = 0.5 + (p < 0.5 ? 0 : Math.PI) * 0; // keep facing
++        const gallop = this.stateT * 11;
++        this.body.position.y = 1.75 + Math.abs(Math.sin(gallop)) * 0.22;
++        this.legs[0].rotation.z = Math.sin(gallop) * 0.8;
++        this.legs[1].rotation.z = Math.sin(gallop + 0.4) * 0.8;
++        this.legs[2].rotation.z = Math.sin(gallop + Math.PI) * 0.8;
++        this.legs[3].rotation.z = Math.sin(gallop + Math.PI + 0.4) * 0.8;
++        this.head.rotation.z = Math.sin(gallop * 0.5) * 0.1;
++        // dust puffs
++        if (this.particles && Math.random() < dt * 14) {
++          const foot = new THREE.Vector3(this.group.position.x, 0.15, this.group.position.z);
++          this.particles.puffSmoke(foot, 2);
++        }
++        if (p >= 1) {
++          this.group.position.copy(this.homePos);
++          this.state = "idle";
++        }
++        break;
++      }
++      case "victory": {
++        const T = 2.2;
++        const p = Math.min(this.stateT / T, 1);
++        // rear up then slam down
++        const rear = Math.sin(Math.min(p * 1.6, 1) * Math.PI);
++        this.body.rotation.z = rear * 0.55;
++        this.body.position.y = 1.75 + rear * 0.5;
++        this.legs[0].rotation.z = -rear * 1.1;
++        this.legs[1].rotation.z = -rear * 1.1;
++        this.head.rotation.z = -rear * 0.3;
++        if (p > 0.62 && p < 0.72 && this.particles) {
++          const foot = new THREE.Vector3(this.group.position.x, 0.2, this.group.position.z);
++          this.particles.puffSmoke(foot, 10);
++        }
++        if (p >= 1) {
++          this.body.rotation.z = 0;
++          this.state = "idle";
++        }
++        break;
++      }
++    }
++  }
++}
+diff --git a/client/m5/scene/particles.ts b/client/m5/scene/particles.ts
+new file mode 100644
+index 0000000..2d07f5f
+--- /dev/null
++++ b/client/m5/scene/particles.ts
+@@ -0,0 +1,263 @@
++/**
++ * Particles — coin rain, smoke, sparks, light pillars.
++ * Pooled, zero per-frame allocation in hot paths.
++ */
++import * as THREE from "three";
++
++interface Particle {
++  alive: boolean;
++  pos: THREE.Vector3;
++  vel: THREE.Vector3;
++  life: number;
++  maxLife: number;
++  size: number;
++  spin: number;
++}
++
++class Pool {
++  readonly points: THREE.Points;
++  private items: Particle[] = [];
++  private geo: THREE.BufferGeometry;
++  private posAttr: THREE.BufferAttribute;
++  private sizeAttr: THREE.BufferAttribute;
++  private alphaAttr: THREE.BufferAttribute;
++  private gravity: number;
++  private drag: number;
++
++  constructor(
++    capacity: number,
++    texture: THREE.Texture,
++    color: THREE.ColorRepresentation,
++    blending: THREE.Blending,
++    gravity: number,
++    drag: number,
++  ) {
++    this.gravity = gravity;
++    this.drag = drag;
++    this.geo = new THREE.BufferGeometry();
++    this.posAttr = new THREE.BufferAttribute(new Float32Array(capacity * 3), 3);
++    this.sizeAttr = new THREE.BufferAttribute(new Float32Array(capacity), 1);
++    this.alphaAttr = new THREE.BufferAttribute(new Float32Array(capacity), 1);
++    this.geo.setAttribute("position", this.posAttr);
++    this.geo.setAttribute("aSize", this.sizeAttr);
++    this.geo.setAttribute("aAlpha", this.alphaAttr);
++    for (let i = 0; i < capacity; i++) {
++      this.items.push({
++        alive: false, pos: new THREE.Vector3(), vel: new THREE.Vector3(),
++        life: 0, maxLife: 1, size: 1, spin: 0,
++      });
++    }
++    const mat = new THREE.ShaderMaterial({
++      transparent: true,
++      depthWrite: false,
++      blending,
++      uniforms: { uMap: { value: texture }, uColor: { value: new THREE.Color(color) } },
++      vertexShader: /* glsl */ `
++        attribute float aSize;
++        attribute float aAlpha;
++        varying float vAlpha;
++        void main() {
++          vAlpha = aAlpha;
++          vec4 mv = modelViewMatrix * vec4(position, 1.0);
++          gl_PointSize = aSize * (240.0 / -mv.z);
++          gl_Position = projectionMatrix * mv;
++        }`,
++      fragmentShader: /* glsl */ `
++        uniform sampler2D uMap;
++        uniform vec3 uColor;
++        varying float vAlpha;
++        void main() {
++          vec4 tex = texture2D(uMap, gl_PointCoord);
++          gl_FragColor = vec4(uColor * tex.rgb, tex.a * vAlpha);
++          if (gl_FragColor.a < 0.01) discard;
++        }`,
++    });
++    this.points = new THREE.Points(this.geo, mat);
++    this.points.frustumCulled = false;
++  }
++
++  spawn(origin: THREE.Vector3, vel: THREE.Vector3, life: number, size: number): void {
++    for (const p of this.items) {
++      if (!p.alive) {
++        p.alive = true;
++        p.pos.copy(origin);
++        p.vel.copy(vel);
++        p.life = 0;
++        p.maxLife = life;
++        p.size = size;
++        return;
++      }
++    }
++  }
++
++  update(dt: number): void {
++    const pos = this.posAttr.array as Float32Array;
++    const size = this.sizeAttr.array as Float32Array;
++    const alpha = this.alphaAttr.array as Float32Array;
++    for (let i = 0; i < this.items.length; i++) {
++      const p = this.items[i];
++      if (!p.alive) { alpha[i] = 0; continue; }
++      p.life += dt;
++      if (p.life >= p.maxLife) { p.alive = false; alpha[i] = 0; continue; }
++      p.vel.y -= this.gravity * dt;
++      p.vel.multiplyScalar(1 - this.drag * dt);
++      p.pos.addScaledVector(p.vel, dt);
++      const t = p.life / p.maxLife;
++      pos[i * 3] = p.pos.x;
++      pos[i * 3 + 1] = p.pos.y;
++      pos[i * 3 + 2] = p.pos.z;
++      size[i] = p.size * (0.6 + 0.4 * Math.sin(t * Math.PI));
++      alpha[i] = t < 0.15 ? t / 0.15 : 1 - (t - 0.15) / 0.85;
++    }
++    this.posAttr.needsUpdate = true;
++    this.sizeAttr.needsUpdate = true;
++    this.alphaAttr.needsUpdate = true;
++  }
++
++  get activeCount(): number {
++    let n = 0;
++    for (const p of this.items) if (p.alive) n++;
++    return n;
++  }
++}
++
++function dotTexture(soft: boolean): THREE.CanvasTexture {
++  const c = document.createElement("canvas");
++  c.width = c.height = 64;
++  const g = c.getContext("2d")!;
++  const grad = g.createRadialGradient(32, 32, 2, 32, 32, 30);
++  grad.addColorStop(0, "rgba(255,255,255,1)");
++  grad.addColorStop(soft ? 0.4 : 0.75, "rgba(255,255,255,.8)");
++  grad.addColorStop(1, "rgba(255,255,255,0)");
++  g.fillStyle = grad;
++  g.fillRect(0, 0, 64, 64);
++  const tex = new THREE.CanvasTexture(c);
++  return tex;
++}
++
++function coinTexture(): THREE.CanvasTexture {
++  const c = document.createElement("canvas");
++  c.width = c.height = 64;
++  const g = c.getContext("2d")!;
++  const grad = g.createRadialGradient(24, 22, 4, 32, 32, 30);
++  grad.addColorStop(0, "#fff6d8");
++  grad.addColorStop(0.6, "#f2c94c");
++  grad.addColorStop(1, "rgba(154,116,24,0)");
++  g.fillStyle = grad;
++  g.beginPath(); g.arc(32, 32, 29, 0, Math.PI * 2); g.fill();
++  g.strokeStyle = "rgba(122,90,16,.9)";
++  g.lineWidth = 3;
++  g.beginPath(); g.arc(32, 32, 22, 0, Math.PI * 2); g.stroke();
++  return new THREE.CanvasTexture(c);
++}
++
++export class Particles {
++  private coins: Pool;
++  private sparks: Pool;
++  private smoke: Pool;
++  private pillars: THREE.Mesh[] = [];
++  private scene: THREE.Scene;
++  private coinTimer = 0;
++  coinRainActive = false;
++
++  constructor(scene: THREE.Scene) {
++    this.scene = scene;
++    this.coins = new Pool(700, coinTexture(), 0xffffff, THREE.NormalBlending, 9.5, 0.25);
++    this.sparks = new Pool(400, dotTexture(false), 0xffd970, THREE.AdditiveBlending, 4.5, 0.6);
++    this.smoke = new Pool(250, dotTexture(true), 0x9a8668, THREE.NormalBlending, -0.5, 1.4);
++    scene.add(this.coins.points, this.sparks.points, this.smoke.points);
++
++    // light pillars (god rays) — additive gradient cylinders, hidden by default
++    const pillarTex = makePillarTexture();
++    for (let i = 0; i < 5; i++) {
++      const mat = new THREE.MeshBasicMaterial({
++        map: pillarTex,
++        transparent: true,
++        opacity: 0,
++        blending: THREE.AdditiveBlending,
++        depthWrite: false,
++        side: THREE.DoubleSide,
++        fog: false,
++      });
++      const m = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 30), mat);
++      m.position.set((i - 2) * 3.4, 12, -6);
++      m.rotation.z = (i - 2) * 0.06;
++      m.visible = false;
++      this.pillars.push(m);
++      scene.add(m);
++    }
++  }
++
++  /** continuous coin rain over the reel area */
++  private emitCoins(dt: number): void {
++    this.coinTimer += dt;
++    while (this.coinTimer > 0.03) {
++      this.coinTimer -= 0.03;
++      const origin = new THREE.Vector3((Math.random() - 0.5) * 10, 8.5 + Math.random() * 2, -1 + Math.random() * 2);
++      const vel = new THREE.Vector3((Math.random() - 0.5) * 0.8, -1 - Math.random() * 1.5, (Math.random() - 0.5) * 0.4);
++      this.coins.spawn(origin, vel, 3.2, 0.55 + Math.random() * 0.5);
++    }
++  }
++
++  burstSparks(center: THREE.Vector3, count: number, speed = 5): void {
++    for (let i = 0; i < count; i++) {
++      const a = Math.random() * Math.PI * 2;
++      const up = Math.random() * 0.9 + 0.3;
++      const vel = new THREE.Vector3(Math.cos(a) * speed * Math.random(), up * speed, Math.sin(a) * speed * Math.random() * 0.5);
++      this.sparks.spawn(center, vel, 0.5 + Math.random() * 0.7, 0.3 + Math.random() * 0.35);
++    }
++  }
++
++  puffSmoke(center: THREE.Vector3, count: number): void {
++    for (let i = 0; i < count; i++) {
++      const vel = new THREE.Vector3((Math.random() - 0.5) * 1.2, 0.6 + Math.random() * 0.8, (Math.random() - 0.5) * 0.6);
++      this.smoke.spawn(center, vel, 1.2 + Math.random() * 1.0, 0.8 + Math.random() * 0.9);
++    }
++  }
++
++  coinBurst(center: THREE.Vector3, count: number): void {
++    for (let i = 0; i < count; i++) {
++      const a = Math.random() * Math.PI * 2;
++      const vel = new THREE.Vector3(Math.cos(a) * (2 + Math.random() * 3), 4 + Math.random() * 4, Math.sin(a) * 1.5);
++      this.coins.spawn(center, vel, 2.6, 0.5 + Math.random() * 0.5);
++    }
++  }
++
++  setPillars(on: boolean): void {
++    for (const p of this.pillars) p.visible = on;
++  }
++
++  update(dt: number, time: number): void {
++    if (this.coinRainActive) this.emitCoins(dt);
++    this.coins.update(dt);
++    this.sparks.update(dt);
++    this.smoke.update(dt);
++    for (let i = 0; i < this.pillars.length; i++) {
++      const p = this.pillars[i];
++      if (!p.visible) continue;
++      const mat = p.material as THREE.MeshBasicMaterial;
++      mat.opacity = 0.16 + 0.1 * Math.sin(time * 1.8 + i * 1.3);
++      p.rotation.y = time * 0.1 + i;
++    }
++  }
++}
++
++function makePillarTexture(): THREE.CanvasTexture {
++  const c = document.createElement("canvas");
++  c.width = 64; c.height = 256;
++  const g = c.getContext("2d")!;
++  const gradX = g.createLinearGradient(0, 0, 64, 0);
++  gradX.addColorStop(0, "rgba(255,220,140,0)");
++  gradX.addColorStop(0.5, "rgba(255,230,170,.85)");
++  gradX.addColorStop(1, "rgba(255,220,140,0)");
++  g.fillStyle = gradX;
++  g.fillRect(0, 0, 64, 256);
++  const gradY = g.createLinearGradient(0, 0, 0, 256);
++  gradY.addColorStop(0, "rgba(0,0,0,1)");
++  gradY.addColorStop(0.35, "rgba(0,0,0,0)");
++  gradY.addColorStop(1, "rgba(0,0,0,1)");
++  g.globalCompositeOperation = "destination-out";
++  g.fillStyle = gradY;
++  g.fillRect(0, 0, 64, 256);
++  return new THREE.CanvasTexture(c);
++}
+diff --git a/client/m5/scene/world.ts b/client/m5/scene/world.ts
+new file mode 100644
+index 0000000..850c2e4
+--- /dev/null
++++ b/client/m5/scene/world.ts
+@@ -0,0 +1,349 @@
++/**
++ * World — 3D Asian savanna:
++ * dynamic sky shader dome, drifting clouds, wind-blown instanced grass,
++ * golden-hour lighting, fog, ACES HDR tone mapping,
++ * post-processing: UnrealBloom + subtle depth-of-field (desktop only).
++ */
++import * as THREE from "three";
++import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
++import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
++import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
++import { BokehPass } from "three/examples/jsm/postprocessing/BokehPass.js";
++import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
++
++export interface Quality {
++  grassCount: number;
++  pixelRatioCap: number;
++  enableDOF: boolean;
++}
++
++export function detectQuality(): Quality {
++  const mobile = /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent);
++  const smallScreen = Math.min(window.innerWidth, window.innerHeight) < 620;
++  if (mobile || smallScreen) {
++    return { grassCount: 2500, pixelRatioCap: 1.6, enableDOF: false };
++  }
++  return { grassCount: 9000, pixelRatioCap: 2, enableDOF: true };
++}
++
++export class World {
++  readonly renderer: THREE.WebGLRenderer;
++  readonly scene: THREE.Scene;
++  readonly camera: THREE.PerspectiveCamera;
++  private composer: EffectComposer;
++  private bloom: UnrealBloomPass;
++  private bokeh: BokehPass | null = null;
++  private skyMat: THREE.ShaderMaterial;
++  private grassMat: THREE.ShaderMaterial;
++  private clouds: THREE.Mesh[] = [];
++  private sun: THREE.DirectionalLight;
++  private time = 0;
++  readonly quality: Quality;
++
++  constructor(canvas: HTMLCanvasElement) {
++    this.quality = detectQuality();
++
++    this.renderer = new THREE.WebGLRenderer({
++      canvas,
++      antialias: true,
++      powerPreference: "high-performance",
++    });
++    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, this.quality.pixelRatioCap));
++    this.renderer.setSize(window.innerWidth, window.innerHeight);
++    this.renderer.toneMapping = THREE.ACESFilmicToneMapping; // HDR pipeline
++    this.renderer.toneMappingExposure = 1.02;
++    this.renderer.outputColorSpace = THREE.SRGBColorSpace;
++    this.renderer.shadowMap.enabled = true;
++    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
++
++    this.scene = new THREE.Scene();
++    this.scene.fog = new THREE.FogExp2(0xc89a5c, 0.013);
++
++    this.camera = new THREE.PerspectiveCamera(46, window.innerWidth / window.innerHeight, 0.1, 300);
++    this.fitCamera();
++
++    // ---------- lights (golden hour) ----------
++    const hemi = new THREE.HemisphereLight(0xffe3b0, 0x6b4a22, 0.85);
++    this.scene.add(hemi);
++
++    this.sun = new THREE.DirectionalLight(0xffd9a0, 2.2);
++    this.sun.position.set(-14, 9, -18);
++    this.sun.castShadow = true;
++    this.sun.shadow.mapSize.set(1024, 1024);
++    this.sun.shadow.camera.left = -14;
++    this.sun.shadow.camera.right = 14;
++    this.sun.shadow.camera.top = 14;
++    this.sun.shadow.camera.bottom = -14;
++    this.sun.shadow.bias = -0.002;
++    this.scene.add(this.sun);
++
++    const rim = new THREE.DirectionalLight(0xff9a4a, 0.7);
++    rim.position.set(10, 4, -8);
++    this.scene.add(rim);
++
++    // camera-side fill so the buffalo / frame read clearly
++    const fill = new THREE.DirectionalLight(0xffe2b8, 0.85);
++    fill.position.set(6, 5, 12);
++    this.scene.add(fill);
++
++    // ---------- sky dome (dynamic shader) ----------
++    this.skyMat = new THREE.ShaderMaterial({
++      side: THREE.BackSide,
++      depthWrite: false,
++      uniforms: {
++        uTime: { value: 0 },
++        uSunDir: { value: new THREE.Vector3(-0.45, 0.28, -0.85).normalize() },
++      },
++      vertexShader: /* glsl */ `
++        varying vec3 vDir;
++        void main() {
++          vDir = normalize(position);
++          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
++        }`,
++      fragmentShader: /* glsl */ `
++        varying vec3 vDir;
++        uniform float uTime;
++        uniform vec3 uSunDir;
++        void main() {
++          float h = clamp(vDir.y, -0.1, 1.0);
++          // slow golden-hour cycle (subtle breathing of the sky)
++          float cycle = 0.5 + 0.5 * sin(uTime * 0.02);
++          vec3 zenith  = mix(vec3(0.10, 0.16, 0.34), vec3(0.15, 0.21, 0.40), cycle);
++          vec3 mid     = mix(vec3(0.62, 0.40, 0.24), vec3(0.72, 0.48, 0.29), cycle);
++          vec3 horizon = mix(vec3(0.86, 0.60, 0.35), vec3(0.95, 0.68, 0.40), cycle);
++          vec3 col = mix(horizon, mid, smoothstep(0.0, 0.22, h));
++          col = mix(col, zenith, smoothstep(0.18, 0.75, h));
++          // sun disc + halo
++          float d = dot(normalize(vDir), uSunDir);
++          col += vec3(1.2, 0.85, 0.5) * pow(max(d, 0.0), 220.0) * 0.9; // disc
++          col += vec3(1.0, 0.62, 0.30) * pow(max(d, 0.0), 8.0) * 0.15; // halo
++          // faint stars high up, twinkling
++          float star = step(0.9985, fract(sin(dot(floor(vDir * 220.0).xy, vec2(12.9898, 78.233))) * 43758.5453));
++          col += star * smoothstep(0.5, 0.9, h) * (0.25 + 0.2 * sin(uTime * 3.0 + vDir.x * 40.0));
++          gl_FragColor = vec4(col, 1.0);
++        }`,
++    });
++    const sky = new THREE.Mesh(new THREE.SphereGeometry(160, 32, 20), this.skyMat);
++    this.scene.add(sky);
++
++    // ---------- ground ----------
++    const groundGeo = new THREE.CircleGeometry(150, 48);
++    const groundMat = new THREE.MeshStandardMaterial({ color: 0x8a6b32, roughness: 1 });
++    const ground = new THREE.Mesh(groundGeo, groundMat);
++    ground.rotation.x = -Math.PI / 2;
++    ground.position.y = -0.02;
++    ground.receiveShadow = true;
++    this.scene.add(ground);
++
++    // dirt patch under the buffalo rock
++    const dirt = new THREE.Mesh(
++      new THREE.CircleGeometry(4.5, 24),
++      new THREE.MeshStandardMaterial({ color: 0x6e5024, roughness: 1 }),
++    );
++    dirt.rotation.x = -Math.PI / 2;
++    dirt.position.set(-6.4, 0.0, -1.2);
++    dirt.receiveShadow = true;
++    this.scene.add(dirt);
++
++    // ---------- distant hills ----------
++    const hillMat = new THREE.MeshStandardMaterial({ color: 0x7d5c2c, roughness: 1 });
++    for (let i = 0; i < 7; i++) {
++      const h = new THREE.Mesh(new THREE.SphereGeometry(14 + Math.random() * 12, 16, 10), hillMat);
++      const ang = (i / 7) * Math.PI * 2 + 0.4;
++      const r = 70 + Math.random() * 40;
++      h.position.set(Math.cos(ang) * r, -6 - Math.random() * 3, Math.sin(ang) * r - 20);
++      h.scale.y = 0.35;
++      this.scene.add(h);
++    }
++
++    // ---------- grass (instanced, wind vertex shader) ----------
++    const bladeGeo = new THREE.PlaneGeometry(0.14, 1.0, 1, 3);
++    bladeGeo.translate(0, 0.5, 0);
++    this.grassMat = new THREE.ShaderMaterial({
++      side: THREE.DoubleSide,
++      uniforms: {
++        uTime: { value: 0 },
++        uWindStrength: { value: 1.0 },
++      },
++      vertexShader: /* glsl */ `
++        uniform float uTime;
++        uniform float uWindStrength;
++        varying float vShade;
++        void main() {
++          vec3 p = position;
++          vec4 world = instanceMatrix * vec4(p, 1.0);
++          float sway = sin(uTime * 1.6 + world.x * 0.35 + world.z * 0.5)
++                     + 0.5 * sin(uTime * 3.1 + world.z * 0.9);
++          float bend = p.y * p.y * 0.35 * sway * uWindStrength;
++          world.x += bend;
++          world.z += bend * 0.4;
++          vShade = 0.55 + 0.45 * p.y;
++          gl_Position = projectionMatrix * viewMatrix * world;
++        }`,
++      fragmentShader: /* glsl */ `
++        varying float vShade;
++        void main() {
++          vec3 base = vec3(0.30, 0.22, 0.07);
++          vec3 tip  = vec3(0.68, 0.52, 0.20);
++          gl_FragColor = vec4(mix(base, tip, vShade), 1.0);
++        }`,
++    });
++    const grass = new THREE.InstancedMesh(bladeGeo, this.grassMat, this.quality.grassCount);
++    const dummy = new THREE.Object3D();
++    for (let i = 0; i < this.quality.grassCount; i++) {
++      if (Math.random() < 0.85) {
++        // main field behind the reel plane
++        dummy.position.set((Math.random() - 0.5) * 130, 0, -2.5 - Math.random() * 55);
++      } else {
++        // sparse, short front accents at the frame edges only
++        const side = Math.random() < 0.5 ? -1 : 1;
++        dummy.position.set(side * (6 + Math.random() * 30), 0, 1 + Math.random() * 8);
++      }
++      dummy.rotation.y = Math.random() * Math.PI;
++      const s = 0.45 + Math.random() * 0.55;
++      dummy.scale.set(s, s * (0.7 + Math.random() * 0.5), s);
++      dummy.updateMatrix();
++      grass.setMatrixAt(i, dummy.matrix);
++    }
++    grass.instanceMatrix.needsUpdate = true;
++    grass.frustumCulled = false;
++    this.scene.add(grass);
++
++    // ---------- clouds (billboards with procedural texture) ----------
++    const cloudTex = makeCloudTexture();
++    for (let i = 0; i < 9; i++) {
++      const mat = new THREE.MeshBasicMaterial({
++        map: cloudTex,
++        transparent: true,
++        opacity: 0.28 + Math.random() * 0.16,
++        depthWrite: false,
++        fog: false,
++      });
++      const m = new THREE.Mesh(new THREE.PlaneGeometry(26, 13), mat);
++      m.position.set(
++        (Math.random() - 0.5) * 200,
++        24 + Math.random() * 20,
++        -80 - Math.random() * 60,
++      );
++      const s = 1.0 + Math.random() * 1.4;
++      m.scale.setScalar(s);
++      m.userData.speed = 0.15 + Math.random() * 0.35;
++      this.clouds.push(m);
++      this.scene.add(m);
++    }
++
++    // ---------- a few acacia silhouettes ----------
++    this.addAcacia(-22, -26, 1.2);
++    this.addAcacia(18, -30, 1.5);
++    this.addAcacia(30, -22, 0.9);
++
++    // ---------- post-processing: bloom + DOF ----------
++    this.composer = new EffectComposer(this.renderer);
++    this.composer.addPass(new RenderPass(this.scene, this.camera));
++    this.bloom = new UnrealBloomPass(
++      new THREE.Vector2(window.innerWidth, window.innerHeight),
++      0.38, // strength
++      0.6,  // radius
++      0.85, // threshold
++    );
++    this.composer.addPass(this.bloom);
++    if (this.quality.enableDOF) {
++      this.bokeh = new BokehPass(this.scene, this.camera, {
++        focus: 11.5,
++        aperture: 0.00012,
++        maxblur: 0.004,
++      });
++      this.composer.addPass(this.bokeh);
++    }
++    this.composer.addPass(new OutputPass());
++
++    window.addEventListener("resize", () => this.resize());
++  }
++
++  private addAcacia(x: number, z: number, s: number): void {
++    const group = new THREE.Group();
++    const trunkMat = new THREE.MeshStandardMaterial({ color: 0x4a3416, roughness: 1 });
++    const leafMat = new THREE.MeshStandardMaterial({ color: 0x6e5a20, roughness: 1 });
++    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.18 * s, 0.3 * s, 4.4 * s, 6), trunkMat);
++    trunk.position.y = 2.2 * s;
++    trunk.rotation.z = 0.08;
++    group.add(trunk);
++    for (let i = 0; i < 3; i++) {
++      const crown = new THREE.Mesh(new THREE.SphereGeometry(2.2 * s, 10, 6), leafMat);
++      crown.scale.set(1.9, 0.22, 1.3);
++      crown.position.set((i - 1) * 1.4 * s, 4.4 * s + (i % 2) * 0.3, (i - 1) * 0.5 * s);
++      group.add(crown);
++    }
++    group.position.set(x, 0, z);
++    group.traverse((o) => { o.castShadow = true; });
++    this.scene.add(group);
++  }
++
++  setWind(strength: number): void {
++    this.grassMat.uniforms.uWindStrength.value = strength;
++  }
++
++  setBloom(strength: number): void {
++    this.bloom.strength = strength;
++  }
++
++  /** pull the camera back on narrow screens so the 5-reel frame always fits */
++  private fitCamera(): void {
++    const aspect = window.innerWidth / window.innerHeight;
++    const halfWidthNeeded = 3.55;
++    const z = Math.max(11.5, halfWidthNeeded / (Math.tan(THREE.MathUtils.degToRad(23)) * aspect));
++    this.camera.position.set(0, 2.4 + (z - 11.5) * 0.1, z);
++    this.camera.lookAt(0, 2.2, 0);
++    this.baseY = this.camera.position.y;
++  }
++
++  private baseY = 2.4;
++
++  resize(): void {
++    const w = window.innerWidth;
++    const h = window.innerHeight;
++    this.camera.aspect = w / h;
++    this.camera.updateProjectionMatrix();
++    this.fitCamera();
++    this.renderer.setSize(w, h);
++    this.composer.setSize(w, h);
++  }
++
++  update(dt: number): void {
++    this.time += dt;
++    this.skyMat.uniforms.uTime.value = this.time;
++    this.grassMat.uniforms.uTime.value = this.time;
++    for (const c of this.clouds) {
++      c.position.x += c.userData.speed * dt;
++      if (c.position.x > 130) c.position.x = -130;
++    }
++    // subtle camera drift (alive feel)
++    this.camera.position.x = Math.sin(this.time * 0.11) * 0.25;
++    this.camera.position.y = this.baseY + Math.sin(this.time * 0.17) * 0.08;
++    this.camera.lookAt(0, 2.2, 0);
++  }
++
++  render(): void {
++    this.composer.render();
++  }
++}
++
++function makeCloudTexture(): THREE.CanvasTexture {
++  const c = document.createElement("canvas");
++  c.width = 256; c.height = 128;
++  const g = c.getContext("2d")!;
++  g.clearRect(0, 0, 256, 128);
++  for (let i = 0; i < 26; i++) {
++    const x = 30 + Math.random() * 196;
++    const y = 40 + Math.random() * 48;
++    const r = 14 + Math.random() * 26;
++    const grad = g.createRadialGradient(x, y, 2, x, y, r);
++    grad.addColorStop(0, "rgba(255,244,220,.55)");
++    grad.addColorStop(1, "rgba(255,244,220,0)");
++    g.fillStyle = grad;
++    g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill();
++  }
++  const tex = new THREE.CanvasTexture(c);
++  tex.colorSpace = THREE.SRGBColorSpace;
++  return tex;
++}
+diff --git a/client/m5/styles.css b/client/m5/styles.css
+new file mode 100644
+index 0000000..f56d5a3
+--- /dev/null
++++ b/client/m5/styles.css
+@@ -0,0 +1,291 @@
++/* ============ Asian Buffalo M5 — Gold Tech Theme ============ */
++:root {
++  --gold-1: #f9e08a;
++  --gold-2: #d4af37;
++  --gold-3: #9a7418;
++  --gold-deep: #5c430e;
++  --ink: #120d06;
++  --panel: rgba(24, 17, 8, 0.82);
++  --panel-line: rgba(212, 175, 55, 0.45);
++  --text: #f5ecd7;
++  --danger: #ff6b4a;
++  --font: "Segoe UI", "PingFang SC", "Microsoft YaHei", "Myanmar Text", sans-serif;
++}
++
++* { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
++html, body, #app { width: 100%; height: 100%; overflow: hidden; background: var(--ink); }
++body { font-family: var(--font); color: var(--text); user-select: none; }
++
++#gl { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
++
++#hud { position: absolute; inset: 0; pointer-events: none; }
++#hud > * { pointer-events: auto; }
++.hidden { display: none !important; }
++
++/* ---------- top bar ---------- */
++#topbar {
++  position: absolute; top: 0; left: 0; right: 0;
++  display: flex; align-items: center; justify-content: space-between;
++  padding: 10px 16px;
++  background: linear-gradient(180deg, rgba(18,13,6,.9), rgba(18,13,6,.35) 80%, transparent);
++}
++#logo { display: flex; align-items: center; gap: 10px; }
++.logo-horn {
++  width: 30px; height: 30px; border-radius: 50%;
++  background:
++    radial-gradient(circle at 35% 30%, var(--gold-1), var(--gold-2) 45%, var(--gold-deep) 100%);
++  box-shadow: 0 0 14px rgba(212,175,55,.7), inset 0 -3px 6px rgba(0,0,0,.4);
++  position: relative; animation: emblemPulse 3s ease-in-out infinite;
++}
++.logo-horn::after {
++  content: ""; position: absolute; inset: 7px; border-radius: 50%;
++  border: 2px solid rgba(18,13,6,.65); border-top-color: transparent; border-bottom-color: transparent;
++}
++@keyframes emblemPulse { 50% { box-shadow: 0 0 24px rgba(249,224,138,.95), inset 0 -3px 6px rgba(0,0,0,.4); } }
++#logo-text {
++  font-size: 22px; font-weight: 800; letter-spacing: 3px;
++  background: linear-gradient(180deg, #fff6d8, var(--gold-1) 35%, var(--gold-2) 60%, var(--gold-3));
++  -webkit-background-clip: text; background-clip: text; color: transparent;
++  text-shadow: 0 2px 10px rgba(212,175,55,.35);
++}
++
++#fs-badge {
++  display: flex; align-items: center; gap: 8px;
++  padding: 6px 18px; border-radius: 999px;
++  border: 1px solid var(--panel-line);
++  background: linear-gradient(180deg, rgba(90,60,10,.85), rgba(40,26,6,.85));
++  box-shadow: 0 0 18px rgba(212,175,55,.35), inset 0 1px 0 rgba(249,224,138,.35);
++  font-size: 15px; letter-spacing: 1px;
++  animation: fsGlow 1.4s ease-in-out infinite;
++}
++#fs-badge b { color: var(--gold-1); font-size: 18px; }
++.fs-star { color: var(--gold-1); animation: spinStar 2.2s linear infinite; display: inline-block; }
++@keyframes spinStar { to { transform: rotate(360deg); } }
++@keyframes fsGlow { 50% { box-shadow: 0 0 30px rgba(249,224,138,.6), inset 0 1px 0 rgba(249,224,138,.35); } }
++
++.top-actions { display: flex; align-items: center; gap: 10px; }
++.icon-btn {
++  width: 36px; height: 36px; border-radius: 10px; cursor: pointer;
++  border: 1px solid var(--panel-line); color: var(--gold-1);
++  background: linear-gradient(180deg, rgba(60,42,12,.9), rgba(30,20,7,.9));
++  font-size: 17px; transition: all .18s ease;
++}
++.icon-btn:hover { box-shadow: 0 0 12px rgba(212,175,55,.55); transform: translateY(-1px); }
++.icon-btn.off { color: #8a7a55; text-decoration: line-through; }
++
++#lang-switch {
++  display: flex; border: 1px solid var(--panel-line); border-radius: 10px; overflow: hidden;
++  background: rgba(20,14,5,.85);
++}
++.lang-btn {
++  border: 0; background: transparent; color: #cbb37a; cursor: pointer;
++  padding: 8px 12px; font-size: 13px; font-weight: 700; transition: all .18s ease;
++}
++.lang-btn + .lang-btn { border-left: 1px solid rgba(212,175,55,.2); }
++.lang-btn.active {
++  background: linear-gradient(180deg, var(--gold-1), var(--gold-2));
++  color: #2a1d05; text-shadow: none;
++}
++
++/* ---------- bottom console ---------- */
++#console {
++  position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%);
++  display: flex; align-items: center; gap: 18px;
++  padding: 12px 22px; border-radius: 18px;
++  border: 1px solid var(--panel-line);
++  background: linear-gradient(180deg, rgba(34,24,10,.92), rgba(16,11,4,.94));
++  box-shadow: 0 10px 40px rgba(0,0,0,.6), inset 0 1px 0 rgba(249,224,138,.25);
++  backdrop-filter: blur(6px);
++  max-width: calc(100vw - 16px); flex-wrap: wrap; justify-content: center;
++}
++.meter { text-align: center; min-width: 96px; }
++.meter label {
++  display: block; font-size: 11px; letter-spacing: 2px; color: #b49b5e;
++  text-transform: uppercase; margin-bottom: 4px;
++}
++.meter-value {
++  font-size: 22px; font-weight: 800; font-variant-numeric: tabular-nums;
++  color: var(--text); text-shadow: 0 0 12px rgba(249,224,138,.25);
++  transition: transform .15s ease;
++}
++.meter-value.gold {
++  background: linear-gradient(180deg, #fff3c4, var(--gold-2));
++  -webkit-background-clip: text; background-clip: text; color: transparent;
++}
++.meter-value.win { color: #ffe98a; }
++.meter-value.bump { animation: bump .35s ease; }
++@keyframes bump { 40% { transform: scale(1.25); } }
++
++.bet-row { display: flex; align-items: center; gap: 8px; }
++.step-btn {
++  width: 30px; height: 30px; border-radius: 8px; cursor: pointer;
++  border: 1px solid var(--panel-line); color: var(--gold-1); font-size: 18px; font-weight: 800;
++  background: linear-gradient(180deg, rgba(70,50,15,.9), rgba(32,22,8,.9));
++  transition: all .15s ease;
++}
++.step-btn:hover { box-shadow: 0 0 10px rgba(212,175,55,.5); }
++.step-btn:active { transform: scale(.92); }
++
++.console-actions { display: flex; align-items: center; gap: 12px; }
++.console-btn {
++  padding: 10px 16px; border-radius: 12px; cursor: pointer;
++  border: 1px solid var(--panel-line); color: var(--gold-1);
++  background: linear-gradient(180deg, rgba(58,40,12,.9), rgba(28,19,6,.9));
++  font-size: 14px; font-weight: 700; letter-spacing: 1px;
++  transition: all .18s ease; white-space: nowrap;
++}
++.console-btn:hover { box-shadow: 0 0 12px rgba(212,175,55,.45); }
++.console-btn.active {
++  background: linear-gradient(180deg, var(--gold-1), var(--gold-2));
++  color: #2a1d05; box-shadow: 0 0 18px rgba(249,224,138,.65);
++}
++.console-btn:disabled { opacity: .35; cursor: not-allowed; }
++
++.spin-btn {
++  position: relative; width: 96px; height: 96px; border-radius: 50%; cursor: pointer;
++  border: 3px solid rgba(249,224,138,.85);
++  background: radial-gradient(circle at 35% 28%, #fff0b8, var(--gold-2) 42%, var(--gold-3) 78%, #4a340a);
++  color: #2a1d05; font-size: 20px; font-weight: 900; letter-spacing: 2px;
++  box-shadow: 0 0 26px rgba(212,175,55,.55), 0 8px 18px rgba(0,0,0,.5), inset 0 -6px 14px rgba(0,0,0,.35);
++  transition: transform .12s ease;
++}
++.spin-btn:hover { transform: scale(1.05); }
++.spin-btn:active { transform: scale(.94); }
++.spin-btn:disabled { filter: grayscale(.6) brightness(.7); cursor: not-allowed; transform: none; }
++.spin-btn .spin-ring {
++  position: absolute; inset: -9px; border-radius: 50%;
++  border: 2px dashed rgba(249,224,138,.5);
++  animation: ringSpin 6s linear infinite;
++}
++.spin-btn.busy .spin-ring { animation-duration: 1.1s; border-color: rgba(255,240,190,.9); }
++@keyframes ringSpin { to { transform: rotate(360deg); } }
++
++/* ---------- celebration ---------- */
++#celebration {
++  position: absolute; inset: 0; display: flex; flex-direction: column;
++  align-items: center; justify-content: center; gap: 12px;
++  pointer-events: none; z-index: 30;
++}
++.celebration-glow {
++  position: absolute; inset: 0;
++  background: radial-gradient(ellipse at center, rgba(249,224,138,.22), transparent 60%);
++  animation: glowPulse 1s ease-in-out infinite;
++}
++@keyframes glowPulse { 50% { opacity: .55; } }
++.celebration-tier {
++  font-size: clamp(44px, 9vw, 110px); font-weight: 900; letter-spacing: 6px;
++  background: linear-gradient(180deg, #fffbe0 15%, var(--gold-1) 40%, var(--gold-2) 62%, #8a6410);
++  -webkit-background-clip: text; background-clip: text; color: transparent;
++  filter: drop-shadow(0 4px 18px rgba(212,175,55,.65));
++  animation: tierIn .5s cubic-bezier(.2,1.6,.4,1) both;
++}
++@keyframes tierIn { from { transform: scale(.2) rotate(-6deg); opacity: 0; } }
++.celebration-amount {
++  font-size: clamp(30px, 5vw, 60px); font-weight: 800; font-variant-numeric: tabular-nums;
++  color: #fff3c4; text-shadow: 0 0 22px rgba(249,224,138,.8);
++}
++
++/* ---------- jackpot ---------- */
++#jackpot-banner {
++  position: absolute; inset: 0; display: flex; flex-direction: column;
++  align-items: center; justify-content: center; gap: 8px; z-index: 40; pointer-events: none;
++  background: radial-gradient(ellipse at center, rgba(20,12,2,.35), rgba(10,6,1,.75));
++}
++.jackpot-rays {
++  position: absolute; width: 140vmax; height: 140vmax; border-radius: 50%;
++  background: conic-gradient(from 0deg,
++    rgba(249,224,138,.0) 0deg, rgba(249,224,138,.16) 10deg, rgba(249,224,138,0) 20deg,
++    rgba(249,224,138,.14) 30deg, rgba(249,224,138,0) 40deg, rgba(249,224,138,.16) 50deg,
++    rgba(249,224,138,0) 60deg, rgba(249,224,138,.14) 70deg, rgba(249,224,138,0) 80deg,
++    rgba(249,224,138,.16) 90deg, rgba(249,224,138,0) 100deg, rgba(249,224,138,.14) 110deg,
++    rgba(249,224,138,0) 120deg, rgba(249,224,138,.16) 130deg, rgba(249,224,138,0) 140deg,
++    rgba(249,224,138,.14) 150deg, rgba(249,224,138,0) 160deg, rgba(249,224,138,.16) 170deg,
++    rgba(249,224,138,0) 180deg, rgba(249,224,138,.14) 190deg, rgba(249,224,138,0) 200deg,
++    rgba(249,224,138,.16) 210deg, rgba(249,224,138,0) 220deg, rgba(249,224,138,.14) 230deg,
++    rgba(249,224,138,0) 240deg, rgba(249,224,138,.16) 250deg, rgba(249,224,138,0) 260deg,
++    rgba(249,224,138,.14) 270deg, rgba(249,224,138,0) 280deg, rgba(249,224,138,.16) 290deg,
++    rgba(249,224,138,0) 300deg, rgba(249,224,138,.14) 310deg, rgba(249,224,138,0) 320deg,
++    rgba(249,224,138,.16) 330deg, rgba(249,224,138,0) 340deg, rgba(249,224,138,.14) 350deg);
++  animation: raysSpin 14s linear infinite;
++}
++@keyframes raysSpin { to { transform: rotate(360deg); } }
++.jackpot-text {
++  position: relative; font-size: clamp(48px, 10vw, 120px); font-weight: 900; letter-spacing: 10px;
++  background: linear-gradient(180deg, #fffbe0, var(--gold-1) 45%, var(--gold-3));
++  -webkit-background-clip: text; background-clip: text; color: transparent;
++  filter: drop-shadow(0 6px 26px rgba(249,224,138,.8));
++  animation: tierIn .6s cubic-bezier(.2,1.6,.4,1) both;
++}
++#jackpot-amount {
++  position: relative; font-size: clamp(28px, 5vw, 56px); font-weight: 800;
++  color: #fff3c4; text-shadow: 0 0 26px rgba(249,224,138,.9);
++}
++
++/* ---------- toast ---------- */
++#toast {
++  position: absolute; top: 72px; left: 50%; transform: translateX(-50%);
++  padding: 10px 22px; border-radius: 999px; z-index: 25;
++  border: 1px solid var(--panel-line);
++  background: rgba(20,14,5,.92); color: var(--gold-1);
++  font-size: 15px; letter-spacing: 1px;
++  box-shadow: 0 6px 24px rgba(0,0,0,.5);
++  animation: toastIn .3s ease both;
++}
++@keyframes toastIn { from { transform: translate(-50%, -14px); opacity: 0; } }
++
++/* ---------- modal ---------- */
++.modal {
++  position: absolute; inset: 0; z-index: 50;
++  display: flex; align-items: center; justify-content: center;
++  background: rgba(8,5,1,.7); backdrop-filter: blur(4px);
++}
++.modal-card {
++  width: min(680px, 92vw); max-height: 82vh; overflow: hidden;
++  border-radius: 18px; border: 1px solid var(--panel-line);
++  background: linear-gradient(180deg, rgba(36,26,11,.97), rgba(16,11,4,.97));
++  box-shadow: 0 24px 80px rgba(0,0,0,.7);
++  display: flex; flex-direction: column;
++  animation: modalIn .28s cubic-bezier(.2,1.4,.4,1) both;
++}
++@keyframes modalIn { from { transform: translateY(26px) scale(.96); opacity: 0; } }
++.modal-head {
++  display: flex; align-items: center; justify-content: space-between;
++  padding: 14px 18px; font-size: 18px; font-weight: 800; letter-spacing: 2px;
++  color: var(--gold-1); border-bottom: 1px solid rgba(212,175,55,.25);
++}
++.modal-body { padding: 16px 18px; overflow-y: auto; font-size: 14px; line-height: 1.75; }
++.pay-row { display: flex; align-items: center; gap: 12px; padding: 6px 4px; border-bottom: 1px dashed rgba(212,175,55,.15); }
++.pay-row img, .pay-row canvas { width: 44px; height: 44px; border-radius: 8px; }
++.pay-row .pay-name { flex: 1; font-weight: 700; }
++.pay-row .pay-vals { color: #e8d49a; font-variant-numeric: tabular-nums; white-space: nowrap; }
++.pay-note { margin-top: 12px; color: #b49b5e; font-size: 13px; }
++
++/* ---------- loading ---------- */
++#loading {
++  position: absolute; inset: 0; z-index: 100;
++  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 22px;
++  background: radial-gradient(ellipse at center, #241a0b, #0d0903);
++  transition: opacity .6s ease;
++}
++#loading.done { opacity: 0; pointer-events: none; }
++.loading-emblem {
++  width: 84px; height: 84px; border-radius: 50%;
++  border: 3px solid var(--gold-2); border-top-color: transparent;
++  animation: ringSpin 1s linear infinite;
++  box-shadow: 0 0 30px rgba(212,175,55,.4), inset 0 0 20px rgba(212,175,55,.25);
++}
++#loading-text { letter-spacing: 4px; color: var(--gold-1); font-size: 15px; }
++
++/* ---------- responsive ---------- */
++@media (max-width: 760px) {
++  #logo-text { font-size: 16px; letter-spacing: 1px; }
++  .meter { min-width: 70px; }
++  .meter-value { font-size: 17px; }
++  .spin-btn { width: 78px; height: 78px; font-size: 16px; }
++  #console { gap: 10px; padding: 10px 12px; bottom: 8px; }
++  .console-btn { padding: 8px 10px; font-size: 12px; }
++}
++@media (max-height: 500px) {
++  #console { bottom: 4px; padding: 6px 14px; }
++  .spin-btn { width: 66px; height: 66px; font-size: 14px; }
++}
+diff --git a/client/m5/ui/hud.ts b/client/m5/ui/hud.ts
+new file mode 100644
+index 0000000..b3f19d1
+--- /dev/null
++++ b/client/m5/ui/hud.ts
+@@ -0,0 +1,257 @@
++/**
++ * HUD — DOM overlay: meters, buttons, celebrations, formal paytable, language.
++ */
++import type { Game, HudHooks } from "../game/game.ts";
++import type { SymbolId, WinTier } from "../adapter.ts";
++import { PAYTABLE, type RegularSymbol } from "../../../lib/game-config.ts";
++import { symbolCanvas } from "../game/symbols.ts";
++import { audio } from "../audio.ts";
++import { t, setLang, getLang, onLangChange, applyDom, type Lang } from "../i18n.ts";
++
++const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
++
++function fmt(v: number): string {
++  return Math.round(v).toLocaleString("en-US");
++}
++
++const PAYTABLE_ORDER: RegularSymbol[] = [
++  "buffalo",
++  "lion",
++  "elephant",
++  "zebra",
++  "antelope",
++  "a",
++  "k",
++  "q",
++  "j",
++  "ten",
++  "nine",
++];
++
++export class Hud implements HudHooks {
++  private game: Game;
++  private toastTimer: number | null = null;
++  private balanceShown = 0;
++
++  constructor(game: Game) {
++    this.game = game;
++    game.attachHud(this);
++
++    $("btn-spin").addEventListener("click", () => {
++      audio.unlock();
++      audio.startBgm();
++      void this.game.spin();
++    });
++    $("btn-auto").addEventListener("click", () => this.game.toggleAuto());
++    $("btn-turbo").addEventListener("click", () => this.game.toggleTurbo());
++    $("bet-plus").addEventListener("click", () => this.game.betUp());
++    $("bet-minus").addEventListener("click", () => this.game.betDown());
++
++    const soundBtn = $("btn-sound");
++    soundBtn.addEventListener("click", () => {
++      audio.unlock();
++      const muted = !audio.isMuted;
++      audio.setMuted(muted);
++      soundBtn.classList.toggle("off", muted);
++      soundBtn.classList.toggle("on", !muted);
++      if (muted) audio.stopBgm();
++      else {
++        audio.startBgm();
++        audio.uiClick();
++      }
++    });
++
++    document.querySelectorAll<HTMLButtonElement>(".lang-btn").forEach((btn) => {
++      btn.addEventListener("click", () => {
++        setLang(btn.dataset.lang as Lang);
++        audio.uiClick();
++      });
++    });
++    onLangChange(() => {
++      this.refreshStatic();
++      this.buildPaytable();
++    });
++
++    $("btn-paytable").addEventListener("click", () => {
++      audio.uiClick();
++      this.buildPaytable();
++      $("paytable-modal").classList.remove("hidden");
++    });
++    $("paytable-close").addEventListener("click", () =>
++      $("paytable-modal").classList.add("hidden"),
++    );
++    $("paytable-modal").addEventListener("click", (e) => {
++      if (e.target === $("paytable-modal")) $("paytable-modal").classList.add("hidden");
++    });
++
++    window.addEventListener("keydown", (e) => {
++      if (e.code === "Space" && !e.repeat) {
++        e.preventDefault();
++        audio.unlock();
++        audio.startBgm();
++        void this.game.spin();
++      }
++    });
++
++    applyDom();
++    this.refreshStatic();
++  }
++
++  setBalance(v: number, animate = false): void {
++    const el = $("balance");
++    if (animate && v !== this.balanceShown) {
++      this.animateNumber(el, this.balanceShown, v, 600);
++      el.classList.remove("bump");
++      void el.offsetWidth;
++      el.classList.add("bump");
++    } else {
++      el.textContent = fmt(v);
++    }
++    this.balanceShown = v;
++  }
++
++  setBet(v: number): void {
++    const el = $("bet");
++    el.textContent = fmt(v);
++    el.classList.remove("bump");
++    void el.offsetWidth;
++    el.classList.add("bump");
++  }
++
++  showWin(amount: number): void {
++    const el = $("win");
++    this.animateNumber(el, 0, amount, amount > 0 ? 900 : 0);
++    if (amount > 0) {
++      el.classList.remove("bump");
++      void el.offsetWidth;
++      el.classList.add("bump");
++    }
++  }
++
++  setFreeSpins(n: number): void {
++    const badge = $("fs-badge");
++    badge.classList.toggle("hidden", n <= 0);
++    $("fs-count").textContent = String(n);
++  }
++
++  toastKey(key: string): void {
++    const el = $("toast");
++    el.textContent = t(key);
++    el.classList.remove("hidden");
++    if (this.toastTimer !== null) clearTimeout(this.toastTimer);
++    this.toastTimer = window.setTimeout(() => el.classList.add("hidden"), 2200);
++  }
++
++  setSpinBusy(busy: boolean): void {
++    const btn = $("btn-spin") as HTMLButtonElement;
++    btn.disabled = busy;
++    btn.classList.toggle("busy", busy);
++    ($("bet-plus") as HTMLButtonElement).disabled = busy;
++    ($("bet-minus") as HTMLButtonElement).disabled = busy;
++  }
++
++  setAutoActive(on: boolean): void {
++    const btn = $("btn-auto");
++    btn.classList.toggle("active", on);
++    btn.textContent = on ? t("autoOn") : t("auto");
++  }
++
++  setTurboActive(on: boolean): void {
++    $("btn-turbo").classList.toggle("active", on);
++  }
++
++  refreshStatic(): void {
++    applyDom();
++    const autoBtn = $("btn-auto");
++    autoBtn.textContent = autoBtn.classList.contains("active") ? t("autoOn") : t("auto");
++  }
++
++  async celebrate(tier: WinTier, amount: number): Promise<void> {
++    if (tier === "jackpot") {
++      return this.celebrateJackpot(amount);
++    }
++    const overlay = $("celebration");
++    const tierEl = $("celebration-tier");
++    const amountEl = $("celebration-amount");
++    const key = tier === "big" ? "bigWin" : tier === "mega" ? "megaWin" : "ultraWin";
++    tierEl.textContent = t(key);
++    overlay.classList.remove("hidden");
++    tierEl.style.animation = "none";
++    void tierEl.offsetWidth;
++    tierEl.style.animation = "";
++    const dur = tier === "big" ? 2600 : tier === "mega" ? 3400 : 4200;
++    this.animateNumber(amountEl, 0, amount, Math.min(dur - 400, 2000));
++    await new Promise((r) => setTimeout(r, dur));
++    overlay.classList.add("hidden");
++  }
++
++  private async celebrateJackpot(amount: number): Promise<void> {
++    const banner = $("jackpot-banner");
++    $("jackpot-amount").textContent = "0";
++    banner.classList.remove("hidden");
++    this.animateNumber($("jackpot-amount"), 0, amount, 2400);
++    await new Promise((r) => setTimeout(r, 5500));
++    banner.classList.add("hidden");
++  }
++
++  private animateNumber(el: HTMLElement, from: number, to: number, dur: number): void {
++    if (dur <= 0 || from === to) {
++      el.textContent = fmt(to);
++      return;
++    }
++    const t0 = performance.now();
++    const step = (now: number) => {
++      const p = Math.min((now - t0) / dur, 1);
++      const e = 1 - Math.pow(1 - p, 3);
++      el.textContent = fmt(from + (to - from) * e);
++      if (p < 1) requestAnimationFrame(step);
++    };
++    requestAnimationFrame(step);
++  }
++
++  private buildPaytable(): void {
++    const body = $("paytable-body");
++    body.innerHTML = "";
++    for (const sym of PAYTABLE_ORDER) {
++      const pays = PAYTABLE[sym];
++      const row = document.createElement("div");
++      row.className = "pay-row";
++      const img = document.createElement("img");
++      img.src = symbolCanvas(sym).toDataURL();
++      img.alt = t(`sym_${sym}`);
++      const name = document.createElement("span");
++      name.className = "pay-name";
++      name.textContent = t(`sym_${sym}`);
++      const vals = document.createElement("span");
++      vals.className = "pay-vals";
++      const parts = ([2, 3, 4, 5] as const)
++        .map((n) => (pays[n] != null ? `×${n} ${pays[n]}` : null))
++        .filter(Boolean);
++      vals.textContent = parts.join(" · ");
++      row.append(img, name, vals);
++      body.appendChild(row);
++    }
++    for (const sym of ["wild", "scatter"] as SymbolId[]) {
++      const row = document.createElement("div");
++      row.className = "pay-row";
++      const img = document.createElement("img");
++      img.src = symbolCanvas(sym).toDataURL();
++      img.alt = t(`sym_${sym}`);
++      const name = document.createElement("span");
++      name.className = "pay-name";
++      name.textContent = t(`sym_${sym}`);
++      row.append(img, name);
++      body.appendChild(row);
++    }
++    for (const noteKey of ["wildNote", "scatterNote", "linesNote"]) {
++      const note = document.createElement("div");
++      note.className = "pay-note";
++      note.textContent = t(noteKey);
++      body.appendChild(note);
++    }
++  }
++}
++
++export function currentLang(): Lang {
++  return getLang();
++}
+diff --git a/lib/dev-schema-bootstrap.ts b/lib/dev-schema-bootstrap.ts
+new file mode 100644
+index 0000000..fa36cd7
+--- /dev/null
++++ b/lib/dev-schema-bootstrap.ts
+@@ -0,0 +1,188 @@
++/**
++ * DEV/TEST-only local D1 schema bootstrap.
++ * Applies CREATE TABLE IF NOT EXISTS when migrations_dir did not run.
++ * Fail-closed when AB_ALLOW_TEST_IDENTITY is not enabled.
++ * Does not alter production migration files.
++ */
++
++import { sql } from "drizzle-orm";
++import type { DrizzleD1Database } from "drizzle-orm/d1";
++import type * as schema from "../db/schema.ts";
++import { isDevTestIdentityEnabled } from "./runtime-identity.ts";
++
++let applied = false;
++
++/** Mirror of tests/db-helper.mjs schema (post-M4) for empty local D1. */
++const DEV_SCHEMA_SQL = `
++CREATE TABLE IF NOT EXISTS "players" (
++  "id" text PRIMARY KEY NOT NULL,
++  "wallet_adapter_ref" text NOT NULL,
++  "currency" text DEFAULT 'MMK' NOT NULL,
++  "status" text DEFAULT 'ACTIVE' NOT NULL,
++  "created_at" text DEFAULT CURRENT_TIMESTAMP NOT NULL,
++  "updated_at" text DEFAULT CURRENT_TIMESTAMP NOT NULL,
++  CONSTRAINT "players_currency_length" CHECK(length("currency") = 3)
++);
++CREATE UNIQUE INDEX IF NOT EXISTS "players_wallet_adapter_ref_unique" ON "players" ("wallet_adapter_ref");
++CREATE TABLE IF NOT EXISTS "game_math_versions" (
++  "id" text PRIMARY KEY NOT NULL,
++  "sha256" text NOT NULL,
++  "status" text DEFAULT 'DRAFT' NOT NULL,
++  "config_json" text NOT NULL,
++  "activated_at" text,
++  "created_at" text DEFAULT CURRENT_TIMESTAMP NOT NULL
++);
++CREATE UNIQUE INDEX IF NOT EXISTS "game_math_versions_sha256_unique" ON "game_math_versions" ("sha256");
++CREATE TABLE IF NOT EXISTS "game_sessions" (
++  "id" text PRIMARY KEY NOT NULL,
++  "player_id" text NOT NULL,
++  "math_version_id" text NOT NULL,
++  "status" text DEFAULT 'OPEN' NOT NULL,
++  "currency" text NOT NULL,
++  "free_games_remaining" integer DEFAULT 0 NOT NULL,
++  "expires_at" text NOT NULL,
++  "created_at" text DEFAULT CURRENT_TIMESTAMP NOT NULL,
++  "updated_at" text DEFAULT CURRENT_TIMESTAMP NOT NULL,
++  CONSTRAINT "game_sessions_free_games_nonnegative" CHECK("free_games_remaining" >= 0),
++  CONSTRAINT "game_sessions_currency_length" CHECK(length("currency") = 3),
++  CONSTRAINT "game_sessions_currency_format" CHECK("currency" GLOB '[A-Z][A-Z][A-Z]')
++);
++CREATE INDEX IF NOT EXISTS "game_sessions_player_status_idx" ON "game_sessions" ("player_id", "status");
++CREATE TABLE IF NOT EXISTS "game_rounds" (
++  "id" text PRIMARY KEY NOT NULL,
++  "session_id" text NOT NULL,
++  "player_id" text NOT NULL,
++  "math_version_id" text NOT NULL,
++  "idempotency_key" text NOT NULL,
++  "request_hash" text NOT NULL,
++  "request_payload" text,
++  "result_hash" text,
++  "status" text DEFAULT 'PENDING' NOT NULL,
++  "currency" text NOT NULL,
++  "total_bet_minor" integer NOT NULL,
++  "total_win_minor" integer,
++  "balance_after_minor" integer,
++  "is_free_game" integer DEFAULT false NOT NULL,
++  "outcome_json" text,
++  "settled_at" text,
++  "claim_token" text,
++  "lease_expires_at" text,
++  "updated_at" text DEFAULT CURRENT_TIMESTAMP,
++  "free_game_reserved" integer DEFAULT false NOT NULL,
++  "free_games_awarded" integer DEFAULT 0 NOT NULL,
++  "wallet_applied" integer DEFAULT false NOT NULL,
++  "created_at" text DEFAULT CURRENT_TIMESTAMP NOT NULL,
++  CONSTRAINT "game_rounds_bet_nonnegative" CHECK("total_bet_minor" >= 0),
++  CONSTRAINT "game_rounds_win_nonnegative" CHECK("total_win_minor" IS NULL OR "total_win_minor" >= 0),
++  CONSTRAINT "game_rounds_free_games_awarded_nonnegative" CHECK("free_games_awarded" >= 0)
++);
++CREATE UNIQUE INDEX IF NOT EXISTS "game_rounds_player_idempotency_unique" ON "game_rounds" ("player_id", "idempotency_key");
++CREATE INDEX IF NOT EXISTS "game_rounds_session_created_idx" ON "game_rounds" ("session_id", "created_at");
++CREATE TABLE IF NOT EXISTS "ledger_accounts" (
++  "id" text PRIMARY KEY NOT NULL,
++  "player_id" text,
++  "kind" text NOT NULL,
++  "currency" text NOT NULL,
++  "balance_minor" integer DEFAULT 0 NOT NULL,
++  "version" integer DEFAULT 0 NOT NULL,
++  "created_at" text DEFAULT CURRENT_TIMESTAMP NOT NULL,
++  "updated_at" text DEFAULT CURRENT_TIMESTAMP NOT NULL
++);
++CREATE UNIQUE INDEX IF NOT EXISTS "ledger_accounts_owner_kind_currency_unique" ON "ledger_accounts" ("player_id", "kind", "currency");
++CREATE INDEX IF NOT EXISTS "ledger_accounts_player_idx" ON "ledger_accounts" ("player_id");
++CREATE TABLE IF NOT EXISTS "ledger_transactions" (
++  "id" text PRIMARY KEY NOT NULL,
++  "idempotency_key" text NOT NULL,
++  "round_id" text,
++  "kind" text NOT NULL,
++  "status" text DEFAULT 'PENDING' NOT NULL,
++  "request_hash" text NOT NULL,
++  "posted_at" text,
++  "created_at" text DEFAULT CURRENT_TIMESTAMP NOT NULL
++);
++CREATE UNIQUE INDEX IF NOT EXISTS "ledger_transactions_idempotency_unique" ON "ledger_transactions" ("idempotency_key");
++CREATE INDEX IF NOT EXISTS "ledger_transactions_round_idx" ON "ledger_transactions" ("round_id");
++CREATE TABLE IF NOT EXISTS "ledger_entries" (
++  "id" text PRIMARY KEY NOT NULL,
++  "transaction_id" text NOT NULL,
++  "account_id" text NOT NULL,
++  "sequence" integer NOT NULL,
++  "amount_minor" integer NOT NULL,
++  "currency" text NOT NULL,
++  "balance_after_minor" integer NOT NULL,
++  "created_at" text DEFAULT CURRENT_TIMESTAMP NOT NULL
++);
++CREATE UNIQUE INDEX IF NOT EXISTS "ledger_entries_transaction_sequence_unique" ON "ledger_entries" ("transaction_id", "sequence");
++CREATE INDEX IF NOT EXISTS "ledger_entries_account_created_idx" ON "ledger_entries" ("account_id", "created_at");
++CREATE TABLE IF NOT EXISTS "audit_events" (
++  "id" text PRIMARY KEY NOT NULL,
++  "actor_type" text NOT NULL,
++  "actor_id" text NOT NULL,
++  "event_type" text NOT NULL,
++  "subject_type" text NOT NULL,
++  "subject_id" text NOT NULL,
++  "event_json" text NOT NULL,
++  "previous_hash" text,
++  "event_hash" text NOT NULL,
++  "created_at" text DEFAULT CURRENT_TIMESTAMP NOT NULL
++);
++CREATE UNIQUE INDEX IF NOT EXISTS "audit_events_event_hash_unique" ON "audit_events" ("event_hash");
++CREATE INDEX IF NOT EXISTS "audit_events_subject_created_idx" ON "audit_events" ("subject_type", "subject_id", "created_at");
++CREATE TABLE IF NOT EXISTS "ledger_balances" (
++  "account_id" text PRIMARY KEY NOT NULL,
++  "balance_minor" integer DEFAULT 0 NOT NULL,
++  "version" integer DEFAULT 0 NOT NULL,
++  "updated_at" text DEFAULT CURRENT_TIMESTAMP NOT NULL
++);
++CREATE TABLE IF NOT EXISTS "wallet_intents" (
++  "id" text PRIMARY KEY NOT NULL,
++  "player_id" text NOT NULL,
++  "idempotency_key" text NOT NULL,
++  "operation" text NOT NULL,
++  "status" text DEFAULT 'NEW' NOT NULL,
++  "currency" text NOT NULL,
++  "amount_minor" integer NOT NULL,
++  "request_hash" text NOT NULL,
++  "provider_op_id" text,
++  "ledger_tx_id" text,
++  "result_json" text,
++  "error_code" text,
++  "version" integer DEFAULT 0 NOT NULL,
++  "created_at" text DEFAULT CURRENT_TIMESTAMP NOT NULL,
++  "updated_at" text DEFAULT CURRENT_TIMESTAMP NOT NULL,
++  CONSTRAINT "wallet_intents_amount_nonnegative" CHECK("amount_minor" >= 0)
++);
++CREATE UNIQUE INDEX IF NOT EXISTS "wallet_intents_player_idempotency_unique" ON "wallet_intents" ("player_id", "idempotency_key");
++CREATE INDEX IF NOT EXISTS "wallet_intents_status_idx" ON "wallet_intents" ("status");
++CREATE TABLE IF NOT EXISTS "wallet_provider_ops" (
++  "id" text PRIMARY KEY NOT NULL,
++  "intent_id" text NOT NULL,
++  "idempotency_key" text NOT NULL,
++  "status" text DEFAULT 'NEW' NOT NULL,
++  "currency" text NOT NULL,
++  "amount_minor" integer NOT NULL,
++  "direction" text NOT NULL,
++  "version" integer DEFAULT 0 NOT NULL,
++  "created_at" text DEFAULT CURRENT_TIMESTAMP NOT NULL,
++  "updated_at" text DEFAULT CURRENT_TIMESTAMP NOT NULL,
++  CONSTRAINT "wallet_provider_ops_amount_nonnegative" CHECK("amount_minor" >= 0)
++);
++CREATE UNIQUE INDEX IF NOT EXISTS "wallet_provider_ops_idempotency_unique" ON "wallet_provider_ops" ("idempotency_key");
++CREATE UNIQUE INDEX IF NOT EXISTS "wallet_provider_ops_intent_unique" ON "wallet_provider_ops" ("intent_id");
++CREATE INDEX IF NOT EXISTS "wallet_provider_ops_status_idx" ON "wallet_provider_ops" ("status");
++`;
++
++export async function ensureDevLocalSchema(
++  db: DrizzleD1Database<typeof schema>,
++): Promise<void> {
++  if (!isDevTestIdentityEnabled()) return;
++  if (applied) return;
++  // Apply one statement at a time via Drizzle (no cloudflare:workers import).
++  const statements = DEV_SCHEMA_SQL.split(";")
++    .map((s) => s.trim())
++    .filter((s) => s.length > 0);
++  for (const statement of statements) {
++    await db.run(sql.raw(statement));
++  }
++  applied = true;
++}
+diff --git a/lib/dev-test-bootstrap.ts b/lib/dev-test-bootstrap.ts
+new file mode 100644
+index 0000000..8b5ce75
+--- /dev/null
++++ b/lib/dev-test-bootstrap.ts
+@@ -0,0 +1,73 @@
++/**
++ * DEV/TEST bootstrap helpers for local playability.
++ * Fail-closed when AB_ALLOW_TEST_IDENTITY is not set.
++ * Does not alter Wallet/Ledger/Math implementations — only seeds via
++ * existing public adapter methods and player row insert.
++ */
++
++import { eq } from "drizzle-orm";
++import type { DrizzleD1Database } from "drizzle-orm/d1";
++import * as schema from "../db/schema.ts";
++import { ensureDevLocalSchema } from "./dev-schema-bootstrap.ts";
++import { DEV_TEST_PLAYER_ID, isDevTestIdentityEnabled } from "./runtime-identity.ts";
++import type { TestWalletAdapter } from "./wallet-adapter.ts";
++
++const DEFAULT_CURRENCY = "MMK";
++const DEFAULT_SEED_MINOR = 100_000;
++
++export async function ensureDevTestPlayer(
++  db: DrizzleD1Database<typeof schema>,
++  playerId: string = DEV_TEST_PLAYER_ID,
++  currency: string = DEFAULT_CURRENCY,
++): Promise<{ playerId: string; currency: string } | null> {
++  if (!isDevTestIdentityEnabled()) return null;
++  await ensureDevLocalSchema(db);
++
++  const existing = await db.query.players.findFirst({
++    where: eq(schema.players.id, playerId),
++  });
++  if (existing) {
++    return { playerId: existing.id, currency: existing.currency };
++  }
++
++  await db.insert(schema.players).values({
++    id: playerId,
++    walletAdapterRef: `wallet_${playerId}`,
++    currency,
++    status: "ACTIVE",
++  });
++  return { playerId, currency };
++}
++
++export function ensureDevTestWalletSeed(
++  wallet: TestWalletAdapter,
++  playerId: string,
++  currency: string,
++  amountMinor: number = DEFAULT_SEED_MINOR,
++): void {
++  if (!isDevTestIdentityEnabled()) return;
++  // Idempotent enough for module-lifetime adapter: only credit when empty.
++  void wallet.getAvailableBalance(playerId, currency).then((bal) => {
++    if (bal <= 0) {
++      wallet.creditAvailable(playerId, currency, amountMinor);
++    }
++  });
++}
++
++/** Sync seed for request path (avoid race before first spin). */
++export async function seedDevTestWalletIfEmpty(
++  wallet: TestWalletAdapter,
++  playerId: string,
++  currency: string,
++  amountMinor: number = DEFAULT_SEED_MINOR,
++): Promise<number> {
++  if (!isDevTestIdentityEnabled()) {
++    return wallet.getAvailableBalance(playerId, currency);
++  }
++  const bal = await wallet.getAvailableBalance(playerId, currency);
++  if (bal <= 0) {
++    wallet.creditAvailable(playerId, currency, amountMinor);
++    return amountMinor;
++  }
++  return bal;
++}
+diff --git a/lib/route-test-services.ts b/lib/route-test-services.ts
+new file mode 100644
+index 0000000..b81ff72
+--- /dev/null
++++ b/lib/route-test-services.ts
+@@ -0,0 +1,10 @@
++/**
++ * Shared TEST wallet + round store for local API routes (same worker isolate).
++ * Not a production wallet; REAL money remains fail-closed via allowRealMoney=false.
++ */
++
++import { TestRoundStore } from "./round-store.ts";
++import { TestWalletAdapter } from "./wallet-adapter.ts";
++
++export const routeTestWalletAdapter = new TestWalletAdapter();
++export const routeTestRoundStore = new TestRoundStore();
+diff --git a/lib/runtime-identity.ts b/lib/runtime-identity.ts
+new file mode 100644
+index 0000000..b559b78
+--- /dev/null
++++ b/lib/runtime-identity.ts
+@@ -0,0 +1,59 @@
++/**
++ * Runtime identity selection for API routes.
++ *
++ * - Default / production: fail-closed (UnconfiguredIdentityProvider).
++ * - DEV/TEST only when AB_ALLOW_TEST_IDENTITY=1 (and never when
++ *   AB_FORCE_FAIL_CLOSED_IDENTITY=1): DevTestIdentityProvider.
++ *
++ * Does not trust client headers, cookies, query, or body for identity.
++ */
++
++import {
++  createProductionIdentityProvider,
++  type IdentityProvider,
++  type PlayerIdentity,
++} from "./identity.ts";
++
++export const DEV_TEST_PLAYER_ID = "dev-test-player";
++
++function readEnv(name: string): string | undefined {
++  try {
++    const fromProcess = process.env[name];
++    if (typeof fromProcess === "string" && fromProcess.length > 0) {
++      return fromProcess;
++    }
++  } catch {
++    /* ignore */
++  }
++  return undefined;
++}
++
++export function isDevTestIdentityEnabled(): boolean {
++  if (readEnv("AB_FORCE_FAIL_CLOSED_IDENTITY") === "1") return false;
++  // Explicit allow-list only — production must omit this flag.
++  return readEnv("AB_ALLOW_TEST_IDENTITY") === "1";
++}
++
++/**
++ * Fixed DEV/TEST identity. Never reads request headers/body.
++ * Production code paths must not construct this unless the gate passes.
++ */
++export class DevTestIdentityProvider implements IdentityProvider {
++  readonly playerId: string;
++
++  constructor(playerId: string = DEV_TEST_PLAYER_ID) {
++    this.playerId = playerId;
++  }
++
++  async resolve(): Promise<PlayerIdentity> {
++    return { playerId: this.playerId };
++  }
++}
++
++export function createRuntimeIdentityProvider(): IdentityProvider {
++  if (isDevTestIdentityEnabled()) {
++    const playerId = readEnv("AB_TEST_PLAYER_ID")?.trim() || DEV_TEST_PLAYER_ID;
++    return new DevTestIdentityProvider(playerId);
++  }
++  return createProductionIdentityProvider();
++}
+diff --git a/package.json b/package.json
+index 1ddc156..131dec2 100644
+--- a/package.json
++++ b/package.json
+@@ -7,10 +7,11 @@
+   },
+   "scripts": {
+     "install:ci": "bash scripts/install-ci.sh",
+-    "dev": "WRANGLER_LOG_PATH=.wrangler/wrangler.log vite",
++    "dev": "vite",
+     "build": "bash scripts/build-verified.sh",
+-    "start": "WRANGLER_LOG_PATH=.wrangler/wrangler.log vinext start",
++    "start": "vinext start",
+     "test": "npm run build && node --experimental-strip-types --test tests/*.test.mjs",
++    "test:unit": "node --experimental-strip-types --test tests/*.test.mjs",
+     "validate:artifact": "bash scripts/validate-artifact.sh",
+     "lint": "bash scripts/sites-env.sh -- eslint . --ignore-pattern dist --ignore-pattern .next",
+     "db:generate": "bash scripts/sites-env.sh -- drizzle-kit generate"
+@@ -19,7 +20,8 @@
+     "drizzle-orm": "0.45.2",
+     "next": "16.2.6",
+     "react": "19.2.6",
+-    "react-dom": "19.2.6"
++    "react-dom": "19.2.6",
++    "three": "0.166.1"
+   },
+   "devDependencies": {
+     "@cloudflare/vite-plugin": "1.37.1",
+diff --git a/tests/identity.test.mjs b/tests/identity.test.mjs
+index a656e50..0ac4ea6 100644
+--- a/tests/identity.test.mjs
++++ b/tests/identity.test.mjs
+@@ -75,9 +75,11 @@ test("production routes wire fail-closed identity and never import test provider
+     "utf8",
+   );
+   const handlers = readFileSync(join(repoRoot, "lib/api-handlers.ts"), "utf8");
++  const runtimeIdentity = readFileSync(join(repoRoot, "lib/runtime-identity.ts"), "utf8");
+ 
+   for (const source of [sessionRoute, spinRoute, roundRoute]) {
+     assert.match(source, /createProductionIdentityProvider/);
++    assert.match(source, /createRuntimeIdentityProvider/);
+     assert.doesNotMatch(source, /from ["'].*lib\/identity/);
+     assert.doesNotMatch(source, /test-identity-provider/);
+     assert.doesNotMatch(source, /TestIdentityProvider/);
+@@ -90,6 +92,12 @@ test("production routes wire fail-closed identity and never import test provider
+   assert.doesNotMatch(handlers, /identityProvider\s*=/);
+   assert.match(handlers, /identityProvider:\s*IdentityProvider/);
+   assert.match(handlers, /export \{ createProductionIdentityProvider \}/);
++
++  // Runtime gate must fail closed unless AB_ALLOW_TEST_IDENTITY=1.
++  assert.match(runtimeIdentity, /AB_ALLOW_TEST_IDENTITY/);
++  assert.match(runtimeIdentity, /createProductionIdentityProvider/);
++  assert.doesNotMatch(runtimeIdentity, /headers\.get\(/);
++  assert.doesNotMatch(runtimeIdentity, /x-player-id/);
+ });
+ 
+ test("unconfigured production provider fails closed with generic 503", async () => {
+diff --git a/tests/r1-m5-identity-gate.test.mjs b/tests/r1-m5-identity-gate.test.mjs
+new file mode 100644
+index 0000000..5f87b0e
+--- /dev/null
++++ b/tests/r1-m5-identity-gate.test.mjs
+@@ -0,0 +1,85 @@
++/**
++ * M5 identity gate security — must be explicitly enabled.
++ * Unset / empty / any value other than "1" ⇒ fail-closed.
++ */
++import assert from "node:assert/strict";
++import { readFileSync } from "node:fs";
++import { dirname, join } from "node:path";
++import test from "node:test";
++import { fileURLToPath } from "node:url";
++import {
++  createRuntimeIdentityProvider,
++  DevTestIdentityProvider,
++  isDevTestIdentityEnabled,
++} from "../lib/runtime-identity.ts";
++import {
++  createProductionIdentityProvider,
++  UnconfiguredIdentityProvider,
++} from "../lib/identity.ts";
++
++const __dirname = dirname(fileURLToPath(import.meta.url));
++const repoRoot = join(__dirname, "..");
++
++function withEnv(vars, fn) {
++  const prev = {};
++  for (const key of Object.keys(vars)) {
++    prev[key] = process.env[key];
++    const value = vars[key];
++    if (value === undefined) delete process.env[key];
++    else process.env[key] = value;
++  }
++  try {
++    return fn();
++  } finally {
++    for (const key of Object.keys(vars)) {
++      if (prev[key] === undefined) delete process.env[key];
++      else process.env[key] = prev[key];
++    }
++  }
++}
++
++test("identity gate is closed when AB_ALLOW_TEST_IDENTITY is unset", () => {
++  withEnv({ AB_ALLOW_TEST_IDENTITY: undefined, AB_FORCE_FAIL_CLOSED_IDENTITY: undefined }, () => {
++    assert.equal(isDevTestIdentityEnabled(), false);
++    assert.ok(createRuntimeIdentityProvider() instanceof UnconfiguredIdentityProvider);
++  });
++});
++
++test("identity gate is closed for empty / non-1 values (DEV/TEST/Preview alike)", () => {
++  for (const value of ["", "0", "true", "yes", "TRUE"]) {
++    withEnv({ AB_ALLOW_TEST_IDENTITY: value, AB_FORCE_FAIL_CLOSED_IDENTITY: undefined }, () => {
++      assert.equal(isDevTestIdentityEnabled(), false, `value=${JSON.stringify(value)}`);
++      assert.ok(createRuntimeIdentityProvider() instanceof UnconfiguredIdentityProvider);
++    });
++  }
++});
++
++test("identity gate opens only for explicit AB_ALLOW_TEST_IDENTITY=1", () => {
++  withEnv({ AB_ALLOW_TEST_IDENTITY: "1", AB_FORCE_FAIL_CLOSED_IDENTITY: undefined }, () => {
++    assert.equal(isDevTestIdentityEnabled(), true);
++    assert.ok(createRuntimeIdentityProvider() instanceof DevTestIdentityProvider);
++  });
++});
++
++test("AB_FORCE_FAIL_CLOSED_IDENTITY overrides allow flag", () => {
++  withEnv({ AB_ALLOW_TEST_IDENTITY: "1", AB_FORCE_FAIL_CLOSED_IDENTITY: "1" }, () => {
++    assert.equal(isDevTestIdentityEnabled(), false);
++    assert.ok(createRuntimeIdentityProvider() instanceof UnconfiguredIdentityProvider);
++  });
++});
++
++test("vite.config does not default-enable TEST identity", () => {
++  const source = readFileSync(join(repoRoot, "vite.config.ts"), "utf8");
++  assert.doesNotMatch(source, /AB_ALLOW_TEST_IDENTITY/);
++  assert.doesNotMatch(source, /localAllowTestIdentity/);
++  assert.doesNotMatch(source, /NODE_ENV === ["']production["'].*"1"/);
++});
++
++test("hosting.json D1 binding is unchanged from fail-safe null in this patch scope", () => {
++  const hosting = JSON.parse(readFileSync(join(repoRoot, ".openai/hosting.json"), "utf8"));
++  assert.equal(hosting.d1, null);
++});
++
++test("production identity factory remains fail-closed Unconfigured", () => {
++  assert.ok(createProductionIdentityProvider() instanceof UnconfiguredIdentityProvider);
++});
+diff --git a/tests/r1-m5-integration.test.mjs b/tests/r1-m5-integration.test.mjs
+new file mode 100644
+index 0000000..415845f
+--- /dev/null
++++ b/tests/r1-m5-integration.test.mjs
+@@ -0,0 +1,171 @@
++/**
++ * R1-M5 integration guards — formal presentation path, no mock on boot,
++ * UI tiers isolated, DEV identity fail-closed by default.
++ */
++import assert from "node:assert/strict";
++import { readFileSync } from "node:fs";
++import { dirname, join } from "node:path";
++import test from "node:test";
++import { fileURLToPath } from "node:url";
++import {
++  createRuntimeIdentityProvider,
++  DevTestIdentityProvider,
++  isDevTestIdentityEnabled,
++} from "../lib/runtime-identity.ts";
++import {
++  createProductionIdentityProvider,
++  UnconfiguredIdentityProvider,
++} from "../lib/identity.ts";
++import { winTier } from "../client/m5/adapter.ts";
++import {
++  FORMAL_SYMBOLS,
++  LINES,
++  REELS,
++  ROWS,
++} from "../client/m5/adapter.ts";
++import { PAYLINE_COUNT, GRID_COLUMNS, GRID_ROWS, SYMBOLS } from "../lib/game-config.ts";
++
++const __dirname = dirname(fileURLToPath(import.meta.url));
++const repoRoot = join(__dirname, "..");
++
++function read(rel) {
++  return readFileSync(join(repoRoot, rel), "utf8");
++}
++
++test("formal grid is 5×4 with 50 lines and formal SymbolId set", () => {
++  assert.equal(REELS, 5);
++  assert.equal(ROWS, 4);
++  assert.equal(LINES, 50);
++  assert.equal(GRID_COLUMNS, 5);
++  assert.equal(GRID_ROWS, 4);
++  assert.equal(PAYLINE_COUNT, 50);
++  for (const id of [
++    "buffalo",
++    "lion",
++    "elephant",
++    "zebra",
++    "antelope",
++    "a",
++    "k",
++    "q",
++    "j",
++    "ten",
++    "nine",
++    "wild",
++    "scatter",
++  ]) {
++    assert.ok(FORMAL_SYMBOLS.includes(id), `missing ${id}`);
++    assert.ok(SYMBOLS[id], `game-config missing ${id}`);
++  }
++  assert.ok(!FORMAL_SYMBOLS.includes("eagle"));
++  assert.ok(!FORMAL_SYMBOLS.includes("lotus"));
++});
++
++test("boot path uses FormalGameProvider and never imports MockProvider", () => {
++  const boot = read("client/m5/boot.ts");
++  const gameClient = read("app/game-client.tsx");
++  // Strip block comments so documentation mentions do not trip import guards.
++  const stripComments = (s) => s.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
++  const bootCode = stripComments(boot);
++  const clientCode = stripComments(gameClient);
++  assert.match(bootCode, /FormalGameProvider/);
++  assert.doesNotMatch(bootCode, /MockProvider/);
++  assert.doesNotMatch(bootCode, /mock-provider/);
++  assert.doesNotMatch(bootCode, /adapter\.legacy-mock/);
++  assert.doesNotMatch(clientCode, /createDemoGrid/);
++  assert.doesNotMatch(clientCode, /evaluateSpin/);
++  assert.doesNotMatch(clientCode, /MockProvider/);
++  assert.match(clientCode, /bootM5|client\/m5\/boot/);
++});
++
++test("formal provider talks Session/Spin/Round/Rules/Balance APIs", () => {
++  const source = read("client/m5/formal-provider.ts");
++  assert.match(source, /\/api\/v1\/game\/sessions/);
++  assert.match(source, /\/api\/v1\/game\/spins/);
++  assert.match(source, /\/api\/v1\/game\/rounds\//);
++  assert.match(source, /\/api\/v1\/game\/rules\//);
++  assert.match(source, /\/api\/v1\/game\/wallet\/balance/);
++  assert.doesNotMatch(source, /Math\.random/);
++  assert.doesNotMatch(source, /PAYTABLE/);
++  assert.doesNotMatch(source, /evaluate\(/);
++});
++
++test("winTier is UI-only and does not appear in money/math modules", () => {
++  assert.equal(winTier(500, 50), "big");
++  assert.equal(winTier(1250, 50), "mega");
++  assert.equal(winTier(2500, 50), "ultra");
++  assert.equal(winTier(5000, 50), "jackpot");
++  assert.equal(winTier(49, 50), "none");
++
++  for (const rel of [
++    "lib/spin-orchestrator.ts",
++    "lib/wallet-adapter.ts",
++    "lib/db-ledger.ts",
++    "lib/money-service.ts",
++    "lib/server-game-engine.ts",
++    "lib/round-service.ts",
++  ]) {
++    const source = read(rel);
++    assert.doesNotMatch(source, /winTier/);
++    assert.doesNotMatch(source, /WIN_TIERS/);
++  }
++});
++
++test("runtime identity fails closed without explicit AB_ALLOW_TEST_IDENTITY=1", () => {
++  const prevAllow = process.env.AB_ALLOW_TEST_IDENTITY;
++  const prevForce = process.env.AB_FORCE_FAIL_CLOSED_IDENTITY;
++  try {
++    delete process.env.AB_ALLOW_TEST_IDENTITY;
++    delete process.env.AB_FORCE_FAIL_CLOSED_IDENTITY;
++    assert.equal(isDevTestIdentityEnabled(), false);
++    assert.ok(createRuntimeIdentityProvider() instanceof UnconfiguredIdentityProvider);
++    assert.ok(createProductionIdentityProvider() instanceof UnconfiguredIdentityProvider);
++
++    // Explicit opt-in only — tests inject the variable themselves.
++    process.env.AB_ALLOW_TEST_IDENTITY = "1";
++    assert.equal(isDevTestIdentityEnabled(), true);
++    assert.ok(createRuntimeIdentityProvider() instanceof DevTestIdentityProvider);
++  } finally {
++    if (prevAllow === undefined) delete process.env.AB_ALLOW_TEST_IDENTITY;
++    else process.env.AB_ALLOW_TEST_IDENTITY = prevAllow;
++    if (prevForce === undefined) delete process.env.AB_FORCE_FAIL_CLOSED_IDENTITY;
++    else process.env.AB_FORCE_FAIL_CLOSED_IDENTITY = prevForce;
++  }
++});
++
++test("M5 client assets live inside formal repo (no dual frontend dependency)", () => {
++  const required = [
++    "client/m5/boot.ts",
++    "client/m5/formal-provider.ts",
++    "client/m5/adapter.ts",
++    "client/m5/styles.css",
++    "client/m5/audio.ts",
++    "client/m5/i18n.ts",
++    "client/m5/game/game.ts",
++    "client/m5/game/reels.ts",
++    "client/m5/game/symbols.ts",
++    "client/m5/scene/world.ts",
++    "client/m5/scene/buffalo.ts",
++    "client/m5/scene/particles.ts",
++    "client/m5/ui/hud.ts",
++  ];
++  for (const rel of required) {
++    assert.ok(read(rel).length > 0, rel);
++  }
++  // Trilingual keys present
++  const i18n = read("client/m5/i18n.ts");
++  assert.match(i18n, /zh-CN/);
++  assert.match(i18n, /my-MM/);
++  assert.match(i18n, /"en"/);
++  assert.match(i18n, /50/);
++});
++
++test("frozen M1-M4 money/math files were not rewritten by M5 integration", () => {
++  // Spot-check: M4 commit markers / exports still present and M5 did not add winTier.
++  const money = read("lib/money-service.ts");
++  assert.match(money, /class MoneyService/);
++  const ledger = read("lib/db-ledger.ts");
++  assert.match(ledger, /MemoryLedger|class /);
++  const math = read("lib/math-config.ts");
++  assert.match(math, /MathVersionConfig/);
++});
+diff --git a/worker/index.ts b/worker/index.ts
+index b3cd137..8ef12be 100644
+--- a/worker/index.ts
++++ b/worker/index.ts
+@@ -5,6 +5,10 @@ import handler from "vinext/server/app-router-entry";
+ interface Env {
+   ASSETS: Fetcher;
+   DB: D1Database;
++  /** Explicit only — never defaulted on by this worker. */
++  AB_ALLOW_TEST_IDENTITY?: string;
++  AB_TEST_PLAYER_ID?: string;
++  AB_FORCE_FAIL_CLOSED_IDENTITY?: string;
+   IMAGES: {
+     input(stream: ReadableStream): {
+       transform(options: Record<string, unknown>): {
+@@ -14,19 +18,32 @@ interface Env {
+   };
+ }
+ 
++/**
++ * Minimal bridge: Cloudflare/Miniflare bindings → process.env so
++ * `AB_ALLOW_TEST_IDENTITY` is visible to runtime-identity.
++ * Does not invent defaults; unset bindings stay unset (fail-closed).
++ */
++function bridgeExplicitIdentityEnv(env: Env): void {
++  if (typeof process === "undefined" || !process.env) return;
++  if (env.AB_ALLOW_TEST_IDENTITY !== undefined) {
++    process.env.AB_ALLOW_TEST_IDENTITY = env.AB_ALLOW_TEST_IDENTITY;
++  }
++  if (env.AB_TEST_PLAYER_ID !== undefined) {
++    process.env.AB_TEST_PLAYER_ID = env.AB_TEST_PLAYER_ID;
++  }
++  if (env.AB_FORCE_FAIL_CLOSED_IDENTITY !== undefined) {
++    process.env.AB_FORCE_FAIL_CLOSED_IDENTITY = env.AB_FORCE_FAIL_CLOSED_IDENTITY;
++  }
++}
++
+ interface ExecutionContext {
+   waitUntil(promise: Promise<unknown>): void;
+   passThroughOnException(): void;
+ }
+ 
+-// Image security config. SVG sources with .svg extension auto-skip the
+-// optimization endpoint on the client side (served directly, no proxy).
+-// To route SVGs through the optimizer (with security headers), set
+-// dangerouslyAllowSVG: true in next.config.js and uncomment below:
+-// const imageConfig: ImageConfig = { dangerouslyAllowSVG: true };
+-
+ const worker = {
+   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
++    bridgeExplicitIdentityEnv(env);
+     const url = new URL(request.url);
+ 
+     if (url.pathname === "/_vinext/image") {

@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Asian Buffalo · 50线玩法原型",
-  description: "Asian Buffalo独立开发的5×4、50线网页游戏与数学模型原型。",
+  title: "Asian Buffalo · 亚洲水牛",
+  description: "Asian Buffalo 5×4、50线正式前端（Session/Spin/Round/Rules）。",
   other: {
     "codex-preview": "development",
   },
