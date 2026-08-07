@@ -1,0 +1,11 @@
+﻿client/m5/game/reels.ts
+tests/r1-m8-reel-direction.test.mjs
+docs/m8-review/_capture-reel-direction.mjs
+docs/m8-review/REEL_DIRECTION_REPORT.md
+docs/m8-review/perf/reel-direction-result.json
+docs/m8-review/video/reel-dir-normal-spin-browser.webm
+docs/m8-review/video/reel-dir-turbo-spin-browser.webm
+docs/m8-review/video/reel-dir-phone-landscape-browser.webm
+docs/m8-review/video/reel-dir-freespin-attempt-browser.webm
+docs/m8-review/AB-K1-R1-M8-reel-direction.patch
+docs/m8-review/REEL_DIRECTION_SHA256.txt

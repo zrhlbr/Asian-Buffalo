@@ -1,0 +1,143 @@
+{
+  "at": "2026-08-06T20:11:22.240Z",
+  "symbols": [
+    {
+      "id": "buffalo",
+      "master": "1024x1024",
+      "files": [
+        "buffalo-2048.png",
+        "buffalo-1024.png",
+        "buffalo-512.webp"
+      ]
+    },
+    {
+      "id": "wild",
+      "master": "1024x1024",
+      "files": [
+        "wild-2048.png",
+        "wild-1024.png",
+        "wild-512.webp"
+      ]
+    },
+    {
+      "id": "scatter",
+      "master": "1024x1024",
+      "files": [
+        "scatter-2048.png",
+        "scatter-1024.png",
+        "scatter-512.webp"
+      ]
+    },
+    {
+      "id": "elephant",
+      "master": "1024x1024",
+      "files": [
+        "elephant-2048.png",
+        "elephant-1024.png",
+        "elephant-512.webp"
+      ]
+    },
+    {
+      "id": "lion",
+      "master": "1024x1024",
+      "files": [
+        "lion-2048.png",
+        "lion-1024.png",
+        "lion-512.webp"
+      ]
+    },
+    {
+      "id": "zebra",
+      "master": "1024x1024",
+      "files": [
+        "zebra-2048.png",
+        "zebra-1024.png",
+        "zebra-512.webp"
+      ]
+    },
+    {
+      "id": "antelope",
+      "master": "1024x1024",
+      "files": [
+        "antelope-2048.png",
+        "antelope-1024.png",
+        "antelope-512.webp"
+      ]
+    },
+    {
+      "id": "a",
+      "master": "1024x1024",
+      "files": [
+        "a-2048.png",
+        "a-1024.png",
+        "a-512.webp"
+      ]
+    },
+    {
+      "id": "k",
+      "master": "1024x1024",
+      "files": [
+        "k-2048.png",
+        "k-1024.png",
+        "k-512.webp"
+      ]
+    },
+    {
+      "id": "q",
+      "master": "1024x1024",
+      "files": [
+        "q-2048.png",
+        "q-1024.png",
+        "q-512.webp"
+      ]
+    },
+    {
+      "id": "j",
+      "master": "1024x1024",
+      "files": [
+        "j-2048.png",
+        "j-1024.png",
+        "j-512.webp"
+      ]
+    },
+    {
+      "id": "ten",
+      "master": "1024x1024",
+      "files": [
+        "ten-2048.png",
+        "ten-1024.png",
+        "ten-512.webp"
+      ]
+    },
+    {
+      "id": "nine",
+      "master": "1024x1024",
+      "files": [
+        "nine-2048.png",
+        "nine-1024.png",
+        "nine-512.webp"
+      ]
+    }
+  ],
+  "atlas": {
+    "file": "symbols-atlas-512.webp",
+    "tile": 512,
+    "cols": 4,
+    "rows": 4,
+    "order": [
+      "buffalo",
+      "wild",
+      "scatter",
+      "elephant",
+      "lion",
+      "zebra",
+      "antelope",
+      "a",
+      "k",
+      "q",
+      "j",
+      "ten",
+      "nine"
+    ]
+  }
+}

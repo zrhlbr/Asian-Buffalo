@@ -1,0 +1,1 @@
+6cf73f81879d2e0d2d1e82dc5c15723578b50fe5f98b189fb60fc5e24e80f4b2  AB-K1-R1-M8-clarity.patch

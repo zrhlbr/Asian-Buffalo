@@ -1,0 +1,1 @@
+e6e9b7c14860c6abe6c62d6bccea61acbdaf85ec2aa37e6d9f4d61b404d38673  AB-K1-R1-M8-reel-direction.patch

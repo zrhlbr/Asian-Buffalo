@@ -1,0 +1,34 @@
+﻿ M .openai/hosting.json
+ M app/game-client.tsx
+ M client/m5/adapter.ts
+ M client/m5/audio.ts
+ M client/m5/boot.ts
+ M client/m5/formal-provider.ts
+ M client/m5/game/game.ts
+ M client/m5/game/reels.ts
+ M client/m5/game/symbols.ts
+ M client/m5/i18n.ts
+ M client/m5/mock-provider.ts
+ M client/m5/scene/buffalo.ts
+ M client/m5/scene/particles.ts
+ M client/m5/scene/world.ts
+ M client/m5/styles.css
+ M client/m5/ui/hud.ts
+ M eslint.config.mjs
+ M tsconfig.json
+?? .cursor/
+?? .dev.vars
+?? app/admin/
+?? app/api/admin/
+?? client/m5/assets/
+?? client/m5/quality.ts
+?? docs/commercial/
+?? docs/m6-handoff/
+?? docs/m7-commercial/
+?? docs/m8-commercial/
+?? docs/m8-review/
+?? lib/admin/
+?? tests/r1-m6-presentation.test.mjs
+?? tests/r1-m7-admin.test.mjs
+?? tests/r1-m7-commercial.test.mjs
+?? tests/r1-m8-commercial.test.mjs

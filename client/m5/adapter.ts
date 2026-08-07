@@ -79,6 +79,8 @@ export interface PresentationSpinResult {
 export interface GameProvider {
   ensureReady(): Promise<void>;
   getBalance(): number;
+  /** Display currency code from wallet balance (presentation only). */
+  getCurrency(): string;
   getFreeGamesRemaining(): number;
   getMathVersionId(): string | null;
   getSessionId(): string | null;
@@ -87,8 +89,12 @@ export interface GameProvider {
   recoverLastRound(): Promise<PresentationSpinResult | null>;
 }
 
-/** UI-only celebration thresholds (× total bet). Not used in settlement. */
+/**
+ * UI_ONLY celebration thresholds (× total bet).
+ * Presentation only — must never alter totalWin, Balance, Ledger, RTP, or Settlement.
+ */
 export const WIN_TIERS = { big: 10, mega: 25, ultra: 50, jackpot: 100 } as const;
+export const WIN_TIERS_UI_ONLY = true;
 export type WinTier = "none" | "big" | "mega" | "ultra" | "jackpot";
 
 export function winTier(winMinor: number, totalBetMinor: number): WinTier {

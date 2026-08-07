@@ -1,0 +1,23 @@
+{
+  "fps": {
+    "auto-default": 239.8,
+    "low-tier": 239.9
+  },
+  "metrics": {
+    "jsHeapMB": 1,
+    "nodes": 400,
+    "listeners": 0
+  },
+  "shots": [
+    "01-idle-zh.png",
+    "02-spinning.png",
+    "03-settled-paylines.png",
+    "06-locale-en.png",
+    "07-locale-my.png",
+    "08-rules-overlay.png"
+  ],
+  "warnings": [],
+  "celebrationShots": 0,
+  "freeSpinShot": false,
+  "videoFrames": 1
+}

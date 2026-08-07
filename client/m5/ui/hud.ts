@@ -1,5 +1,6 @@
 /**
- * HUD — DOM overlay: meters, buttons, celebrations, formal paytable, language.
+ * HUD — DOM overlay: meters, buttons, celebrations, formal paytable, language,
+ * M6 quality / volume controls (presentation only).
  */
 import type { Game, HudHooks } from "../game/game.ts";
 import type { SymbolId, WinTier } from "../adapter.ts";
@@ -7,6 +8,7 @@ import { PAYTABLE, type RegularSymbol } from "../../../lib/game-config.ts";
 import { symbolCanvas } from "../game/symbols.ts";
 import { audio } from "../audio.ts";
 import { t, setLang, getLang, onLangChange, applyDom, type Lang } from "../i18n.ts";
+import type { QualityMode } from "../quality.ts";
 
 const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
 
@@ -28,13 +30,22 @@ const PAYTABLE_ORDER: RegularSymbol[] = [
   "nine",
 ];
 
+export type HudQualityHooks = {
+  getQualityMode: () => QualityMode;
+  setQualityMode: (mode: QualityMode) => void;
+};
+
 export class Hud implements HudHooks {
   private game: Game;
   private toastTimer: number | null = null;
   private balanceShown = 0;
+  private qualityHooks: HudQualityHooks | null = null;
+  setQualityMode: ((mode: QualityMode) => void) | undefined;
 
-  constructor(game: Game) {
+  constructor(game: Game, qualityHooks?: HudQualityHooks) {
     this.game = game;
+    this.qualityHooks = qualityHooks ?? null;
+    this.setQualityMode = qualityHooks?.setQualityMode;
     game.attachHud(this);
 
     $("btn-spin").addEventListener("click", () => {
@@ -59,10 +70,12 @@ export class Hud implements HudHooks {
         audio.startBgm();
         audio.uiClick();
       }
+      this.syncSoundLabel();
     });
 
     document.querySelectorAll<HTMLButtonElement>(".lang-btn").forEach((btn) => {
       btn.addEventListener("click", () => {
+        // Language switch is presentation-only — never spins / never new Session.
         setLang(btn.dataset.lang as Lang);
         audio.uiClick();
       });
@@ -84,6 +97,45 @@ export class Hud implements HudHooks {
       if (e.target === $("paytable-modal")) $("paytable-modal").classList.add("hidden");
     });
 
+    const settingsBtn = document.getElementById("btn-settings");
+    const settingsModal = document.getElementById("settings-modal");
+    const settingsClose = document.getElementById("settings-close");
+    if (settingsBtn && settingsModal) {
+      settingsBtn.addEventListener("click", () => {
+        audio.uiClick();
+        this.syncSettingsUi();
+        settingsModal.classList.remove("hidden");
+      });
+      settingsClose?.addEventListener("click", () => settingsModal.classList.add("hidden"));
+      settingsModal.addEventListener("click", (e) => {
+        if (e.target === settingsModal) settingsModal.classList.add("hidden");
+      });
+    }
+
+    document.querySelectorAll<HTMLButtonElement>(".quality-btn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const mode = btn.dataset.quality as QualityMode;
+        if (!mode || !this.qualityHooks) return;
+        audio.uiClick();
+        this.qualityHooks.setQualityMode(mode);
+        this.syncSettingsUi();
+      });
+    });
+
+    const vol = document.getElementById("volume-slider") as HTMLInputElement | null;
+    if (vol) {
+      vol.value = String(Math.round(audio.getVolume() * 100));
+      vol.addEventListener("input", () => {
+        audio.unlock();
+        audio.setVolume(Number(vol.value) / 100);
+        if (audio.isMuted && Number(vol.value) > 0) {
+          audio.setMuted(false);
+          soundBtn.classList.remove("off");
+          soundBtn.classList.add("on");
+        }
+      });
+    }
+
     window.addEventListener("keydown", (e) => {
       if (e.code === "Space" && !e.repeat) {
         e.preventDefault();
@@ -95,6 +147,23 @@ export class Hud implements HudHooks {
 
     applyDom();
     this.refreshStatic();
+    this.syncSettingsUi();
+  }
+
+  private syncSoundLabel(): void {
+    const soundBtn = document.getElementById("btn-sound");
+    if (!soundBtn) return;
+    soundBtn.title = audio.isMuted ? t("unmute") : t("mute");
+  }
+
+  private syncSettingsUi(): void {
+    this.syncSoundLabel();
+    const mode = this.qualityHooks?.getQualityMode() ?? "auto";
+    document.querySelectorAll<HTMLButtonElement>(".quality-btn").forEach((btn) => {
+      btn.classList.toggle("active", btn.dataset.quality === mode);
+    });
+    const vol = document.getElementById("volume-slider") as HTMLInputElement | null;
+    if (vol) vol.value = String(Math.round(audio.getVolume() * 100));
   }
 
   setBalance(v: number, animate = false): void {
@@ -108,6 +177,23 @@ export class Hud implements HudHooks {
       el.textContent = fmt(v);
     }
     this.balanceShown = v;
+    this.syncCurrency();
+    this.syncSessionPill(true);
+  }
+
+  private syncCurrency(): void {
+    const el = document.getElementById("currency");
+    if (!el) return;
+    const code = this.game.getCurrency();
+    el.textContent = code;
+  }
+
+  private syncSessionPill(online: boolean): void {
+    const pill = document.getElementById("session-pill");
+    if (!pill) return;
+    pill.classList.toggle("offline", !online);
+    const label = pill.querySelector(".session-label");
+    if (label) label.textContent = online ? "OK" : "…";
   }
 
   setBet(v: number): void {
@@ -148,6 +234,8 @@ export class Hud implements HudHooks {
     btn.classList.toggle("busy", busy);
     ($("bet-plus") as HTMLButtonElement).disabled = busy;
     ($("bet-minus") as HTMLButtonElement).disabled = busy;
+    const spinLabel = document.getElementById("spin-label");
+    if (spinLabel) spinLabel.textContent = busy ? t("spinning") : t("spin");
   }
 
   setAutoActive(on: boolean): void {
@@ -164,6 +252,11 @@ export class Hud implements HudHooks {
     applyDom();
     const autoBtn = $("btn-auto");
     autoBtn.textContent = autoBtn.classList.contains("active") ? t("autoOn") : t("auto");
+    const spinLabel = document.getElementById("spin-label");
+    if (spinLabel && $("btn-spin").classList.contains("busy")) {
+      spinLabel.textContent = t("spinning");
+    }
+    this.syncSettingsUi();
   }
 
   async celebrate(tier: WinTier, amount: number): Promise<void> {
@@ -175,14 +268,30 @@ export class Hud implements HudHooks {
     const amountEl = $("celebration-amount");
     const key = tier === "big" ? "bigWin" : tier === "mega" ? "megaWin" : "ultraWin";
     tierEl.textContent = t(key);
-    overlay.classList.remove("hidden");
+    overlay.classList.remove("hidden", "tier-big", "tier-mega", "tier-ultra", "tier-jackpot");
+    overlay.classList.add(`tier-${tier}`);
     tierEl.style.animation = "none";
     void tierEl.offsetWidth;
     tierEl.style.animation = "";
     const dur = tier === "big" ? 2600 : tier === "mega" ? 3400 : 4200;
     this.animateNumber(amountEl, 0, amount, Math.min(dur - 400, 2000));
-    await new Promise((r) => setTimeout(r, dur));
+    // Tap-to-skip after short minimum (does not alter win amount)
+    const minHold = 900;
+    await new Promise<void>((resolve) => {
+      let done = false;
+      const finish = () => {
+        if (done) return;
+        done = true;
+        overlay.removeEventListener("click", onTap);
+        window.clearTimeout(timer);
+        resolve();
+      };
+      const onTap = () => finish();
+      const timer = window.setTimeout(finish, dur);
+      window.setTimeout(() => overlay.addEventListener("click", onTap), minHold);
+    });
     overlay.classList.add("hidden");
+    overlay.classList.remove("tier-big", "tier-mega", "tier-ultra", "tier-jackpot");
   }
 
   private async celebrateJackpot(amount: number): Promise<void> {
