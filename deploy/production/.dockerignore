@@ -1,0 +1,16 @@
+node_modules
+.git
+.wrangler
+.sites-runtime
+.dev.vars
+dist
+docs/m6-handoff
+docs/m8-review/**/screenshots
+**/*.png
+**/*.jpg
+**/node_modules
+.env
+.env.*
+env/production.env
+*.md
+!README.md

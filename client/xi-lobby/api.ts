@@ -149,6 +149,14 @@ export async function fetchBalance(): Promise<LoadState<LobbyBalanceView>> {
       balanceMinor?: number;
       error?: { code?: string; message?: string };
     } | null;
+    // Guest / missing session — not a hard failure for lobby shell.
+    if (res.status === 401) {
+      return {
+        status: "error",
+        code: "UNAUTHORIZED",
+        message: body?.error?.message ?? "authentication required",
+      };
+    }
     if (!res.ok || typeof body?.balanceMinor !== "number" || !body.currency) {
       const cached = peekCachedBalance();
       if (cached) return { status: "ok", data: cached };

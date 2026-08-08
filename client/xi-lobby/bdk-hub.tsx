@@ -397,7 +397,9 @@ export default function BdkHub() {
     balance.status === "loading"
       ? t("lobby.loading")
       : balance.status === "error"
-        ? t("lobby.wallet.error")
+        ? balance.code === "UNAUTHORIZED"
+          ? t("lobby.unavailable")
+          : t("lobby.wallet.error")
         : `${formatMinor(balance.data.balanceMinor, balance.data.currency)}`;
 
   const mmkCurrency =
@@ -576,7 +578,6 @@ export default function BdkHub() {
           <div className="xi-bdk-hero-copy">
             <p className="xi-bdk-tag">{t("lobby.bdk.hubTag")}</p>
             <h1 data-testid="xi-hub-title">{t("lobby.bdk.hubTitle")}</h1>
-            <p data-testid="xi-hub-lead">{t("lobby.bdk.hubLead")}</p>
           </div>
         </section>
 

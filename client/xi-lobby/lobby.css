@@ -1,18 +1,9 @@
 /* XI GAME lobby ? additive; does not touch #gl / #hud stacking */
 @import url("https://fonts.googleapis.com/css2?family=ZCOOL+XiaoWei&family=Noto+Sans+SC:wght@500;700&family=Noto+Sans+Myanmar:wght@500;700&family=Cinzel:wght@700&display=swap");
+@import "./theme-tokens.css";
 
 .xi-lobby-root {
-  --xi-ink: #0c1018;
-  --xi-dusk: #1a2233;
-  --xi-gold: #e8c56a;
-  --xi-gold-deep: #b8892d;
-  --xi-vermilion: #c43c2c;
-  --xi-jade: #3d8b7a;
-  --xi-jade-deep: #1a4a40;
-  --xi-mist: rgba(232, 220, 190, 0.88);
-  --xi-panel: rgba(14, 18, 28, 0.78);
-  --xi-line: rgba(232, 197, 106, 0.28);
-  /* Display calligraphy ONLY for zh-CN titles ? en/my stay readable */
+  /* Red-gold tokens from theme-tokens.css; keep font stacks here */
   --xi-font-display: "Cinzel", "Noto Sans SC", "Noto Sans Myanmar", Georgia, serif;
   --xi-font-body: "Noto Sans SC", "Noto Sans Myanmar", "Source Sans 3", "Segoe UI", sans-serif;
 
@@ -23,9 +14,7 @@
   overflow-y: auto;
   color: var(--xi-mist);
   font-family: var(--xi-font-body);
-  background:
-    radial-gradient(90% 55% at 50% -5%, rgba(90, 140, 160, 0.22), transparent 55%),
-    radial-gradient(120% 80% at 50% -10%, #2a3348 0%, var(--xi-ink) 55%, #07090f 100%);
+  background: var(--xi-bg-gradient);
   -webkit-overflow-scrolling: touch;
 }
 
@@ -47,7 +36,7 @@
   gap: 0.4rem;
   align-items: center;
   padding: 0.5rem 0.65rem;
-  background: linear-gradient(180deg, rgba(8, 10, 16, 0.92), rgba(8, 10, 16, 0.72));
+  background: linear-gradient(180deg, rgba(227, 38, 25, 0.96), rgba(100, 17, 15, 0.9));
   border-bottom: 1px solid var(--xi-line);
   backdrop-filter: blur(10px);
 }
@@ -140,7 +129,7 @@
   border: 1px solid var(--xi-gold);
   background:
     radial-gradient(circle at 35% 30%, #f0d78a, transparent 45%),
-    linear-gradient(145deg, #3a2a14, #1a1208);
+    linear-gradient(145deg, #d92b20, #64110f);
   flex-shrink: 0;
 }
 
@@ -791,7 +780,7 @@
   grid-template-columns: repeat(5, 1fr);
   gap: 0.15rem;
   padding: 0.45rem 0.4rem calc(0.45rem + env(safe-area-inset-bottom, 0px));
-  background: linear-gradient(180deg, rgba(8, 10, 16, 0.72), rgba(8, 10, 16, 0.96));
+  background: linear-gradient(180deg, rgba(158, 23, 21, 0.88), rgba(100, 17, 15, 0.96));
   border-top: 1px solid var(--xi-line);
   backdrop-filter: blur(12px);
 }
@@ -1176,7 +1165,7 @@
   padding-inline: 1.4rem !important;
   border-color: rgba(255, 220, 140, 0.75) !important;
   background:
-    linear-gradient(180deg, #f0d070, #c48a28 45%, #8f6418) !important;
+    linear-gradient(180deg, #f23828, #e32619 45%, #9e1715) !important;
   box-shadow:
     0 0 0 2px rgba(40, 20, 8, 0.55) inset,
     0 0 28px rgba(255, 180, 60, 0.45),
@@ -1397,6 +1386,13 @@
   min-height: 100svh;
 }
 
+/* Play chrome must sit ABOVE #xi-game-host (z:8); clicks pass through to HUD/reel */
+.xi-layer-keep.is-active:has(.xi-play-shell) {
+  position: relative;
+  z-index: 30;
+  pointer-events: none;
+}
+
 /* Persistent GameClient host ? never dispose on Hub?Play */
 .xi-game-host {
   position: fixed;
@@ -1437,7 +1433,7 @@
   display: grid;
   place-items: center;
   pointer-events: none;
-  background: rgba(8, 10, 16, 0.22);
+  background: rgba(227, 38, 25, 0.2);
   opacity: 0;
   transition: opacity 200ms ease;
 }
@@ -1481,10 +1477,8 @@
   z-index: 20;
   pointer-events: none;
 }
-.xi-play-shell .xi-play-nav-row,
-.xi-play-shell .xi-breadcrumb,
-.xi-play-shell .xi-play-title-chip,
-.xi-play-shell .xi-play-vip-chip,
+.xi-play-shell .xi-play-chrome,
+.xi-play-shell .xi-play-back,
 .xi-play-shell .xi-play-leave-mask {
   pointer-events: auto;
 }
@@ -1501,121 +1495,233 @@
   background: transparent;
 }
 
-.xi-play-nav-row {
+/* Compact commercial chrome: back | XI GAME title | settings (+ landscape lang) */
+.xi-play-chrome {
   position: fixed;
-  top: max(0.45rem, env(safe-area-inset-top));
-  left: max(0.45rem, env(safe-area-inset-left));
+  top: 0;
+  left: 0;
+  right: 0;
   z-index: 40;
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: 0.35rem;
-  max-width: min(52vw, 16rem);
-  pointer-events: auto;
+  height: calc(2.2rem + env(safe-area-inset-top, 0px));
+  padding:
+    env(safe-area-inset-top, 0px)
+    max(0.4rem, env(safe-area-inset-right, 0px))
+    0
+    max(0.4rem, env(safe-area-inset-left, 0px));
+  background: linear-gradient(180deg, rgba(127, 29, 29, 0.96), rgba(80, 18, 18, 0.35) 78%, transparent);
+  pointer-events: none;
 }
 
 .xi-play-back,
-.xi-play-home {
-  position: static;
-  appearance: none;
-  border: 1px solid rgba(232, 197, 106, 0.5);
-  border-radius: 0.55rem;
-  background:
-    linear-gradient(180deg, rgba(40, 28, 18, 0.88), rgba(12, 10, 16, 0.82));
-  color: #ffe7a4;
-  font-size: 0.78rem;
-  font-weight: 650;
-  padding: 0.38rem 0.65rem;
-  cursor: pointer;
-  backdrop-filter: blur(6px);
+.xi-play-settings {
   pointer-events: auto;
-  text-decoration: none;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+  appearance: none;
+  border: 1px solid rgba(243, 201, 105, 0.55);
+  border-radius: 999px;
+  background: linear-gradient(180deg, #e5483f, #a02820);
+  color: #fff7ed;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 2px 10px rgba(40, 8, 8, 0.4);
+}
+
+.xi-play-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  min-height: 2.1rem;
+  padding: 0 0.55rem 0 0.4rem;
+  font-size: 0.78rem;
+  width: auto;
+}
+
+.xi-play-back-label {
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
   white-space: nowrap;
 }
 
-.xi-play-home {
-  font-size: 0.72rem;
-  border-color: rgba(200, 170, 90, 0.4);
-  background: rgba(18, 14, 20, 0.78);
+.xi-play-settings {
+  width: 2.1rem;
+  height: 2.1rem;
+  font-size: 1rem;
+  padding: 0;
 }
 
 .xi-play-back:hover,
-.xi-play-home:hover {
-  border-color: rgba(255, 220, 140, 0.8);
-  background: rgba(28, 18, 12, 0.9);
-}
-
-.xi-play-breadcrumb {
-  position: fixed;
-  top: max(2.55rem, calc(env(safe-area-inset-top) + 2.1rem));
-  left: max(0.45rem, env(safe-area-inset-left));
-  z-index: 39;
-  padding: 0.15rem 0.35rem;
-  max-width: min(70vw, 22rem);
-  pointer-events: auto;
-  background: rgba(8, 6, 10, 0.35);
-  border-radius: 0.35rem;
+.xi-play-settings:hover {
+  box-shadow: 0 0 14px rgba(243, 201, 105, 0.45);
 }
 
 .xi-play-title-chip {
-  position: fixed;
-  top: max(0.45rem, env(safe-area-inset-top));
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 39;
+  margin: 0;
+  justify-self: center;
   pointer-events: none;
-  padding: 0.28rem 0.85rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.16rem 0.5rem;
   border-radius: 999px;
-  border: 1px solid rgba(232, 197, 106, 0.35);
-  background: rgba(12, 8, 10, 0.55);
-  color: #ffe7a4;
-  font-size: 0.72rem;
-  font-weight: 700;
-  letter-spacing: 0.04em;
+  border: 1px solid rgba(217, 164, 65, 0.4);
+  background: rgba(80, 18, 18, 0.55);
+  color: #f3c969;
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.03em;
   white-space: nowrap;
-  max-width: min(46vw, 14rem);
+  max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   text-align: center;
 }
 
-.xi-play-vip-chip {
-  position: fixed;
-  top: max(0.5rem, env(safe-area-inset-top));
-  right: max(0.5rem, env(safe-area-inset-right));
-  z-index: 39;
-  pointer-events: none;
-  padding: 0.22rem 0.55rem;
-  border-radius: 999px;
-  border: 1px solid rgba(200, 170, 90, 0.4);
-  background: rgba(30, 18, 8, 0.55);
-  color: #f0d48a;
-  font-size: 0.68rem;
-  font-weight: 700;
+.xi-play-brand {
+  color: #fff7ed;
+  opacity: 0.92;
 }
 
-/* HUD game-only: hide hub stuffings on play (profile / wallet / help) */
-.xi-play-shell #btn-profile,
-.xi-play-shell #btn-wallet,
-.xi-play-shell #btn-help {
+.xi-play-title-sep {
+  opacity: 0.55;
+}
+
+.xi-play-title-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.xi-play-chrome-tools {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.28rem;
+  pointer-events: auto;
+  min-width: 0;
+}
+
+.xi-play-lang {
+  display: none; /* portrait: open Settings for language ?keeps header uncrowded */
+  align-items: center;
+  gap: 0.12rem;
+  max-width: min(42vw, 9.5rem);
+  flex-wrap: nowrap;
+  overflow: hidden;
+}
+
+.xi-play-lang-btn {
+  appearance: none;
+  border: 1px solid rgba(217, 164, 65, 0.35);
+  border-radius: 999px;
+  background: rgba(80, 18, 18, 0.65);
+  color: rgba(255, 247, 237, 0.72);
+  font-size: 0.58rem;
+  font-weight: 800;
+  padding: 0.18rem 0.35rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.xi-play-lang-btn.is-active {
+  color: #4a2010;
+  background: linear-gradient(180deg, #f3c969, #d9a441);
+  border-color: rgba(243, 201, 105, 0.85);
+}
+
+.xi-play-balance-slot {
+  min-height: 2rem;
+  pointer-events: none;
+}
+
+.xi-play-vip-chip,
+.xi-play-chrome-spacer,
+.xi-play-chrome-right {
+  display: none;
+}
+
+/*
+ * CRITICAL: GameClient HUD lives under #xi-game-host, NOT .xi-play-shell.
+ * Declutter must target the active host or rules never apply (debug-page clutter).
+ */
+#xi-game-host.is-active #btn-profile,
+#xi-game-host.is-active #btn-wallet,
+#xi-game-host.is-active #btn-help,
+#xi-game-host.is-active #btn-back,
+#xi-game-host.is-active #btn-paytable,
+#xi-game-host.is-active #btn-vip,
+#xi-game-host.is-active #btn-settings,
+#xi-game-host.is-active #btn-sound,
+#xi-game-host.is-active #topbar #lang-switch,
+#xi-game-host.is-active #session-pill,
+#xi-game-host.is-active .brand-ribbon,
+#xi-game-host.is-active #logo.brand-seal,
+#xi-game-host.is-active .top-right-cluster,
+#xi-game-host.is-active .top-center-cluster:not(:has(#fs-badge:not(.hidden))) {
   display: none !important;
 }
 
-/* VIP light badge ? no VIP center / intro modal from play */
-.xi-play-shell #btn-vip {
-  pointer-events: none !important;
-  cursor: default;
-  opacity: 0.92;
-  font-size: 0;
-  position: relative;
-  min-width: 2.1rem;
+/*
+ * Play: collapse native topbar into chrome row.
+ * #balance stays in DOM for wallet sync; chip is fixed into header band.
+ */
+#xi-game-host.is-active #topbar.top-commercial {
+  top: 0;
+  padding: 0 !important;
+  height: 0 !important;
+  min-height: 0 !important;
+  overflow: visible;
+  background: none !important;
+  pointer-events: none;
+  gap: 0;
+  display: block !important;
 }
-.xi-play-shell #btn-vip .xi-play-vip-label {
-  font-size: 0.62rem;
-  font-weight: 800;
-  letter-spacing: 0.02em;
-  color: #ffe7a4;
+#xi-game-host.is-active .top-right-cluster,
+#xi-game-host.is-active .top-center-cluster {
+  display: none !important;
+}
+#xi-game-host.is-active .top-left-cluster {
+  display: block !important;
+  width: 0;
+  height: 0;
+  overflow: visible;
+  margin: 0;
+  padding: 0;
+  gap: 0;
+}
+#xi-game-host.is-active .meter-chip.balance-chip {
+  display: flex !important;
+  position: fixed;
+  /* Second thin row under chrome ?never under title/settings */
+  top: calc(2.3rem + env(safe-area-inset-top, 0px));
+  left: max(0.45rem, env(safe-area-inset-left, 0px));
+  right: auto;
+  z-index: 41;
+  pointer-events: none;
+  width: auto;
+  max-width: min(52vw, 11rem);
+  min-width: 0;
+  padding: 3px 8px 3px 5px;
+  border-radius: 999px;
+  justify-content: flex-start;
+}
+.xi-play-shell .xi-play-title-chip {
+  max-width: min(52vw, 12rem);
+  justify-self: center;
+}
+#xi-game-host.is-active .meter-chip.balance-chip .meter-value {
+  font-size: 12px;
+}
+#xi-game-host.is-active .meter-chip.balance-chip .chip-icon {
+  width: 16px;
+  height: 16px;
+}
+#xi-game-host.is-active .meter-chip.balance-chip .chip-body label {
+  font-size: 8px;
+  gap: 3px;
 }
 
 /* Leave confirm ? above HUD; does not touch #gl / #hud stacking */
@@ -1680,33 +1786,89 @@
 }
 
 .xi-play-leave-wait {
-  border: 1px solid rgba(232, 197, 106, 0.55);
-  background: linear-gradient(180deg, #d9b056, #8f6418);
-  color: #1a1208;
+  border: 1px solid rgba(243, 201, 105, 0.65);
+  background: linear-gradient(180deg, #e5483f, #a02820);
+  color: #fff7ed;
 }
 
-/* Phone landscape first ? keep back/title readable without covering spin */
+/* ===== Phone landscape: thin HUD · reel hero · single-row console ===== */
 @media (orientation: landscape) and (max-height: 500px) {
-  .xi-play-back,
-  .xi-play-home {
-    font-size: 0.66rem;
-    padding: 0.28rem 0.45rem;
+  .xi-play-chrome {
+    grid-template-columns: auto minmax(0, 1fr) auto auto;
+    height: calc(1.9rem + env(safe-area-inset-top, 0px));
+    gap: 0.4rem;
+    padding-left: max(0.45rem, env(safe-area-inset-left, 0px));
+    padding-right: max(0.45rem, env(safe-area-inset-right, 0px));
   }
-  .xi-play-nav-row {
-    max-width: min(58vw, 18rem);
+  .xi-play-back {
+    min-height: 1.8rem;
+    padding: 0 0.45rem 0 0.35rem;
+    font-size: 0.72rem;
   }
-  .xi-play-breadcrumb {
-    top: max(2.2rem, calc(env(safe-area-inset-top) + 1.85rem));
-    font-size: 0.62rem;
+  .xi-play-back-label { font-size: 0.66rem; }
+  .xi-play-settings {
+    width: 1.8rem;
+    height: 1.8rem;
+    font-size: 0.88rem;
   }
   .xi-play-title-chip {
-    font-size: 0.64rem;
-    padding: 0.18rem 0.6rem;
-    max-width: min(40vw, 12rem);
+    font-size: 0.62rem;
+    padding: 0.1rem 0.45rem;
+    max-width: min(36vw, 12rem);
+    justify-self: start;
   }
-  .xi-play-vip-chip {
-    font-size: 0.6rem;
-    padding: 0.16rem 0.45rem;
+  .xi-play-lang { display: inline-flex; }
+  .xi-play-lang-btn { font-size: 0.52rem; padding: 0.12rem 0.3rem; }
+  .xi-play-chrome-tools { gap: 0.35rem; }
+
+  /* Landscape: balance on the chrome row (right of title, left of lang) */
+  #xi-game-host.is-active .meter-chip.balance-chip {
+    top: calc(0.16rem + env(safe-area-inset-top, 0px));
+    left: auto;
+    right: calc(8.4rem + env(safe-area-inset-right, 0px));
+    width: min(20vw, 7.2rem);
+    max-width: min(20vw, 7.2rem);
+    padding: 1px 6px 1px 3px;
+  }
+  #xi-game-host.is-active .meter-chip.balance-chip .meter-value { font-size: 11px; }
+
+  /* Landscape console: Bet | Turbo | Auto | SPIN ?one thin band */
+  #xi-game-host.is-active #console.bottom-commercial {
+    grid-template-columns: minmax(0, 1.2fr) auto auto auto;
+    grid-template-areas: "meters turbo auto spin";
+    align-items: center;
+    gap: 6px 8px;
+    padding: 4px 8px calc(4px + var(--safe-bottom));
+    max-height: none;
+    width: calc(100% - max(8px, env(safe-area-inset-left, 0px)) - max(8px, env(safe-area-inset-right, 0px)));
+    left: max(4px, env(safe-area-inset-left, 0px));
+    right: max(4px, env(safe-area-inset-right, 0px));
+    bottom: 0;
+  }
+  #xi-game-host.is-active #console .console-left { grid-area: meters; }
+  #xi-game-host.is-active #console .console-center {
+    display: contents;
+  }
+  #xi-game-host.is-active #btn-turbo { grid-area: turbo; }
+  #xi-game-host.is-active #btn-auto { grid-area: auto; }
+  #xi-game-host.is-active #console .console-right { grid-area: spin; }
+  #xi-game-host.is-active .spin-btn.commercial-spin {
+    width: 68px;
+    height: 68px;
+  }
+  #xi-game-host.is-active #spin-label { font-size: 13px; }
+  #xi-game-host.is-active .console-btn {
+    min-width: 52px;
+    min-height: 32px;
+    padding: 5px 7px;
+    font-size: 10px;
+  }
+  #xi-game-host.is-active #console.bottom-commercial {
+    padding: 3px 6px calc(3px + var(--safe-bottom));
+  }
+  #xi-game-host.is-active .meter-chip.win-chip,
+  #xi-game-host.is-active .bet-chip {
+    padding: 2px 6px;
   }
 }
 
@@ -1737,9 +1899,9 @@
 }
 
 .xi-primary {
-  border: 1px solid rgba(232, 197, 106, 0.55);
-  background: linear-gradient(180deg, #d9b056, #8f6418);
-  color: #1a1208;
+  border: 1px solid rgba(255, 224, 138, 0.75);
+  background: linear-gradient(180deg, #f23828, #e32619 45%, #9e1715 100%);
+  color: #fff7ed;
   font-weight: 700;
 }
 
@@ -2223,7 +2385,7 @@
   position: relative;
 }
 .xi-ornament::before {
-  content: "◆";
+  content: "\25C6";
   position: absolute;
   left: 50%;
   top: 50%;
@@ -2651,7 +2813,7 @@
   inset: 0;
   z-index: 9999;
   pointer-events: none;
-  background: rgba(8, 10, 16, 0.28);
+  background: rgba(158, 23, 21, 0.35);
   opacity: 0;
   transform: translateX(0) scale(1);
   transition:
@@ -2659,7 +2821,7 @@
     transform 220ms ease;
 }
 .xi-nav-leave-soft {
-  background: rgba(8, 10, 16, 0.28);
+  background: rgba(158, 23, 21, 0.35);
 }
 .xi-nav-leave.is-active {
   opacity: 1;
@@ -2758,7 +2920,7 @@ html.xi-nav-busy[data-xi-tier="medium"] .xi-bdk-layer {
 
 /* Play enter ? light fade veil only (no transform on #gl ancestors) */
 .xi-nav-enter-veil {
-  background: rgba(8, 10, 16, 0.32);
+  background: rgba(158, 23, 21, 0.4);
   opacity: 1;
   transform: none !important;
   transition: opacity 220ms ease;
@@ -2967,8 +3129,8 @@ html.xi-nav-busy[data-xi-tier="medium"] .xi-bdk-layer {
   bottom: 0;
   z-index: 2;
   pointer-events: none;
-  padding: 2.2rem 0.9rem 0.75rem;
-  background: linear-gradient(180deg, transparent 0%, rgba(8, 4, 4, 0.72) 55%, rgba(8, 4, 4, 0.9) 100%);
+  padding: 1.6rem 0.9rem 0.55rem;
+  background: linear-gradient(180deg, transparent 0%, rgba(80, 16, 16, 0.72) 55%, rgba(50, 10, 10, 0.92) 100%);
 }
 
 .xi-bdk-hero-copy .xi-bdk-tag {
@@ -2979,22 +3141,16 @@ html.xi-nav-busy[data-xi-tier="medium"] .xi-bdk-layer {
 }
 
 .xi-bdk-hero-copy h1 {
-  margin: 0 0 0.25rem;
+  margin: 0;
   font-family: var(--xi-font-display);
   font-size: clamp(1.35rem, 5vw, 1.85rem);
   color: #ffe7a4;
   text-shadow: 0 2px 14px rgba(0, 0, 0, 0.65);
 }
 
-.xi-bdk-hero-copy p {
-  margin: 0;
-  font-size: 0.78rem;
-  color: rgba(255, 230, 200, 0.78);
-  line-height: 1.35;
-}
-
 .xi-bdk-hub-photo .xi-bdk-actions {
-  margin-top: 0.15rem;
+  margin-top: 0.05rem;
+  padding-top: 0;
 }
 
 .xi-bdk-hub-photo .xi-start-game-cta {
@@ -3078,7 +3234,7 @@ html.xi-nav-busy[data-xi-tier="medium"] .xi-bdk-layer {
   gap: 0.35rem;
 }
 
-/* Lobby V3 tier FX — LOW static / MED light clouds / HIGH+ rays+spirit dots */
+/* Lobby V3 tier FX ?LOW static / MED light clouds / HIGH+ rays+spirit dots */
 html[data-xi-tier="low"] .xi-hero-particles,
 html[data-xi-tier="low"] .xi-hero-cranes,
 html[data-xi-tier="medium"] .xi-hero-particles,
@@ -3099,7 +3255,7 @@ html[data-xi-tier="low"] .xi-hero-mist {
   filter: none !important;
   opacity: 0.26;
 }
-/* MED: light clouds only (5–8s), no rays/particles */
+/* MED: light clouds only (5?s), no rays/particles */
 html[data-xi-tier="medium"] .xi-hero-rays {
   opacity: 0.12;
   filter: none !important;
@@ -3242,7 +3398,7 @@ html[data-xi-tier="low"] .xi-primary {
   border: 1px solid rgba(232, 197, 106, 0.38);
   background:
     radial-gradient(80% 60% at 50% 0%, rgba(232, 197, 106, 0.12), transparent 55%),
-    linear-gradient(180deg, rgba(22, 28, 40, 0.96), rgba(8, 10, 16, 0.98));
+    linear-gradient(180deg, rgba(217, 43, 32, 0.96), rgba(100, 17, 15, 0.98));
   box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
 }
 .xi-auth-header {
@@ -3430,7 +3586,7 @@ html[data-xi-tier="low"] .xi-primary {
     0 10px 26px rgba(0, 0, 0, 0.45);
 }
 
-/* Slow hero FX (5–8s) — opacity/transform only, no blur spam */
+/* Slow hero FX (5?s) ?opacity/transform only, no blur spam */
 @keyframes xi-clouds-slow {
   0%, 100% { transform: translate3d(0, 0, 0); opacity: 0.55; }
   50% { transform: translate3d(-3.5%, 0.5%, 0); opacity: 0.78; }
@@ -3510,7 +3666,7 @@ html[data-xi-tier="low"] .xi-primary {
   animation: xi-spirit-float 7.5s linear infinite;
 }
 
-/* HOT BDK gold glow → hub */
+/* HOT BDK gold glow ?hub */
 .xi-lobby-v3 .xi-rec-card.is-hot {
   border: 2px solid #e8c56a;
   animation: xi-hot-glow 2.8s ease-in-out infinite;
@@ -3521,7 +3677,7 @@ html[data-xi-tier="low"] .xi-primary {
   filter: brightness(1.06);
 }
 
-/* Coming Soon — dimmer + badge */
+/* Coming Soon ?dimmer + badge */
 .xi-lobby-v3 .xi-rec-card.is-soon {
   opacity: 0.52;
   filter: saturate(0.55) brightness(0.82);
@@ -3534,7 +3690,7 @@ html[data-xi-tier="low"] .xi-primary {
   filter: saturate(0.6) brightness(0.88);
 }
 
-/* Quick actions — unified size / radius / stroke / touch / hover / red-dot */
+/* Quick actions ?unified size / radius / stroke / touch / hover / red-dot */
 .xi-lobby-v3 .xi-quick-btn {
   min-width: 44px;
   min-height: 44px;
@@ -3580,7 +3736,7 @@ html[data-xi-tier="low"] .xi-primary {
   color: rgba(255, 230, 170, 0.9);
 }
 
-/* Top wallets / VIP — breath on HIGH+ only */
+/* Top wallets / VIP ?breath on HIGH+ only */
 .xi-lobby-v3 .xi-wallet-amount {
   font-variant-numeric: tabular-nums;
   transition: none;
@@ -3606,7 +3762,7 @@ html[data-xi-tier="medium"] .xi-lobby-v3 .xi-wallet-amount {
   transition: none !important;
 }
 
-/* Lang switch — instant class flip, no layout thrash */
+/* Lang switch ?instant class flip, no layout thrash */
 .xi-lobby-v3 .xi-lang-direct-btn {
   min-height: 28px;
   transition: background 120ms ease, color 120ms ease;
@@ -3632,7 +3788,7 @@ html[data-xi-tier="medium"] .xi-lobby-v3 .xi-wallet-amount {
   box-shadow: 0 0 14px rgba(232, 120, 40, 0.5);
 }
 
-/* Coming Soon modal — mythic card */
+/* Coming Soon modal ?mythic card */
 .xi-lobby-v3 .xi-modal {
   border-color: rgba(232, 197, 106, 0.42);
   background: linear-gradient(180deg, #1a1418, #0c0a0e);
@@ -3649,7 +3805,7 @@ html[data-xi-tier="medium"] .xi-lobby-v3 .xi-wallet-amount {
   background: linear-gradient(180deg, #f0d78a, #b8892d);
 }
 
-/* Mobile 320–430 boutique densify */
+/* Mobile 320?30 boutique densify */
 @media (max-width: 430px) {
   .xi-lobby-v3 .xi-hero-photo {
     min-height: clamp(12.6rem, 54vw, 16.5rem);
@@ -3696,7 +3852,7 @@ html[data-xi-tier="medium"] .xi-lobby-v3 .xi-wallet-amount {
   }
 }
 
-/* FX off — strip ambient overlays */
+/* FX off: strip ambient overlays */
 html[data-xi-fx="off"] .xi-lobby-v3 .xi-hero-sun,
 html[data-xi-fx="off"] .xi-lobby-v3 .xi-hero-sun-breath,
 html[data-xi-fx="off"] .xi-lobby-v3 .xi-hero-clouds,

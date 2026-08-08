@@ -1,0 +1,63 @@
+/**
+ * XI GAME — Bright Auspicious Red-Gold Theme Tokens (玩家端唯一色板)
+ * Visual only. Do not encode business logic here.
+ */
+
+:root,
+.xi-lobby-root,
+.xi-auth-root,
+.xi-wc,
+.xi-pc,
+.xi-shell,
+.xi-play-shell,
+#xi-game-host {
+  /* Zhao hard palette — bright festive red as PRIMARY */
+  --xi-red-primary: #e32619;
+  --xi-red-bright: #f23828;
+  --xi-red-fortune: #d71920;
+  --xi-red-festive: #e5483f;
+  --xi-red-cinnabar: #c51e18;
+  --xi-red-deep: #9e1715;
+  --xi-red-dark: #64110f;
+  --xi-red-wine: #7f1d1d;
+
+  --xi-gold-primary: #f6c453;
+  --xi-gold-bright: #ffe08a;
+  --xi-gold-deep: #b87a18;
+  --xi-gold: var(--xi-gold-primary);
+  --xi-gold-light: var(--xi-gold-bright);
+
+  --xi-warm-white: #fff7ed;
+  --xi-jade: #5f8f72;
+  --xi-jade-deep: #2f5a45;
+
+  /* Kill legacy brown/coffee aliases — map every old name to red-gold */
+  --xi-ink: #64110f;
+  --xi-dusk: #9e1715;
+  --xi-vermilion: #e32619;
+  --xi-mist: rgba(255, 247, 237, 0.94);
+  --xi-panel: rgba(158, 23, 21, 0.88);
+  --xi-line: rgba(246, 196, 83, 0.55);
+  --xi-card: rgba(100, 17, 15, 0.72);
+  --xi-text: var(--xi-warm-white);
+  --xi-text-secondary: rgba(255, 224, 138, 0.88);
+  --xi-text-muted: rgba(255, 247, 237, 0.62);
+
+  --xi-success: #3d9b6e;
+  --xi-warning: #e0a23a;
+  --xi-error: #ff6b5a;
+  --xi-info: #7a8fa3;
+
+  --xi-surface-primary: linear-gradient(180deg, #e32619 0%, #c51e18 48%, #8f1513 100%);
+  --xi-surface-card: linear-gradient(145deg, #d92b20 0%, #a91d18 55%, #721310 100%);
+  --xi-surface-hud: linear-gradient(180deg, rgba(227, 38, 25, 0.96), rgba(100, 17, 15, 0.94));
+
+  --xi-bg-gradient:
+    radial-gradient(95% 55% at 50% -6%, rgba(242, 56, 40, 0.45), transparent 55%),
+    radial-gradient(70% 45% at 88% 18%, rgba(246, 196, 83, 0.18), transparent 58%),
+    linear-gradient(180deg, #9e1715 0%, #e32619 38%, #c51e18 68%, #64110f 100%);
+
+  --xi-cloud-motif:
+    radial-gradient(18% 70% at 8% 110%, rgba(255, 247, 237, 0.12), transparent 70%),
+    radial-gradient(22% 80% at 92% 105%, rgba(255, 224, 138, 0.12), transparent 72%);
+}

@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+set -euo pipefail
+STAMP="${1:?stamp required}"
+APP=/home/zrh-admin/xigame-prod/app
+TAR=/home/zrh-admin/xigame-prod/backups/xigame-src-${STAMP}.tar.gz
+LOGDIR=/home/zrh-admin/xigame-prod/logs
+mkdir -p "$LOGDIR" "$APP"
+date -u +%Y-%m-%dT%H:%M:%SZ > "$LOGDIR/deploy-${STAMP}.begin"
+
+echo "[1] extract $TAR -> $APP"
+tar -xzf "$TAR" -C "$APP"
+
+echo "[2] verify theme + stages"
+test -f "$APP/client/xi-lobby/theme-red-gold.css"
+test -f "$APP/client/xi-lobby/theme-tokens.css"
+test -f "$APP/public/xi/stages/nantianmen-portrait-phone.webp"
+test -f "$APP/public/xi/stages/nantianmen-landscape-phone.webp"
+grep -n "theme-red-gold" "$APP/client/xi-lobby/xi-shell.tsx"
+grep -n "xi-red-primary" "$APP/client/xi-lobby/theme-tokens.css" | head -5
+ls -la "$APP/public/xi/stages"
+
+echo "[3] docker compose build + up"
+cd "$APP/deploy/production"
+docker compose build xigame-web
+docker compose up -d xigame-web
+
+echo "[4] wait healthy"
+for i in $(seq 1 18); do
+  st=$(docker inspect -f '{{.State.Health.Status}}' xigame-web 2>/dev/null || echo missing)
+  echo "health=$st ($i)"
+  if [ "$st" = "healthy" ]; then
+    break
+  fi
+  sleep 10
+done
+
+echo "[5] identity + local probe"
+docker inspect -f 'image={{.Image}} created={{.Created}} status={{.State.Status}} health={{.State.Health.Status}}' xigame-web
+curl -fsS -o /tmp/xi.html -w 'local_xi=%{http_code} bytes=%{size_download}\n' http://127.0.0.1:18130/xi
+# CSS asset names from HTML
+grep -oE '/assets/[^" ]+\.css' /tmp/xi.html | sort -u
+# prove nantianmen reachable via nginx front
+curl -fsSI "http://127.0.0.1:18130/xi/stages/nantianmen-portrait-phone.webp" | head -5 || true
+
+# download first lobby css and grep red tokens
+css=$(grep -oE '/assets/lobby-[^" ]+\.css' /tmp/xi.html | head -1 || true)
+if [ -n "$css" ]; then
+  echo "lobby_css=$css"
+  curl -fsS "http://127.0.0.1:18130$css" -o /tmp/lobby.css
+  echo -n "has_xi_red_primary="; grep -c -- '--xi-red-primary' /tmp/lobby.css || true
+  echo -n "has_E32619="; grep -ci -- '#e32619' /tmp/lobby.css || true
+  echo -n "has_nantianmen="; grep -c -- 'nantianmen' /tmp/lobby.css || true
+fi
+
+date -u +%Y-%m-%dT%H:%M:%SZ > "$LOGDIR/deploy-${STAMP}.end"
+echo "DEPLOY_DONE stamp=$STAMP"

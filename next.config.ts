@@ -9,9 +9,9 @@ const nextConfig: NextConfig = {
         permanent: true,
       },
       {
-        // Compat: legacy root slot → canonical play (single GameClient stack)
+        // Product: apex/root → Lobby (not BDK play)
         source: "/",
-        destination: "/xi/bull-demon-king/play",
+        destination: "/xi",
         permanent: true,
       },
       {

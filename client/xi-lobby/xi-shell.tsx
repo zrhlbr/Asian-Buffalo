@@ -14,6 +14,7 @@ import {
 import { prefetchXiNavAssets } from "./quality.ts";
 import { hydrateXiUiStore } from "./ui-store.ts";
 import "./lobby.css";
+import "./theme-red-gold.css";
 
 /**
  * Persistent Xi layout shell — stays mounted across Lobby/Hub/Play.

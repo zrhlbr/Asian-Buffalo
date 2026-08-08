@@ -124,7 +124,9 @@ export function PlayerCenter({
     balance.status === "loading"
       ? t("lobby.loading")
       : balance.status === "error"
-        ? t("lobby.wallet.error")
+        ? balance.code === "UNAUTHORIZED"
+          ? t("lobby.unavailable")
+          : t("lobby.wallet.error")
         : formatMinor(balance.data.balanceMinor, balance.data.currency);
 
   const usdtSupported =
@@ -141,7 +143,9 @@ export function PlayerCenter({
     balance.status === "loading"
       ? t("lobby.loading")
       : balance.status === "error"
-        ? t("lobby.wallet.error")
+        ? balance.code === "UNAUTHORIZED"
+          ? t("lobby.unavailable")
+          : t("lobby.wallet.error")
         : `${formatMinor(balance.data.balanceMinor, balance.data.currency)} ${balance.data.currency}`;
 
   const avatarStyle =

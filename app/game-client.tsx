@@ -114,6 +114,9 @@ export default function GameClient({ deferBootstrap = false }: GameClientProps) 
       <div id="hud">
         {/* Mythic frame chrome — pointer-events none; never covers reel center; no #hud translateZ */}
         <div id="xi-mythic-chrome" aria-hidden>
+          {/* Continuous 南天门 stage — portrait/landscape crops via CSS; never covers reel center */}
+          <div className="xi-slot-nantianmen" data-testid="xi-nantianmen-stage" />
+          <div className="xi-slot-nantianmen-veil" />
           <div className="xi-slot-sky" />
           <div className="xi-slot-mountains" />
           <div className="xi-slot-cloudsea" />
@@ -184,15 +187,6 @@ export default function GameClient({ deferBootstrap = false }: GameClientProps) 
           </div>
 
           <div className="top-right-cluster">
-            <div className="meter-chip win-chip">
-              <span className="chip-icon ingot-icon" aria-hidden />
-              <div className="chip-body">
-                <label data-i18n="win">赢得</label>
-                <div id="win" className="meter-value win">
-                  0
-                </div>
-              </div>
-            </div>
             <div className="top-actions">
               <button
                 id="btn-profile"
@@ -297,6 +291,15 @@ export default function GameClient({ deferBootstrap = false }: GameClientProps) 
         {/* ===== BOTTOM COMMERCIAL CONSOLE ===== */}
         <div id="console" className="hud-panel bottom-commercial">
           <div className="console-left">
+            <div className="meter-chip win-chip">
+              <span className="chip-icon ingot-icon" aria-hidden />
+              <div className="chip-body">
+                <label data-i18n="win">赢得</label>
+                <div id="win" className="meter-value win">
+                  0
+                </div>
+              </div>
+            </div>
             <div className="meter-chip bet-chip">
               <label data-i18n="bet">投注</label>
               <div className="bet-row">
@@ -454,8 +457,16 @@ export default function GameClient({ deferBootstrap = false }: GameClientProps) 
               </div>
               <div className="settings-row">
                 <label data-i18n="language">语言</label>
-                <div className="settings-hint" data-i18n="tapToContinue">
-                  点击继续
+                <div id="settings-lang-switch" className="lang-metal settings-lang" data-testid="settings-lang">
+                  <button className="lang-btn" data-lang="zh-CN" type="button">
+                    中文
+                  </button>
+                  <button className="lang-btn" data-lang="en" type="button">
+                    EN
+                  </button>
+                  <button className="lang-btn" data-lang="my-MM" type="button">
+                    မြန်မာ
+                  </button>
                 </div>
               </div>
             </div>

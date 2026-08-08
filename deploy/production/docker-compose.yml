@@ -1,0 +1,74 @@
+# XI GAME Production stack — isolated from ZRHPay / Accounts
+# Network: xigame_prod_net
+# Host bind: 127.0.0.1:18130 only (behind host nginx + Cloudflare)
+
+name: xigame-prod
+
+services:
+  xigame-web:
+    image: xigame-web:prod
+    build:
+      context: ../..
+      dockerfile: deploy/production/Dockerfile
+    container_name: xigame-web
+    restart: unless-stopped
+    env_file:
+      - ${XIGAME_ENV_FILE:-/home/zrh-admin/xigame-prod/env/production.env}
+    environment:
+      NODE_ENV: production
+      PORT: "8788"
+      HOSTNAME: "0.0.0.0"
+      AB_SQLITE_PATH: /data/xigame.sqlite
+      AB_FORCE_FAIL_CLOSED_IDENTITY: "1"
+    volumes:
+      - xigame_prod_sqlite:/data
+      - xigame_prod_logs:/logs
+    networks:
+      - xigame_prod_net
+    healthcheck:
+      # Public lobby HTML — do NOT use auth-gated APIs (they 401/503 under fail-closed).
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8788/xi"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 60s
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"
+
+  xigame-nginx:
+    image: nginx:1.27-alpine
+    container_name: xigame-nginx
+    restart: unless-stopped
+    depends_on:
+      xigame-web:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:18130:80"
+    volumes:
+      - ./nginx-container.conf:/etc/nginx/conf.d/default.conf:ro
+    networks:
+      - xigame_prod_net
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/nginx-health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+
+networks:
+  xigame_prod_net:
+    name: xigame_prod_net
+    driver: bridge
+
+volumes:
+  xigame_prod_sqlite:
+    name: xigame_prod_sqlite
+  xigame_prod_logs:
+    name: xigame_prod_logs

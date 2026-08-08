@@ -1,9 +1,9 @@
 import { permanentRedirect } from "next/navigation";
 
 /**
- * Compat redirect — canonical formal play is `/xi/bull-demon-king/play`.
- * Single GameClient stack (mounted by play shell); no second formal game stack.
+ * Root → 《西游戏》Lobby. Play remains at `/xi/bull-demon-king/play`
+ * (compat alias `/game` unchanged).
  */
 export default function Home() {
-  permanentRedirect("/xi/bull-demon-king/play");
+  permanentRedirect("/xi");
 }

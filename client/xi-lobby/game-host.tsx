@@ -112,6 +112,13 @@ export default function XiGameHost() {
 
   const active = layer === "play" && visible;
 
+  useEffect(() => {
+    document.documentElement.classList.toggle("xi-play-active", active);
+    return () => {
+      document.documentElement.classList.remove("xi-play-active");
+    };
+  }, [active]);
+
   return (
     <div
       id="xi-game-host"

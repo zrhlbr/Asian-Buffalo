@@ -505,7 +505,7 @@ export function WalletCenter({
                     USDT · {t("lobby.me.reserved")}
                   </span>
                   <span className="xi-wc-rail is-reserved" role="listitem">
-                    ZRHPay · {t("lobby.me.reserved")}
+                    {t("lobby.wc.deposit.railThirdParty")} · {t("lobby.me.reserved")}
                   </span>
                 </div>
                 <DepositPanel t={t} lang={lang} onBalanceRefresh={refreshAll} />

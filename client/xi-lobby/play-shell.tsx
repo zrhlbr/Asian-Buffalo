@@ -24,6 +24,7 @@ import {
   XI_ROUTES,
 } from "./nav.ts";
 import "./lobby.css";
+import "./theme-red-gold.css";
 
 const HUB_HREF = XI_ROUTES.hub;
 const LOBBY_HREF = XI_ROUTES.lobby;
@@ -31,7 +32,7 @@ const PLAY_LEAVE_ATTR = "data-xi-play-leave";
 
 type LeaveTarget = "hub" | "lobby";
 
-function syncSlotLangFromLobby(lang: LobbyLang, opts?: { dom?: boolean }): void {
+function syncSlotLangFromLobby(lang: LobbyLang, opts?: { dom?: boolean; applyGame?: boolean }): void {
   try {
     window.localStorage.setItem("ab-lang", lang);
   } catch {
@@ -40,12 +41,24 @@ function syncSlotLangFromLobby(lang: LobbyLang, opts?: { dom?: boolean }): void 
   // Avoid touching <html lang> during module load (SSR hydration mismatch).
   if (opts?.dom !== false) {
     document.documentElement.lang = lang;
+    document.documentElement.dataset.xiGameLang = lang;
+  }
+  // Push into live M5 HUD memory — writing storage alone leaves stale Chinese SSR text.
+  if (opts?.applyGame !== false && opts?.dom !== false) {
+    void import("../m5/i18n.ts")
+      .then((m5) => {
+        if (m5.getLang() !== lang) m5.setLang(lang);
+        else m5.applyDom();
+      })
+      .catch(() => {
+        /* game not mounted yet */
+      });
   }
 }
 
 // Client module load — localStorage only, before first GameClient effect.
 if (typeof window !== "undefined") {
-  syncSlotLangFromLobby(loadLobbyLang(), { dom: false });
+  syncSlotLangFromLobby(loadLobbyLang(), { dom: false, applyGame: false });
 }
 
 /**
@@ -78,8 +91,14 @@ export default function BdkPlayShell() {
 
   useEffect(() => {
     document.title = tLobby(lang, "lobby.page.bdkPlay");
-    syncSlotLangFromLobby(lang);
+    syncSlotLangFromLobby(lang, { applyGame: true });
   }, [lang]);
+
+  // Re-apply game HUD strings whenever Play layer becomes active (kill SSR mix).
+  useEffect(() => {
+    if (!playActive) return;
+    syncSlotLangFromLobby(lang, { applyGame: true });
+  }, [playActive, lang]);
 
   useEffect(() => {
     // Opacity veil only — do not transform ancestors of #gl / #hud.
@@ -284,72 +303,68 @@ export default function BdkPlayShell() {
       data-lang={lang}
       data-xi-play-leave={HUB_HREF}
     >
-      <div className="xi-play-nav-row" data-testid="xi-play-nav">
+      <header className="xi-play-chrome" data-testid="xi-play-nav">
         <button
           type="button"
           className="xi-play-back"
           data-testid="xi-play-back-hub"
+          aria-label={tLobby(lang, "lobby.play.back")}
           onClick={(e) => {
             e.preventDefault();
             requestLeave("hub");
           }}
         >
-          ← {tLobby(lang, "lobby.bdk.backHub")}
+          <span aria-hidden>←</span>
+          <span className="xi-play-back-label">{tLobby(lang, "lobby.play.back")}</span>
         </button>
-        <button
-          type="button"
-          className="xi-play-home"
-          data-testid="xi-play-home-lobby"
-          onClick={(e) => {
-            e.preventDefault();
-            requestLeave("lobby");
-          }}
-        >
-          {tLobby(lang, "lobby.bdk.homeLobby")}
-        </button>
-      </div>
-
-      <nav
-        className="xi-breadcrumb xi-play-breadcrumb"
-        aria-label="breadcrumb"
-        data-testid="xi-play-breadcrumb"
-      >
-        <button
-          type="button"
-          className="xi-crumb-link"
-          data-testid="xi-play-crumb-lobby"
-          onClick={() => requestLeave("lobby")}
-        >
-          {tLobby(lang, "lobby.nav.crumbLobby")}
-        </button>
-        <span className="xi-crumb-sep" aria-hidden>
-          &gt;
-        </span>
-        <button
-          type="button"
-          className="xi-crumb-link"
-          data-testid="xi-play-crumb-hub"
-          onClick={() => requestLeave("hub")}
-        >
-          {tLobby(lang, "lobby.nav.crumbHub")}
-        </button>
-        <span className="xi-crumb-sep" aria-hidden>
-          &gt;
-        </span>
-        <span data-testid="xi-play-crumb-play">
-          {tLobby(lang, "lobby.nav.crumbPlay")}
-        </span>
-      </nav>
-
-      <div className="xi-play-title-chip" data-testid="xi-play-title" aria-hidden={false}>
-        {tLobby(lang, "lobby.page.bdkPlay")}
-      </div>
-
-      {vipLevel != null ? (
-        <div className="xi-play-vip-chip" data-testid="xi-play-vip-badge" aria-hidden>
-          {tLobby(lang, "lobby.vip")} {vipLevel}
+        <h1 className="xi-play-title-chip" data-testid="xi-play-title">
+          <span className="xi-play-brand">{tLobby(lang, "lobby.play.brand")}</span>
+          <span className="xi-play-title-sep" aria-hidden>
+            ·
+          </span>
+          <span className="xi-play-title-name">{tLobby(lang, "lobby.page.bdkPlay")}</span>
+        </h1>
+        <div className="xi-play-chrome-tools">
+          {/* Landscape: lang chips. Portrait: language inside Settings drawer only. */}
+          <div className="xi-play-lang" data-testid="xi-play-lang">
+            {(
+              [
+                ["zh-CN", "中文"],
+                ["my-MM", "မြန်မာ"],
+                ["en", "EN"],
+              ] as const
+            ).map(([code, label]) => (
+              <button
+                key={code}
+                type="button"
+                className={
+                  lang === code ? "xi-play-lang-btn is-active" : "xi-play-lang-btn"
+                }
+                data-lang={code}
+                aria-pressed={lang === code}
+                onClick={(e) => {
+                  e.preventDefault();
+                  saveLobbyLang(code);
+                }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <button
+            type="button"
+            className="xi-play-settings"
+            data-testid="xi-play-settings"
+            aria-label={tLobby(lang, "lobby.settings")}
+            onClick={(e) => {
+              e.preventDefault();
+              document.getElementById("btn-settings")?.click();
+            }}
+          >
+            ⚙
+          </button>
         </div>
-      ) : null}
+      </header>
 
       {/* GameClient: persistent XiGameHost under XiShell (no remount on Hub↔Play) */}
 

@@ -451,7 +451,9 @@ export default function LobbyApp() {
     balance.status === "loading"
       ? t("lobby.loading")
       : balance.status === "error"
-        ? t("lobby.wallet.error")
+        ? balance.code === "UNAUTHORIZED"
+          ? t("lobby.unavailable")
+          : t("lobby.wallet.error")
         : `${formatMinor(balance.data.balanceMinor, balance.data.currency)}`;
 
   const mmkCurrency =
@@ -509,7 +511,7 @@ export default function LobbyApp() {
 
         <div className="xi-top-center">
           <div
-            className={`xi-wallet-chip xi-wallet-breath${balance.status !== "ok" ? (balance.status === "loading" ? " is-loading" : " is-error") : ""}`}
+            className={`xi-wallet-chip xi-wallet-breath${balance.status !== "ok" ? (balance.status === "loading" ? " is-loading" : balance.status === "error" && balance.code === "UNAUTHORIZED" ? "" : " is-error") : ""}`}
             data-testid="xi-wallet-mmk"
           >
             <span className="xi-wallet-ico xi-wallet-ico-mmk" aria-hidden />

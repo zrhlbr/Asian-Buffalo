@@ -1,12 +1,15 @@
-/* Wallet Center（钱包中心）— scoped mythic black-gold; does not restyle Lobby home/Hub/Play/Me */
+/* Wallet Center（钱包中心）— red-gold auspicious; does not restyle Lobby home/Hub/Play/Me */
+
+@import "./theme-tokens.css";
 
 .xi-wc {
-  --wc-ink: #0a0d14;
-  --wc-panel: rgba(16, 20, 30, 0.92);
-  --wc-gold: #e8c56a;
-  --wc-gold-dim: rgba(232, 197, 106, 0.22);
-  --wc-mist: rgba(232, 220, 190, 0.9);
-  --wc-muted: rgba(232, 220, 190, 0.55);
+  --wc-ink: #4a1010;
+  --wc-panel: rgba(80, 18, 18, 0.92);
+  --wc-gold: #d9a441;
+  --wc-gold-dim: rgba(217, 164, 65, 0.28);
+  --wc-mist: rgba(255, 247, 237, 0.92);
+  --wc-muted: rgba(255, 247, 237, 0.55);
+  --wc-red: #d93434;
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
@@ -19,9 +22,9 @@
   border-radius: 14px;
   border: 1px solid var(--wc-gold-dim);
   background:
-    linear-gradient(145deg, rgba(40, 32, 18, 0.55) 0%, transparent 42%),
-    linear-gradient(180deg, rgba(22, 26, 38, 0.95), var(--wc-panel));
-  box-shadow: inset 0 1px 0 rgba(232, 197, 106, 0.12);
+    linear-gradient(145deg, rgba(217, 52, 52, 0.35) 0%, transparent 42%),
+    linear-gradient(180deg, rgba(160, 40, 36, 0.95), var(--wc-panel));
+  box-shadow: inset 0 1px 0 rgba(243, 201, 105, 0.18);
 }
 
 .xi-wc-hero-top {
@@ -80,7 +83,7 @@
   padding: 0.45rem 0.55rem;
   border-radius: 10px;
   border: 1px solid var(--wc-gold-dim);
-  background: linear-gradient(180deg, rgba(30, 36, 50, 0.9), rgba(12, 14, 20, 0.9));
+  background: linear-gradient(180deg, rgba(140, 36, 32, 0.9), rgba(50, 12, 12, 0.9));
   min-width: 0;
 }
 
@@ -104,7 +107,7 @@
   padding: 0.65rem 0.7rem;
   border-radius: 10px;
   border: 1px dashed var(--wc-gold-dim);
-  background: rgba(8, 10, 14, 0.45);
+  background: rgba(40, 10, 10, 0.45);
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
@@ -176,7 +179,7 @@
   min-height: 38px;
   border-radius: 10px;
   border: 1px solid var(--wc-gold-dim);
-  background: linear-gradient(180deg, rgba(48, 40, 22, 0.55), rgba(16, 18, 26, 0.85));
+  background: linear-gradient(180deg, rgba(127, 29, 29, 0.65), rgba(50, 12, 12, 0.9));
   color: var(--wc-mist);
   font-size: 0.72rem;
   padding: 0.35rem 0.25rem;
@@ -184,9 +187,21 @@
 }
 
 .xi-wc-btn.primary {
-  background: linear-gradient(180deg, rgba(184, 137, 45, 0.55), rgba(40, 28, 12, 0.9));
-  color: #fff8e8;
-  border-color: rgba(232, 197, 106, 0.45);
+  background: linear-gradient(180deg, #e5483f, #a02820);
+  color: #fff7ed;
+  border-color: rgba(243, 201, 105, 0.55);
+}
+
+/* USDT: slight jade accent, still inside red-gold shell */
+.xi-wc-summary.is-usdt,
+.xi-wc-card.is-usdt {
+  border-color: rgba(95, 143, 114, 0.45);
+  box-shadow: inset 0 0 0 1px rgba(95, 143, 114, 0.15);
+}
+.xi-wc-card.is-usdt {
+  background:
+    linear-gradient(145deg, rgba(95, 143, 114, 0.18) 0%, transparent 45%),
+    var(--wc-panel);
 }
 
 .xi-wc-btn:disabled {

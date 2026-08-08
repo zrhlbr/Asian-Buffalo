@@ -328,8 +328,8 @@ const dict: Record<Lang, Record<string, string>> = {
     walletNoMoves: "မကြာသေးမီ လှုပ်ရှားမှု မရှိ",
     walletPending: "ငွေသွင်း/ထုတ် — lobby/hub မှ လုပ်ပါ။ BUSINESS_RULES_PENDING ကြည့်ပါ။",
     help: "အကူအညီ",
-    helpIntro: "Bull Demon King တရားဝင် စည်းမျဉ်းနှင့် အကူအညီ။ ဆုချီးမြှင့်မှုကို ဆာဗာက ဆုံးဖြတ်သည်။",
-    helpPending: "လက်မှတ် Phase 8 — စည်းမျဉ်းအတွက် paytable/ကြေညာချက် ကြည့်ပါ။",
+    helpIntro: "နွားနတ်ဆိုးဘုရင် တရားဝင် စည်းမျဉ်းနှင့် အကူအညီ။ ဆုချီးမြှင့်မှုကို ဆာဗာက ဆုံးဖြတ်သည်။",
+    helpPending: "လက်မှတ် အဆင့် ၈ — စည်းမျဉ်းအတွက် ဆုဇယားနှင့် ကြေညာချက် ကြည့်ပါ။",
     overlayWaitSpin: "လှည့်ခြင်း ပြီးသည်အထိ စောင့်ပါ",
     sym_buffalo: "ကြွေး",
     sym_lion: "ခြင်္သေ့",
@@ -365,11 +365,45 @@ export function getLang(): Lang {
   return current;
 }
 
+/** Canonical game.* keys + legacy flat aliases (spin ↔ game.spin). */
+const GAME_KEY_ALIASES: Record<string, string> = {
+  "game.balance": "balance",
+  "game.win": "win",
+  "game.bet": "bet",
+  "game.spin": "spin",
+  "game.turbo": "turbo",
+  "game.auto": "auto",
+  "game.goodLuck": "goodLuck",
+  "game.lines": "lines",
+  "game.settings": "settings",
+  "game.help": "help",
+  "game.sound": "sound",
+  "game.wallet": "wallet",
+  "game.vip": "vip",
+  "game.back": "back",
+  "game.title": "gameTitle",
+  "game.info": "paytable",
+  "game.language": "language",
+  "game.more": "settings",
+};
+
+function resolveKey(key: string): string {
+  if (key in dict[current] || key in dict.en) return key;
+  if (GAME_KEY_ALIASES[key]) return GAME_KEY_ALIASES[key]!;
+  if (key.startsWith("game.")) {
+    const flat = key.slice(5);
+    if (flat in dict[current] || flat in dict.en) return flat;
+  }
+  return key;
+}
+
 export function t(key: string): string {
-  const v = dict[current][key];
+  const resolved = resolveKey(key);
+  const v = dict[current][resolved];
   if (v === undefined) {
-    console.warn(`[i18n] missing key "${key}" for ${current}`);
-    return dict.en[key] ?? key;
+    console.warn(`[i18n] missing key "${key}" (${resolved}) for ${current}`);
+    // Never fall back across UI languages (prevents ZH/MY/EN mix on screen).
+    return resolved;
   }
   return v;
 }
@@ -383,6 +417,7 @@ export function setLang(lang: Lang): void {
     /* ignore */
   }
   document.documentElement.lang = lang;
+  document.documentElement.dataset.xiGameLang = lang;
   applyDom();
   for (const fn of listeners) fn(lang);
 }

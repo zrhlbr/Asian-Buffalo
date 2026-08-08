@@ -2,19 +2,22 @@
 @import url("https://fonts.googleapis.com/css2?family=Cinzel:wght@700;900&family=Noto+Sans+SC:wght@600;800&family=Noto+Sans+Myanmar:wght@600;700&display=swap");
 
 :root {
-  --gold-1: #ffe29a;
-  --gold-2: #e0b34a;
-  --gold-3: #8a6414;
-  --gold-deep: #4a300c;
-  --jade: #2f8f6b;
-  --jade-deep: #14543c;
-  --ink: #0b0703;
-  --panel: rgba(16, 9, 4, 0.78);
-  --panel-line: rgba(240, 208, 120, 0.55);
-  --glass: linear-gradient(165deg, rgba(70, 48, 18, 0.92), rgba(18, 10, 4, 0.9) 55%, rgba(10, 6, 2, 0.94));
-  --metal: linear-gradient(180deg, #fff1c2 0%, #e0b34a 28%, #9a7418 62%, #5c3a0e 100%);
-  --text: #fff4d8;
-  --danger: #ff6b4a;
+  /* Play HUD chrome — bright festive red-gold; reel/#gl materials unchanged */
+  --gold-1: #ffe08a;
+  --gold-2: #f6c453;
+  --gold-3: #b87a18;
+  --gold-deep: #7a4a10;
+  --jade: #5f8f72;
+  --jade-deep: #2f5a45;
+  --ink: #64110f;
+  --panel: rgba(158, 23, 21, 0.88);
+  --panel-line: rgba(246, 196, 83, 0.6);
+  --glass: linear-gradient(165deg, rgba(227, 38, 25, 0.94), rgba(158, 23, 21, 0.94) 55%, rgba(100, 17, 15, 0.96));
+  --metal: linear-gradient(180deg, #fff1c2 0%, #ffe08a 28%, #f6c453 62%, #b87a18 100%);
+  --text: #fff7ed;
+  --danger: #ff6b5a;
+  --xi-spin-red: #f23828;
+  --xi-spin-red-deep: #e32619;
   --font: "Cinzel", "Noto Sans SC", "Noto Sans Myanmar", "Segoe UI", sans-serif;
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --safe-top: env(safe-area-inset-top, 0px);
@@ -70,12 +73,12 @@ body {
 
 /* ---------- shared metal / glass ---------- */
 .metal, .icon-btn.metal, .step-btn.metal, .console-btn.metal {
-  border: 1px solid rgba(255, 226, 154, 0.55);
-  background: linear-gradient(180deg, rgba(90, 62, 20, 0.95), rgba(28, 16, 6, 0.96));
+  border: 1px solid rgba(243, 201, 105, 0.55);
+  background: linear-gradient(180deg, rgba(201, 47, 47, 0.92), rgba(80, 18, 18, 0.96));
   box-shadow:
-    0 0 0 1px rgba(255, 240, 180, 0.12) inset,
-    0 6px 16px rgba(0, 0, 0, 0.45),
-    0 0 18px rgba(224, 179, 74, 0.22);
+    0 0 0 1px rgba(255, 240, 180, 0.1) inset,
+    0 6px 16px rgba(40, 8, 8, 0.45),
+    0 0 14px rgba(217, 52, 52, 0.22);
   color: var(--gold-1);
 }
 
@@ -96,8 +99,8 @@ body {
   gap: 10px;
   padding: calc(8px + var(--safe-top)) 12px 10px;
   background:
-    linear-gradient(180deg, rgba(12, 7, 3, 0.94), rgba(12, 7, 3, 0.55) 70%, transparent),
-    radial-gradient(120% 80% at 50% -20%, rgba(224, 179, 74, 0.18), transparent 55%);
+    linear-gradient(180deg, rgba(127, 29, 29, 0.92), rgba(80, 18, 18, 0.45) 70%, transparent),
+    radial-gradient(120% 80% at 50% -20%, rgba(217, 52, 52, 0.22), transparent 55%);
 }
 
 .top-left-cluster, .top-right-cluster {
@@ -139,9 +142,9 @@ body {
   min-width: 118px; max-width: 220px;
   padding: 6px 12px 6px 8px;
   border-radius: 999px;
-  border: 1px solid rgba(255, 226, 154, 0.4);
-  background: linear-gradient(180deg, rgba(54, 36, 12, 0.95), rgba(16, 9, 4, 0.96));
-  box-shadow: inset 0 1px 0 rgba(255, 236, 180, 0.25), 0 4px 14px rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(217, 164, 65, 0.45);
+  background: linear-gradient(180deg, rgba(160, 40, 36, 0.95), rgba(60, 14, 14, 0.96));
+  box-shadow: inset 0 1px 0 rgba(255, 236, 180, 0.2), 0 4px 14px rgba(40, 8, 8, 0.4);
 }
 .chip-icon {
   width: 28px; height: 28px; border-radius: 50%; flex: 0 0 auto;
@@ -277,15 +280,15 @@ body {
   gap: 12px;
   padding: 10px 12px;
   border-radius: 20px;
-  border: 1px solid rgba(255, 226, 154, 0.55);
+  border: 1px solid rgba(217, 164, 65, 0.55);
   background:
-    linear-gradient(180deg, rgba(56, 36, 14, 0.96), rgba(10, 6, 2, 0.97)),
-    radial-gradient(80% 120% at 80% 120%, rgba(224, 179, 74, 0.22), transparent 55%);
+    linear-gradient(180deg, rgba(160, 40, 36, 0.96), rgba(55, 12, 12, 0.97)),
+    radial-gradient(80% 120% at 80% 120%, rgba(217, 52, 52, 0.28), transparent 55%);
   box-shadow:
-    0 14px 40px rgba(0, 0, 0, 0.6),
-    0 0 28px rgba(224, 179, 74, 0.18),
-    inset 0 1px 0 rgba(255, 236, 180, 0.32),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.45);
+    0 14px 40px rgba(40, 8, 8, 0.55),
+    0 0 24px rgba(217, 52, 52, 0.22),
+    inset 0 1px 0 rgba(255, 236, 180, 0.28),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.4);
 }
 
 .console-left, .console-center, .console-right {
@@ -311,24 +314,47 @@ body {
   color: #2a1a05;
   box-shadow: 0 0 18px rgba(249, 224, 138, 0.55);
 }
+#btn-turbo.active {
+  background: linear-gradient(180deg, #ff9a5c, #e5483f 50%, #a02820);
+  color: #fff7ed;
+  box-shadow: 0 0 18px rgba(229, 72, 63, 0.5);
+}
+#btn-auto.active {
+  background: linear-gradient(180deg, #f05a50, #c92f2f 55%, #7f1d1d);
+  color: #fff7ed;
+  box-shadow: 0 0 16px rgba(201, 47, 47, 0.45);
+}
 .console-btn:disabled { opacity: 0.35; cursor: not-allowed; }
 
 .spin-btn.commercial-spin {
   position: relative;
   width: 104px; height: 104px; border-radius: 50%; cursor: pointer;
-  border: 3px solid rgba(255, 236, 180, 0.9);
+  border: 3px solid rgba(243, 201, 105, 0.95);
   background:
-    radial-gradient(circle at 35% 28%, #fff6d0, var(--gold-2) 42%, #8a6414 78%, #3a2408);
-  color: #2a1a05;
+    radial-gradient(circle at 35% 28%, #ffb0a8, var(--xi-spin-red) 42%, var(--xi-spin-red-deep) 72%, #5a1410 100%);
+  color: #fff7ed;
   box-shadow:
-    0 0 30px rgba(224, 179, 74, 0.65),
-    0 10px 22px rgba(0, 0, 0, 0.55),
+    0 0 30px rgba(217, 52, 52, 0.55),
+    0 0 18px rgba(243, 201, 105, 0.35),
+    0 10px 22px rgba(40, 8, 8, 0.55),
     inset 0 -8px 16px rgba(0, 0, 0, 0.35),
-    inset 0 2px 0 rgba(255, 255, 255, 0.35);
-  transition: transform 0.12s ease;
+    inset 0 2px 0 rgba(255, 255, 255, 0.28);
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
 }
-.spin-btn:hover { transform: scale(1.04); }
-.spin-btn:active { transform: scale(0.94); }
+.spin-btn:hover {
+  transform: scale(1.04);
+  box-shadow:
+    0 0 36px rgba(243, 201, 105, 0.55),
+    0 0 22px rgba(217, 52, 52, 0.5),
+    0 10px 22px rgba(40, 8, 8, 0.55),
+    inset 0 -8px 16px rgba(0, 0, 0, 0.35),
+    inset 0 2px 0 rgba(255, 255, 255, 0.28);
+}
+.spin-btn:active {
+  transform: scale(0.94);
+  background:
+    radial-gradient(circle at 35% 28%, #e07068, var(--xi-spin-red-deep) 48%, #7a1c18 100%);
+}
 .spin-btn:disabled { filter: grayscale(0.55) brightness(0.75); cursor: not-allowed; transform: none; }
 .spin-core {
   position: absolute; inset: 12px; border-radius: 50%;
@@ -610,7 +636,7 @@ html[data-xi-tier="low"] .quality-btn {
 #loading {
   position: absolute; inset: 0; z-index: 100;
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 22px;
-  background: radial-gradient(ellipse at center, #241a0b, #0d0903);
+  background: radial-gradient(ellipse at center, #7f1d1d, #4a1010);
   transition: opacity 0.6s ease;
 }
 #loading.done {
@@ -655,9 +681,13 @@ html[data-xi-tier="low"] .quality-btn {
     gap: 6px;
     grid-template-columns: minmax(120px, 1.1fr) minmax(120px, 0.9fr) auto;
     background:
-      linear-gradient(180deg, rgba(56, 36, 14, 0.88), rgba(10, 6, 2, 0.9)),
-      radial-gradient(80% 120% at 80% 120%, rgba(224, 179, 74, 0.18), transparent 55%);
+      linear-gradient(180deg, rgba(160, 40, 36, 0.94), rgba(55, 12, 12, 0.96)),
+      radial-gradient(80% 120% at 80% 120%, rgba(217, 52, 52, 0.22), transparent 55%);
   }
+  .brand-ribbon { display: none !important; }
+  #logo.brand-seal,
+  #session-pill,
+  #lang-switch { display: none !important; }
   .spin-btn.commercial-spin {
     width: 90px; height: 90px;
     z-index: 2;
@@ -703,27 +733,112 @@ html[data-xi-tier="low"] .quality-btn {
   --safe-right: env(safe-area-inset-right, 0px);
 }
 
-/* Portrait phone: stack meters, keep huge spin — still commercial */
-@media (orientation: portrait) and (max-width: 720px) {
+/* Portrait phone: compact HUD + Spin-hero console — reel is the subject */
+@media (orientation: portrait) and (max-width: 480px) {
   #topbar.top-commercial {
-    grid-template-columns: 1fr;
+    grid-template-columns: 1fr auto;
+    grid-template-rows: auto;
     justify-items: stretch;
+    gap: 4px;
+    padding: 2px 8px 4px;
+    background:
+      linear-gradient(180deg, rgba(127, 29, 29, 0.72), rgba(80, 18, 18, 0.12) 88%, transparent);
+  }
+  .top-center-cluster {
+    display: none;
+  }
+  .top-center-cluster:has(#fs-badge:not(.hidden)) {
+    display: flex;
+    grid-column: 1 / -1;
+    order: 3;
+  }
+  .top-left-cluster,
+  .top-right-cluster {
+    width: auto;
+    gap: 4px;
+  }
+  .top-left-cluster { justify-content: flex-start; }
+  .top-right-cluster { justify-content: flex-end; }
+  .brand-ribbon { display: none !important; }
+  .meter-chip.balance-chip {
+    min-width: 0;
+    max-width: min(70vw, 220px);
+    padding: 4px 10px 4px 6px;
+  }
+  .meter-chip.win-chip {
+    min-width: 0;
+    padding: 4px 8px;
+  }
+  .chip-icon { width: 20px; height: 20px; }
+  .meter-value { font-size: 14px; }
+  .chip-body label { font-size: 9px; }
+  .top-actions { gap: 4px; }
+  .icon-btn { width: 34px; height: 34px; border-radius: 10px; }
+
+  #console.bottom-commercial {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "meters spin"
+      "actions spin";
+    gap: 4px 6px;
+    padding: 5px 7px calc(5px + var(--safe-bottom));
+    border-radius: 14px;
+    width: calc(100% - 6px);
+    left: 3px;
+    right: 3px;
+    transform: none;
+    bottom: 0;
+    max-height: min(26dvh, 190px);
+  }
+  .console-left {
+    grid-area: meters;
+    flex-wrap: nowrap;
+    gap: 6px;
+    align-items: stretch;
+    min-width: 0;
+  }
+  .console-center {
+    grid-area: actions;
+    justify-content: flex-start;
+    gap: 6px;
+  }
+  .console-right { grid-area: spin; align-self: center; }
+  .bet-chip { min-width: 0; flex: 1 1 auto; border-radius: 12px; padding: 4px 8px; }
+  .step-btn { width: 30px; height: 30px; }
+  .spin-btn.commercial-spin {
+    width: 104px;
+    height: 104px;
+    border-width: 3px;
+  }
+  #spin-label { font-size: 19px; letter-spacing: 0.08em; }
+  .console-btn {
+    min-width: 60px;
+    min-height: 38px;
+    padding: 7px 9px;
+    font-size: 11px;
+  }
+  /* Kill bright glass wash across symbol rows on phone */
+  .xi-mythic-slot .xi-slot-frame .xi-array-edge {
+    opacity: 0.35;
+  }
+}
+
+@media (orientation: portrait) and (min-width: 481px) and (max-width: 720px) {
+  #topbar.top-commercial {
+    grid-template-columns: 1fr auto;
     gap: 8px;
   }
-  .top-left-cluster, .top-right-cluster, .top-center-cluster {
-    width: 100%; justify-content: space-between;
-  }
-  .brand-ribbon { width: 100%; }
+  .top-center-cluster .brand-ribbon { display: none; }
   #console.bottom-commercial {
     grid-template-columns: 1fr auto;
     grid-template-areas:
-      "bet spin"
+      "meters spin"
       "actions spin";
   }
-  .console-left { grid-area: bet; }
+  .console-left { grid-area: meters; }
   .console-center { grid-area: actions; justify-content: flex-start; }
   .console-right { grid-area: spin; }
-  .spin-btn.commercial-spin { width: 96px; height: 96px; }
+  .spin-btn.commercial-spin { width: 104px; height: 104px; }
 }
 
 /* ---------- Screenshot-features commerce overlays (black-gold / purple-gold) ---------- */
@@ -814,14 +929,68 @@ html[data-xi-tier="low"] .quality-btn {
   pointer-events: none;
   overflow: hidden;
 }
+
+/* Continuous 南天门 stage — paints ABOVE #gl, so center MUST be masked open for reels */
+.xi-slot-nantianmen {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background-color: #3a1018;
+  background-image:
+    linear-gradient(180deg, rgba(60, 12, 16, 0.28), transparent 26%, transparent 74%, rgba(40, 8, 12, 0.4)),
+    url("/xi/stages/nantianmen-portrait-phone.webp");
+  background-position: 50% 40%, 50% 42%;
+  background-size: cover, cover;
+  background-repeat: no-repeat;
+  opacity: 1;
+  /* Transparent hole over reel board — WebGL symbols remain visible */
+  -webkit-mask-image: radial-gradient(ellipse 86% 58% at 50% 46%, transparent 0 62%, #000 76%);
+  mask-image: radial-gradient(ellipse 86% 58% at 50% 46%, transparent 0 62%, #000 76%);
+}
+.xi-slot-nantianmen-veil {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  /* Edge-only darken — never paint solid over reel center */
+  background:
+    linear-gradient(180deg, rgba(80, 16, 16, 0.42) 0%, transparent 18%),
+    linear-gradient(0deg, rgba(60, 12, 12, 0.48) 0%, transparent 22%),
+    linear-gradient(90deg, rgba(40, 8, 10, 0.35), transparent 18%, transparent 82%, rgba(40, 8, 10, 0.35));
+  -webkit-mask-image: radial-gradient(ellipse 86% 58% at 50% 46%, transparent 0 62%, #000 76%);
+  mask-image: radial-gradient(ellipse 86% 58% at 50% 46%, transparent 0 62%, #000 76%);
+}
+@media (orientation: landscape) {
+  .xi-slot-nantianmen {
+    background-image:
+      linear-gradient(90deg, rgba(50, 10, 14, 0.3), transparent 20%, transparent 80%, rgba(50, 10, 14, 0.3)),
+      url("/xi/stages/nantianmen-landscape-phone.webp");
+    background-position: 50% 50%, 50% 55%;
+    -webkit-mask-image: radial-gradient(ellipse 74% 82% at 50% 50%, transparent 0 58%, #000 74%);
+    mask-image: radial-gradient(ellipse 74% 82% at 50% 50%, transparent 0 58%, #000 74%);
+  }
+  .xi-slot-nantianmen-veil {
+    -webkit-mask-image: radial-gradient(ellipse 74% 82% at 50% 50%, transparent 0 58%, #000 74%);
+    mask-image: radial-gradient(ellipse 74% 82% at 50% 50%, transparent 0 58%, #000 74%);
+  }
+}
+html[data-xi-tier="low"] .xi-slot-nantianmen {
+  opacity: 0.82;
+  filter: saturate(0.92) brightness(0.95);
+}
+html[data-xi-tier="low"] .xi-slot-cloudsea,
+html[data-xi-tier="low"] .xi-slot-thunder,
+html[data-xi-tier="low"] .xi-slot-spirit {
+  display: none;
+}
 /* Keep interactive HUD above edge chrome; never promote full #hud shell */
 .xi-mythic-slot #topbar,
 .xi-mythic-slot #console {
   z-index: 2;
-  /* combat + flame-mountain tint of brand language (distinct from lobby palace / hub clash) */
-  --panel: rgba(22, 10, 6, 0.82);
-  --panel-line: rgba(255, 170, 80, 0.55);
-  --glass: linear-gradient(165deg, rgba(90, 42, 18, 0.92), rgba(22, 10, 6, 0.92) 55%, rgba(10, 6, 4, 0.95));
+  /* red-gold play chrome — not brown/tan */
+  --panel: rgba(80, 18, 18, 0.82);
+  --panel-line: rgba(217, 164, 65, 0.55);
+  --glass: linear-gradient(165deg, rgba(160, 40, 36, 0.92), rgba(80, 18, 18, 0.92) 55%, rgba(40, 10, 10, 0.95));
 }
 
 .xi-mythic-slot .top-commercial,
@@ -834,10 +1003,11 @@ html[data-xi-tier="low"] .quality-btn {
 .xi-slot-sky {
   position: absolute;
   left: 0; right: 0; top: 0; height: 12%;
+  z-index: 2;
   background:
-    linear-gradient(180deg, rgba(40, 55, 90, 0.28), transparent 90%),
-    radial-gradient(50% 80% at 70% 0%, rgba(255, 210, 120, 0.12), transparent 70%);
-  opacity: 0.7;
+    linear-gradient(180deg, rgba(127, 29, 29, 0.22), transparent 90%),
+    radial-gradient(50% 80% at 70% 0%, rgba(243, 201, 105, 0.12), transparent 70%);
+  opacity: 0.45;
   /* Keep clear of reel band */
   mask-image: linear-gradient(180deg, #000 0%, #000 55%, transparent 100%);
   -webkit-mask-image: linear-gradient(180deg, #000 0%, #000 55%, transparent 100%);
@@ -932,15 +1102,49 @@ html[data-xi-tier="low"] .quality-btn {
 .xi-slot-frame {
   position: absolute;
   inset: 10% 1.2% 16%;
-  border: 1px solid rgba(232, 197, 106, 0.18);
+  border: 1px solid rgba(243, 201, 105, 0.28);
   border-radius: 0.6rem;
   box-shadow:
-    0 0 0 1px rgba(255, 100, 40, 0.06) inset,
-    0 0 40px rgba(0, 0, 0, 0.15) inset;
+    0 0 0 1px rgba(217, 52, 52, 0.12) inset,
+    0 0 40px rgba(40, 8, 8, 0.18) inset;
   /* hollow center — only edge glow */
   background: transparent;
   mask-image: linear-gradient(#000, #000), linear-gradient(#000, #000);
   pointer-events: none;
+}
+
+@media (orientation: portrait) and (max-width: 480px) {
+  .xi-slot-frame {
+    /* Track raised overscan board under single-row chrome */
+    inset: 7% 0% 20%;
+    border-color: rgba(243, 201, 105, 0.45);
+    border-width: 2px;
+    border-radius: 0.4rem;
+    box-shadow:
+      0 0 0 1px rgba(217, 52, 52, 0.25) inset,
+      0 0 28px rgba(127, 29, 29, 0.4) inset;
+  }
+  .xi-slot-sky {
+    height: 10%;
+    background:
+      linear-gradient(180deg, rgba(127, 29, 29, 0.82), rgba(80, 18, 18, 0.28) 65%, transparent 100%);
+    opacity: 0.95;
+  }
+  .xi-slot-cloudsea { opacity: 0.1; }
+  .xi-slot-flame-base {
+    height: 20%;
+    background:
+      radial-gradient(40% 80% at 15% 100%, rgba(217, 52, 52, 0.3), transparent 70%),
+      radial-gradient(40% 80% at 85% 100%, rgba(201, 47, 47, 0.24), transparent 70%),
+      linear-gradient(0deg, rgba(80, 16, 16, 0.6), transparent 85%);
+    opacity: 0.9;
+    mask-image: none;
+    -webkit-mask-image: none;
+  }
+  .xi-slot-mountains {
+    bottom: 19%;
+    opacity: 0.22;
+  }
 }
 
 .xi-slot-frame .xi-node {

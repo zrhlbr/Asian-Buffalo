@@ -470,16 +470,16 @@ export class ReelRig {
 
     // Glass specular strip (commercial reflection, does not cover symbols)
     const glass = new THREE.Mesh(
-      new THREE.PlaneGeometry(W * 0.98, H * 0.14),
+      new THREE.PlaneGeometry(W * 0.98, H * 0.08),
       new THREE.MeshBasicMaterial({
         color: 0xfff6d0,
         transparent: true,
-        opacity: 0.08,
+        opacity: 0.035,
         blending: THREE.AdditiveBlending,
         depthWrite: false,
       }),
     );
-    glass.position.set(0, H * 0.28, 0.09);
+    glass.position.set(0, H * 0.34, 0.09);
     this.group.add(glass);
 
     // Top/bottom scroll masks (vignette inside frame)
@@ -539,7 +539,7 @@ export class ReelRig {
     const fill = phoneLandscape
       ? Math.min(0.998, 1 - Math.min(padRatio, 0.01)) // P0: rails kiss edges
       : phonePortrait
-        ? 1 - Math.max(padRatio, 0.06)
+        ? 1.0 // camera overscan (world margin) owns phone vertical fill
         : aspect < 1.05
           ? 0.9
           : 0.88;
@@ -548,15 +548,14 @@ export class ReelRig {
     // Use real aspect — clamping to 0.5 over-scales portrait phones and clips rails
     const visibleHalfW = cameraZ * Math.tan(halfFov) * Math.max(aspect, 0.01);
     const targetHalfW = visibleHalfW * fill;
-    const minScale = phonePortrait ? 0.72 : phoneLandscape ? 1.05 : 0.95;
+    const minScale = phonePortrait ? 0.84 : phoneLandscape ? 1.05 : 0.95;
     const scale = THREE.MathUtils.clamp(targetHalfW / this.frameHalfW, minScale, 3.35);
     this.scaleFactor = scale;
     this.group.scale.setScalar(scale);
 
     // Always center — game is the visual subject (not side panel)
     this.group.position.x = 0;
-    // Phone landscape: lift slightly so bottom console does not bury the last row
-    this.group.position.y = aspect < 1.05 ? 2.55 : phoneLandscape ? 2.42 : 2.32;
+    this.group.position.y = phonePortrait ? 2.48 : aspect < 1.05 ? 2.35 : phoneLandscape ? 2.42 : 2.32;
 
     // Approx CSS px per world unit at reel depth — for post-bounce pixel align
     const visibleHalfH = cameraZ * Math.tan(halfFov);

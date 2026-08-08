@@ -1,12 +1,14 @@
-/* Player Center（我的）— scoped mythic black-gold; does not restyle Lobby home/Hub/Play */
+/* Player Center（我的）— red-gold auspicious; does not restyle Lobby home/Hub/Play */
+
+@import "./theme-tokens.css";
 
 .xi-pc {
-  --pc-ink: #0a0d14;
-  --pc-panel: rgba(16, 20, 30, 0.92);
-  --pc-gold: #e8c56a;
-  --pc-gold-dim: rgba(232, 197, 106, 0.22);
-  --pc-mist: rgba(232, 220, 190, 0.9);
-  --pc-muted: rgba(232, 220, 190, 0.55);
+  --pc-ink: #4a1010;
+  --pc-panel: rgba(80, 18, 18, 0.92);
+  --pc-gold: #d9a441;
+  --pc-gold-dim: rgba(217, 164, 65, 0.28);
+  --pc-mist: rgba(255, 247, 237, 0.92);
+  --pc-muted: rgba(255, 247, 237, 0.55);
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
@@ -23,9 +25,9 @@
   border-radius: 14px;
   border: 1px solid var(--pc-gold-dim);
   background:
-    linear-gradient(145deg, rgba(40, 32, 18, 0.55) 0%, transparent 42%),
-    linear-gradient(180deg, rgba(22, 26, 38, 0.95), var(--pc-panel));
-  box-shadow: inset 0 1px 0 rgba(232, 197, 106, 0.12);
+    linear-gradient(145deg, rgba(217, 52, 52, 0.4) 0%, transparent 42%),
+    linear-gradient(180deg, rgba(160, 40, 36, 0.95), var(--pc-panel));
+  box-shadow: inset 0 1px 0 rgba(243, 201, 105, 0.18);
 }
 
 .xi-pc-avatar {
@@ -35,7 +37,7 @@
   border-radius: 50%;
   border: 2px solid var(--pc-gold);
   background:
-    radial-gradient(circle at 35% 30%, #3a455c 0%, #141a26 70%);
+    radial-gradient(circle at 35% 30%, #e5483f 0%, #4a1010 70%);
   cursor: pointer;
   padding: 0;
 }
@@ -191,7 +193,11 @@
 .xi-pc-list {
   display: flex;
   flex-direction: column;
-  gap: 0.2rem;
+  gap: 0.35rem;
+  padding: 0.15rem;
+  border-radius: 12px;
+  background: rgba(80, 18, 18, 0.35);
+  border: 1px solid rgba(217, 164, 65, 0.22);
 }
 
 .xi-pc-row {
@@ -201,10 +207,11 @@
   gap: 0.5rem;
   width: 100%;
   min-height: 44px;
-  padding: 0.45rem 0.35rem;
+  padding: 0.5rem 0.55rem;
   border: 0;
-  border-bottom: 1px solid rgba(232, 197, 106, 0.1);
-  background: transparent;
+  border-radius: 10px;
+  border-bottom: 1px solid rgba(217, 164, 65, 0.18);
+  background: linear-gradient(180deg, rgba(140, 36, 32, 0.35), rgba(60, 14, 14, 0.45));
   color: var(--pc-mist);
   font-size: 0.88rem;
   text-align: left;
@@ -290,9 +297,9 @@
   width: 100%;
   min-height: 46px;
   border-radius: 12px;
-  border: 1px solid rgba(196, 60, 44, 0.45);
-  background: linear-gradient(180deg, rgba(80, 28, 22, 0.75), rgba(28, 12, 12, 0.92));
-  color: #f0d0c8;
+  border: 1px solid rgba(217, 52, 52, 0.65);
+  background: linear-gradient(180deg, rgba(127, 29, 29, 0.8), rgba(50, 12, 12, 0.95));
+  color: #fff0e8;
   font-size: 0.92rem;
   letter-spacing: 0.04em;
   cursor: pointer;
@@ -300,7 +307,7 @@
 
 .xi-pc-logout.is-secondary {
   border-color: var(--pc-gold-dim);
-  background: linear-gradient(180deg, rgba(40, 36, 28, 0.7), rgba(16, 18, 26, 0.9));
+  background: linear-gradient(180deg, rgba(140, 36, 32, 0.7), rgba(50, 12, 12, 0.9));
   color: var(--pc-mist);
 }
 
@@ -312,7 +319,7 @@
   align-items: flex-end;
   justify-content: center;
   padding: 0.75rem;
-  background: rgba(4, 6, 10, 0.72);
+  background: rgba(40, 8, 8, 0.72);
 }
 
 .xi-pc-sheet {

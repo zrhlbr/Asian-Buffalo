@@ -1,0 +1,222 @@
+/**
+ * XI GAME — Bright Red-Gold FORCED overrides (玩家端)
+ * Loaded after lobby.css. Must visibly kill brown/coffee/tan surfaces.
+ */
+
+@import "./theme-tokens.css";
+
+/* ─── Global shell: unmistakable red stage ─── */
+.xi-lobby-root,
+.xi-auth-root,
+.xi-shell,
+.xi-wc,
+.xi-pc {
+  color: var(--xi-warm-white) !important;
+  background: var(--xi-bg-gradient) !important;
+}
+
+.xi-lobby-root::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.5;
+  background: var(--xi-cloud-motif);
+}
+
+html[data-xi-tier="low"] .xi-lobby-root::before { opacity: 0.22; }
+
+/* ─── Topbars / tablets ─── */
+.xi-topbar,
+.xi-topbar.xi-jade-tablet {
+  background: var(--xi-surface-hud) !important;
+  border-color: rgba(246, 196, 83, 0.55) !important;
+  box-shadow:
+    0 0 0 1px rgba(246, 196, 83, 0.35) inset,
+    0 0 0 3px rgba(100, 17, 15, 0.45) inset,
+    0 8px 24px rgba(100, 17, 15, 0.4) !important;
+}
+
+.xi-jade-tablet .xi-balance-chip,
+.xi-balance-chip,
+.xi-wallet-chip {
+  border-color: rgba(246, 196, 83, 0.5) !important;
+  background: linear-gradient(180deg, rgba(227, 38, 25, 0.92), rgba(100, 17, 15, 0.95)) !important;
+  color: var(--xi-warm-white) !important;
+}
+.xi-wallet-chip strong { color: var(--xi-warm-white) !important; }
+
+.xi-jade-tablet .xi-icon-btn,
+.xi-icon-btn {
+  border-color: rgba(246, 196, 83, 0.5) !important;
+  background: linear-gradient(180deg, rgba(242, 56, 40, 0.45), rgba(100, 17, 15, 0.55)) !important;
+  color: var(--xi-gold-bright) !important;
+}
+
+.xi-vip-pill {
+  background: linear-gradient(90deg, var(--xi-gold-bright), var(--xi-gold-primary)) !important;
+  color: #64110f !important;
+}
+
+/* ─── Cards / panels / sections ─── */
+.xi-game-card,
+.xi-panel-card,
+.xi-feat-card,
+.xi-bdk-feat-item,
+.xi-section,
+.xi-drawer,
+.xi-sheet,
+.xi-modal,
+.xi-activity-card,
+.xi-rank-card,
+.xi-announce-card {
+  border-color: rgba(246, 196, 83, 0.45) !important;
+  background: var(--xi-surface-card) !important;
+  box-shadow: 0 8px 22px rgba(100, 17, 15, 0.4) !important;
+  color: var(--xi-warm-white) !important;
+}
+
+.xi-game-card[data-id="bdk"] {
+  border-color: rgba(255, 224, 138, 0.75) !important;
+  box-shadow:
+    0 0 0 1px rgba(227, 38, 25, 0.55),
+    0 0 24px rgba(242, 56, 40, 0.4),
+    0 10px 24px rgba(100, 17, 15, 0.45) !important;
+}
+
+.xi-feat-ico,
+.xi-nav-ico {
+  border-color: rgba(246, 196, 83, 0.45) !important;
+  background: linear-gradient(145deg, rgba(227, 38, 25, 0.55), rgba(100, 17, 15, 0.65)) !important;
+}
+
+.xi-section-title,
+.xi-bdk-hub h1,
+.xi-hero-brand,
+.xi-auth-brand,
+.xi-auth-title {
+  color: var(--xi-gold-bright) !important;
+  text-shadow: 0 0 22px rgba(227, 38, 25, 0.45), 0 2px 10px rgba(0, 0, 0, 0.45) !important;
+}
+
+/* ─── Primary CTAs — bright festive red ─── */
+.xi-primary,
+.xi-auth-cta,
+.xi-start-game-cta,
+.xi-decree-btn,
+.xi-auth-entry-btn.is-primary,
+button.xi-primary,
+a.xi-primary {
+  color: var(--xi-warm-white) !important;
+  border: 1px solid rgba(255, 224, 138, 0.85) !important;
+  background: var(--xi-surface-primary) !important;
+  box-shadow:
+    0 0 0 1px rgba(100, 17, 15, 0.35) inset,
+    0 0 22px rgba(242, 56, 40, 0.45),
+    0 8px 18px rgba(100, 17, 15, 0.4) !important;
+}
+
+.xi-secondary {
+  border-color: rgba(246, 196, 83, 0.4) !important;
+  background: rgba(100, 17, 15, 0.55) !important;
+  color: var(--xi-warm-white) !important;
+}
+
+/* Kill leftover gold-brown primary gradients in lobby.css */
+.xi-lobby-root .xi-primary,
+.xi-bdk-hub .xi-primary,
+.xi-bdk-hub-photo .xi-start-game-cta {
+  background: linear-gradient(180deg, #f23828 0%, #e32619 45%, #9e1715 100%) !important;
+  color: #fff7ed !important;
+}
+
+/* ─── Bottom nav ─── */
+.xi-bottom-nav,
+.xi-bottom-nav-v2 {
+  background: linear-gradient(180deg, rgba(158, 23, 21, 0.95), rgba(100, 17, 15, 0.98)) !important;
+  border-top: 1px solid rgba(246, 196, 83, 0.45) !important;
+}
+.xi-bottom-nav-v2 .xi-nav-btn { color: rgba(255, 247, 237, 0.55) !important; }
+.xi-bottom-nav-v2 .xi-nav-btn.is-active { color: var(--xi-gold-bright) !important; }
+.xi-bottom-nav-v2 .xi-nav-btn.is-active .xi-nav-ico {
+  background: linear-gradient(180deg, #f23828, #9e1715) !important;
+  border-color: rgba(255, 224, 138, 0.75) !important;
+  box-shadow: 0 0 14px rgba(242, 56, 40, 0.5) !important;
+}
+
+/* ─── Auth ─── */
+.xi-auth-shell {
+  border-color: rgba(246, 196, 83, 0.5) !important;
+  background:
+    radial-gradient(80% 60% at 50% 0%, rgba(255, 224, 138, 0.18), transparent 55%),
+    linear-gradient(180deg, rgba(227, 38, 25, 0.96), rgba(100, 17, 15, 0.98)) !important;
+}
+.xi-auth-tabs button.is-active {
+  color: #64110f !important;
+  background: linear-gradient(180deg, var(--xi-gold-bright), var(--xi-gold-primary)) !important;
+}
+
+/* ─── BDK Hub ─── */
+.xi-bdk-hub-mythic {
+  background: linear-gradient(
+    180deg,
+    transparent 0%,
+    rgba(227, 38, 25, 0.22) 30%,
+    rgba(158, 23, 21, 0.72) 65%,
+    rgba(100, 17, 15, 0.92) 100%
+  ) !important;
+}
+.xi-bdk-hero-copy {
+  background: linear-gradient(180deg, transparent 0%, rgba(158, 23, 21, 0.75) 50%, rgba(100, 17, 15, 0.95) 100%) !important;
+}
+.xi-bdk-tag { color: rgba(255, 224, 138, 0.9) !important; }
+
+/* ─── Play chrome ─── */
+.xi-play-shell .xi-play-chrome {
+  background: linear-gradient(180deg, rgba(227, 38, 25, 0.96), rgba(100, 17, 15, 0.35) 78%, transparent) !important;
+}
+.xi-play-shell .xi-play-title-chip,
+.xi-play-shell .xi-play-vip-chip {
+  background: rgba(158, 23, 21, 0.7) !important;
+  border-color: rgba(246, 196, 83, 0.5) !important;
+  color: var(--xi-gold-bright) !important;
+}
+.xi-play-shell .xi-play-back,
+.xi-play-shell .xi-play-settings,
+.xi-play-lang-btn.is-active {
+  border-color: rgba(255, 224, 138, 0.75) !important;
+  background: linear-gradient(180deg, #f23828, #9e1715) !important;
+  color: var(--xi-warm-white) !important;
+}
+.xi-play-leave-card,
+.xi-play-leave-wait {
+  background: linear-gradient(180deg, rgba(217, 43, 32, 0.96), rgba(100, 17, 15, 0.98)) !important;
+  border-color: rgba(246, 196, 83, 0.5) !important;
+  color: var(--xi-warm-white) !important;
+}
+
+/* ─── Ticker / announcements ─── */
+.xi-ticker {
+  background: linear-gradient(90deg, rgba(158, 23, 21, 0.95), rgba(227, 38, 25, 0.9)) !important;
+  border: 1px solid rgba(246, 196, 83, 0.5) !important;
+  color: var(--xi-warm-white) !important;
+}
+
+/* ─── Hero frames (shell only; photo untouched) ─── */
+.xi-hero,
+.xi-hero-mythic,
+.xi-hero-photo,
+.xi-bdk-hero-photo {
+  border-color: rgba(246, 196, 83, 0.6) !important;
+  box-shadow:
+    0 0 0 1px rgba(227, 38, 25, 0.4),
+    0 0 28px rgba(242, 56, 40, 0.35),
+    0 12px 28px rgba(100, 17, 15, 0.45) !important;
+}
+
+/* Hard kill common brown leftovers from lobby.css */
+.xi-lobby-root .xi-primary,
+.xi-play-leave-wait {
+  background-image: none !important;
+}

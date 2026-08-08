@@ -146,18 +146,19 @@ export class World {
     setSymbolMaxAnisotropy(this.renderer.capabilities.getMaxAnisotropy());
 
     this.scene = new THREE.Scene();
+    // Heaven-gate night wash (red-wine) — kills tan savanna bleed behind CSS 南天门 stage
     this.scene.fog = this.profile.enableGroundFog
-      ? new THREE.FogExp2(0xc89a5c, 0.013)
-      : new THREE.FogExp2(0xc89a5c, 0.006);
+      ? new THREE.FogExp2(0x4a1018, 0.016)
+      : new THREE.FogExp2(0x3a0c14, 0.008);
 
     this.camera = new THREE.PerspectiveCamera(46, window.innerWidth / window.innerHeight, 0.1, 300);
     this.fitCamera();
 
-    // ---------- lights (golden hour) ----------
-    this.hemi = new THREE.HemisphereLight(0xffe3b0, 0x6b4a22, 0.85);
+    // ---------- lights (auspicious red-gold dusk — presentation only) ----------
+    this.hemi = new THREE.HemisphereLight(0xffd8a8, 0x3a1018, 0.72);
     this.scene.add(this.hemi);
 
-    this.sun = new THREE.DirectionalLight(0xffd9a0, 2.2);
+    this.sun = new THREE.DirectionalLight(0xffc878, 1.65);
     this.sun.position.set(-14, 9, -18);
     this.sun.castShadow = this.profile.tier !== "low";
     this.sun.shadow.mapSize.set(
@@ -202,10 +203,10 @@ export class World {
           float h = clamp(vDir.y, -0.1, 1.0);
           // slow golden-hour cycle (subtle breathing of the sky)
           float cycle = 0.5 + 0.5 * sin(uTime * 0.02);
-          // Mythic dusk wash (heaven zenith + flame-mountain horizon) — visual only
-          vec3 zenith  = mix(vec3(0.11, 0.15, 0.36), vec3(0.16, 0.20, 0.42), cycle);
-          vec3 mid     = mix(vec3(0.58, 0.36, 0.26), vec3(0.70, 0.44, 0.30), cycle);
-          vec3 horizon = mix(vec3(0.90, 0.52, 0.28), vec3(0.98, 0.62, 0.34), cycle);
+          // Nantianmen dusk wash — deep wine zenith, warm gold horizon (no savanna tan)
+          vec3 zenith  = mix(vec3(0.12, 0.06, 0.16), vec3(0.18, 0.08, 0.20), cycle);
+          vec3 mid     = mix(vec3(0.55, 0.18, 0.18), vec3(0.62, 0.22, 0.20), cycle);
+          vec3 horizon = mix(vec3(0.72, 0.38, 0.22), vec3(0.80, 0.45, 0.26), cycle);
           vec3 col = mix(horizon, mid, smoothstep(0.0, 0.22, h));
           col = mix(col, zenith, smoothstep(0.18, 0.75, h));
           // sun disc + halo
@@ -225,9 +226,9 @@ export class World {
     const sky = new THREE.Mesh(new THREE.SphereGeometry(160, skySeg, Math.floor(skySeg * 0.65)), this.skyMat);
     this.scene.add(sky);
 
-    // ---------- ground ----------
+    // ---------- ground (cloud terrace — wine stone, not savanna dirt) ----------
     const groundGeo = new THREE.CircleGeometry(150, this.profile.tier === "low" ? 48 : 96);
-    const groundMat = new THREE.MeshStandardMaterial({ color: 0x8a6b32, roughness: 1 });
+    const groundMat = new THREE.MeshStandardMaterial({ color: 0x2a1218, roughness: 1 });
     const ground = new THREE.Mesh(groundGeo, groundMat);
     ground.rotation.x = -Math.PI / 2;
     ground.position.y = -0.02;
@@ -237,15 +238,15 @@ export class World {
     // dirt patch under the buffalo rock
     const dirt = new THREE.Mesh(
       new THREE.CircleGeometry(4.5, 24),
-      new THREE.MeshStandardMaterial({ color: 0x6e5024, roughness: 1 }),
+      new THREE.MeshStandardMaterial({ color: 0x3a1a20, roughness: 1 }),
     );
     dirt.rotation.x = -Math.PI / 2;
     dirt.position.set(-6.4, 0.0, -1.2);
     dirt.receiveShadow = true;
     this.scene.add(dirt);
 
-    // ---------- distant hills ----------
-    const hillMat = new THREE.MeshStandardMaterial({ color: 0x7d5c2c, roughness: 1 });
+    // ---------- distant hills (dusk silhouette) ----------
+    const hillMat = new THREE.MeshStandardMaterial({ color: 0x241018, roughness: 1 });
     for (let i = 0; i < 7; i++) {
       const h = new THREE.Mesh(new THREE.SphereGeometry(14 + Math.random() * 12, 16, 10), hillMat);
       const ang = (i / 7) * Math.PI * 2 + 0.4;
@@ -482,7 +483,7 @@ export class World {
       this.renderer.toneMappingExposure = 1.06;
       if (this.profile.enableBloom) this.bloom.strength = BLOOM_FREESPIN;
       if (this.scene.fog instanceof THREE.FogExp2) {
-        this.scene.fog.color.setHex(0xd4a86a);
+        this.scene.fog.color.setHex(0x5a1820);
       }
     } else {
       this.hemi.color.setHex(0xffe3b0);
@@ -491,7 +492,7 @@ export class World {
       this.renderer.toneMappingExposure = 1.02;
       if (this.profile.enableBloom) this.bloom.strength = BLOOM_IDLE;
       if (this.scene.fog instanceof THREE.FogExp2) {
-        this.scene.fog.color.setHex(0xc89a5c);
+        this.scene.fog.color.setHex(0x4a1018);
       }
     }
   }
@@ -651,7 +652,8 @@ export class World {
     const shortSide = Math.min(w, h);
     const phoneLandscape = aspect >= 1.05 && shortSide <= 520;
     const phonePortrait = aspect < 1.05 && w <= 500;
-    const fov = phonePortrait ? 44 : phoneLandscape ? 38 : 46;
+    // Portrait: slightly tighter FOV so 5×4 board reads larger between HUD bands
+    const fov = phonePortrait ? 40 : phoneLandscape ? 38 : 46;
     if (Math.abs(this.camera.fov - fov) > 0.05) {
       this.camera.fov = fov;
       this.camera.updateProjectionMatrix();
@@ -668,14 +670,16 @@ export class World {
     const halfFov = THREE.MathUtils.degToRad(fov * 0.5);
     const shortSide = Math.min(w, h);
     const phoneLandscape = aspect >= 1.05 && shortSide <= 520;
-    // Zero optical margin on phone landscape — safe area is reel pad, not camera slack
-    const margin = phoneLandscape ? 1.0 : 1.05;
+    const phonePortrait = aspect < 1.05 && w <= 500;
+    // Portrait: aggressive overscan — width-fit locks a 5×4 board to ~37% height on 9:19 phones
+    const margin = phoneLandscape ? 1.0 : phonePortrait ? 0.5 : 1.05;
     const halfWidthNeeded = this.frameHalfW * margin;
     const z = Math.max(
-      phoneLandscape ? 8.2 : 9.2,
+      phoneLandscape ? 8.2 : phonePortrait ? 5.8 : 9.2,
       halfWidthNeeded / (Math.tan(halfFov) * Math.max(aspect, 0.01)),
     );
-    this.lookY = aspect < 1.05 ? 2.5 : 2.32;
+    // Center board in chrome→console band (avoid large tan stage under reels)
+    this.lookY = phonePortrait ? 2.22 : aspect < 1.05 ? 2.5 : 2.32;
     this.baseZ = z;
     this.camera.position.set(0, this.lookY + 0.06 + (z - 11) * 0.05, z);
     this.camera.lookAt(0, this.lookY, 0);

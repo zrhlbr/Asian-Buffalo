@@ -23,6 +23,7 @@ import {
 } from "./i18n.ts";
 import { navigateXi, XI_ROUTES } from "./nav.ts";
 import "./lobby.css";
+import "./theme-red-gold.css";
 
 export type AuthMode = "login" | "register" | "forgot";
 
