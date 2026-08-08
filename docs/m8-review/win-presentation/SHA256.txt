@@ -1,0 +1,17 @@
+# M8 Win Presentation — SHA-256 (source files)
+
+6bd2558c2d321f637aef66c993342dc715a0bd2b079d17a751f9b85f8a2a4896  client/m5/win-presentation.ts
+5e03f10b519a8b98e7965125b3ac384576a584ffe51425160c1f7963c44b1094  client/m5/adapter.ts
+6cb0bcc835fc6544ccbe64ec962ab1c3b4ba90d9a0111e51462bb631407385f4  client/m5/audio.ts
+101bd79bae97a142216531d6af8f95116bb7fbaa1c92a9751a30771af3a0163a  client/m5/game/game.ts
+bd037bb6a3baec76b6cbbf48a34cc7704773a05a9a4f41cc29f47e93fc89889d  client/m5/game/reels.ts
+602ad20ddda299c244fab5f95ea1a8eafe2552225f23293f26b970c04c18dc15  client/m5/game/symbol-life.ts
+af5b03069872019000e9bd57d0968152410ea733a5be6b82aa4c6c98e13a1be9  client/m5/scene/buffalo.ts
+5fe8747885e7ab4d503b6f6f983b31d280effe04bc93145a74971ae85e42476c  client/m5/scene/world.ts
+e023f223aab7a65b336d5c1508985268eaae6aae5ae28854e726ec820fcc83c8  client/m5/scene/particles.ts
+8190e0c541fee54b745eb48bf32512cdd01986234e57288ea53e684ed792c887  client/m5/ui/hud.ts
+d051ba0aa2ce19f7c9bbbc773722ac1ee628ff38aac7a8c8ed565c0797c7164a  client/m5/i18n.ts
+e62331a36a4ee588549effb6a64ab408ae28334161a938df63b079082d59d372  client/m5/styles.css
+5e553e0ce71b1e74427c1066dde6fb4d361153b673a951ebe4cafa7bb81a4ab2  tests/r1-m8-win-presentation.test.mjs
+6128427c9d7afae4bf5b3b9e76d1074fa43236407be495963419b092b47e7005  tests/r1-m8-symbol-life.test.mjs
+b30c4cceae02fcf910c33c690d0adca360beaf7f8ee19b4dfc69a2b9207be85a  tests/r1-m8-clarity-v2.test.mjs

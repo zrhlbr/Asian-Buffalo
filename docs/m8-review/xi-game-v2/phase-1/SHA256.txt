@@ -1,0 +1,15 @@
+﻿3a6fd95bfb5b4a0c5e9444b701b98c0b001e65b52f42551c56d849007d1d3e53  lib/lobby-catalog.ts
+29e7987b270f3d93e8a68a0a63881dba42ad0aca3e94e30ebbc68ba92b3ded87  app/api/v1/lobby/catalog/route.ts
+2151c9f7be089faedc0008a36597bbc203c6ac367723ce650286279fdb9b3fa5  client/xi-lobby/i18n.ts
+2f107241bbfeb9c5e665e01bdb1f8b36461fce75b80b2c107b9b504f0dca67f7  client/xi-lobby/api.ts
+92be829f42bd3e02633f2ea220f145679af6ce952abb40889019f3f96691c301  client/xi-lobby/lobby.css
+7477fe80058864271effe06d024080a98750a34f3bf1d51626be50b5f0cb101e  client/xi-lobby/lobby-app.tsx
+b8958299606d513f72cfd2719ec8d8241277889e7056e595fd168e1ca0dc107d  client/xi-lobby/bdk-hub.tsx
+9765793648506543ea14af96b131bfe45046b16873a6e6d7dc3f4fe63b204f7b  app/xi/layout.tsx
+a4862cb9966a3e9e05dc21c9be8ab2ddcc3a680dac6826ab93ccd6c87b61c84a  app/xi/page.tsx
+fd7432fc1133e53c6e0f8914134b7395793cbf8f44c60ea77b9af6580f911183  app/xi/bdk/page.tsx
+abe220032037ac3c68e7e2d4385670f0d3750f23ee7829399859f9f0c64fa639  app/game/page.tsx
+b9197b374c14b90324c8fe626770b4e75870a9af65b92200ac0446432901b2df  tests/xi-lobby-phase1.test.mjs
+54b95f778208de93c57f516dd54ca2ab10b4b9638078e12a75d3c25ce5049e62  docs/m8-review/xi-game-v2/phase-1/MODULE_IMPACT_ANALYSIS.md
+09d12faadfad4565060291eec9042c59d5f711accc6aac20d006ad775ce44c3c  docs/m8-review/xi-game-v2/phase-1/ASSET_GAP.md
+4200d61b9059fea96ef51f4610f2ce731499648c13ad6b0c722e184590cb85c9  docs/m8-review/xi-game-v2/phase-1/_smoke-lobby.mjs

@@ -1,0 +1,4 @@
+﻿ M next.config.ts
+?? app/xi/
+?? client/xi-lobby/
+?? lib/lobby-catalog.ts

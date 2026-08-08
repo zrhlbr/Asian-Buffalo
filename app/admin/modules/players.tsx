@@ -29,14 +29,27 @@ type PlayerRow = {
   openSessions: number;
   lastActiveAt: string | null;
   nickname: string | null;
+  avatarId: string | null;
   vipLevel: number | null;
+  vipStatus: string | null;
+  phoneMasked: string | null;
+  lastLoginAt: string | null;
   device: string | null;
   ip: string | null;
   [key: string]: unknown;
 };
 
 type PlayerDetail = {
-  player: PlayerRow & { walletAdapterRef: string; updatedAt: string; lastLoginAt: string | null; avatar: string | null };
+  player: PlayerRow & {
+    walletAdapterRef: string;
+    updatedAt: string;
+    lastLoginAt: string | null;
+    registeredAt?: string | null;
+    avatar: string | null;
+    avatarId: string | null;
+    vipStatus: string | null;
+    phoneMasked: string | null;
+  };
   aggregates: { roundCount: number; totalBetMinor: number; totalWinMinor: number };
   sessions: Record<string, unknown>[];
   recentRounds: Record<string, unknown>[];
@@ -110,15 +123,41 @@ export default function PlayersModule() {
 
   const columns: ColumnDef<PlayerRow>[] = [
     { key: "id", title: t("players.uid"), render: (row) => <span className="ab-mono">{row.id.slice(0, 12)}…</span> },
-    { key: "nickname", title: t("players.nickname"), render: () => <span style={{ color: "#4c6aa0" }}>{t("players.noDeviceData")}</span> },
-    { key: "vip", title: t("players.vip"), render: () => "-" },
+    {
+      key: "nickname",
+      title: t("players.nickname"),
+      render: (row) => row.nickname ?? <span style={{ color: "#4c6aa0" }}>—</span>,
+    },
+    {
+      key: "vip",
+      title: t("players.vip"),
+      render: (row) =>
+        row.vipLevel == null ? "—" : `L${row.vipLevel}${row.vipStatus ? ` · ${row.vipStatus}` : ""}`,
+    },
     { key: "status", title: t("common.status"), render: (row) => statusBadge(row.status, t as never) },
     { key: "currency", title: t("common.currency") },
     { key: "totalBet", title: t("players.totalBet"), sortable: true, render: (row) => fmtMinor(row.totalBetMinor) },
     { key: "totalWin", title: t("players.totalWin"), render: (row) => fmtMinor(row.totalWinMinor) },
     { key: "roundCount", title: t("players.roundCount"), sortable: true },
     { key: "freeSpins", title: t("players.freeSpins"), render: (row) => String(row.freeSpins) },
-    { key: "lastActiveAt", title: t("players.lastLogin"), render: (row) => fmtTime(row.lastActiveAt) },
+    { key: "lastActiveAt", title: t("players.lastLogin"), render: (row) => fmtTime(row.lastLoginAt ?? row.lastActiveAt) },
+    {
+      key: "ip",
+      title: t("common.ip"),
+      render: (row) => row.ip ?? "—",
+    },
+    {
+      key: "device",
+      title: t("players.device"),
+      render: (row) =>
+        row.device ? (
+          <span className="ab-mono" title={row.device}>
+            {row.device.length > 24 ? `${row.device.slice(0, 24)}…` : row.device}
+          </span>
+        ) : (
+          "—"
+        ),
+    },
     {
       key: "actions",
       title: t("common.actions"),
@@ -197,8 +236,14 @@ export default function PlayersModule() {
               <div className="ab-kv-item"><span className="k">{t("players.walletRef")}</span><span className="v ab-mono">{detail.player.walletAdapterRef}</span></div>
               <div className="ab-kv-item"><span className="k">{t("common.status")}</span><span className="v">{statusBadge(detail.player.status, t as never)}</span></div>
               <div className="ab-kv-item"><span className="k">{t("common.currency")}</span><span className="v">{detail.player.currency}</span></div>
-              <div className="ab-kv-item"><span className="k">{t("players.nickname")} / {t("players.avatar")} / {t("players.vip")}</span><span className="v">{t("players.noDeviceData")}</span></div>
-              <div className="ab-kv-item"><span className="k">{t("players.device")} / {t("common.ip")}</span><span className="v">{t("players.noDeviceData")}</span></div>
+              <div className="ab-kv-item"><span className="k">{t("players.nickname")}</span><span className="v">{detail.player.nickname ?? "—"}</span></div>
+              <div className="ab-kv-item"><span className="k">{t("players.avatar")}</span><span className="v ab-mono">{detail.player.avatarId ?? detail.player.avatar ?? "—"}</span></div>
+              <div className="ab-kv-item"><span className="k">{t("players.vip")}</span><span className="v">{detail.player.vipLevel == null ? "—" : `L${detail.player.vipLevel} · ${detail.player.vipStatus ?? ""}`}</span></div>
+              <div className="ab-kv-item"><span className="k">{t("players.phone")}</span><span className="v">{detail.player.phoneMasked ?? "—"}</span></div>
+              <div className="ab-kv-item"><span className="k">{t("players.lastLogin")}</span><span className="v">{fmtTime(detail.player.lastLoginAt)}</span></div>
+              <div className="ab-kv-item"><span className="k">{t("players.registeredAt")}</span><span className="v">{fmtTime(detail.player.registeredAt ?? detail.player.createdAt)}</span></div>
+              <div className="ab-kv-item"><span className="k">{t("players.device")}</span><span className="v">{detail.player.device ?? t("players.noDeviceData")}</span></div>
+              <div className="ab-kv-item"><span className="k">{t("common.ip")}</span><span className="v">{detail.player.ip ?? "—"}</span></div>
               <div className="ab-kv-item"><span className="k">{t("players.totalBet")}</span><span className="v">{fmtMinor(detail.aggregates.totalBetMinor)}</span></div>
               <div className="ab-kv-item"><span className="k">{t("players.totalWin")}</span><span className="v">{fmtMinor(detail.aggregates.totalWinMinor)}</span></div>
               <div className="ab-kv-item"><span className="k">{t("players.roundCount")}</span><span className="v">{detail.aggregates.roundCount}</span></div>

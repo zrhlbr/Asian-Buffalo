@@ -164,16 +164,24 @@ export type PlayerListItem = {
   freeSpins: number;
   openSessions: number;
   lastActiveAt: string | null;
-  // Identity-provider fields (nickname/avatar/VIP/device/IP/lastLogin) are
-  // owned by the external wallet/identity provider and are not stored in the
-  // game database; the admin console surfaces them as null.
+  // Profile/VIP sidecar (player_profiles / player_vip) — additive commerce tables.
   nickname: string | null;
   avatar: string | null;
+  avatarId: string | null;
   vipLevel: number | null;
+  vipStatus: string | null;
+  phoneMasked: string | null;
   lastLoginAt: string | null;
   device: string | null;
   ip: string | null;
 };
+
+function maskPhoneAdmin(phone: string | null | undefined): string | null {
+  if (!phone) return null;
+  const digits = phone.replace(/\D/g, "");
+  if (digits.length < 4) return "****";
+  return `****${digits.slice(-4)}`;
+}
 
 export async function listPlayers(db: AdminDb, query: PageQuery) {
   const where: string[] = [];
@@ -203,12 +211,57 @@ export async function listPlayers(db: AdminDb, query: PageQuery) {
   return { total, page: query.page, pageSize: query.pageSize, items: rows };
 }
 
-// Raw helpers with positional binds (drizzle sql.raw cannot bind; use $client).
+/**
+ * Raw helpers with positional binds (drizzle sql.raw cannot bind; use $client).
+ *
+ * Dual-driver:
+ * - better-sqlite3: `prepare(sql).all(...params)` → T[]
+ * - D1: `prepare(sql).bind(...params).all()` → { results: T[] }
+ * Live Admin Players 500 was caused by treating D1's result object as an array
+ * (and/or passing binds via .all(...params), which D1 does not accept).
+ */
 async function runRaw<T>(db: AdminDb, statement: string, params: (string | number)[]): Promise<T[]> {
-  const client = (db as unknown as { $client: { prepare: (s: string) => { all: (...p: (string | number)[]) => Promise<T[]> | T[] } } }).$client;
+  type D1AllResult = { results?: T[] };
+  type Prepared = {
+    all: (...p: (string | number)[]) => T[] | Promise<T[] | D1AllResult>;
+    bind?: (...p: (string | number)[]) => { all: () => Promise<D1AllResult> | D1AllResult };
+  };
+  type Client = {
+    prepare: (s: string) => Prepared;
+    batch?: unknown;
+    transaction?: unknown;
+  };
+  const client = (db as unknown as { $client: Client }).$client;
+  if (!client?.prepare) {
+    throw new Error("Database $client.prepare is required for admin raw queries");
+  }
   const prepared = client.prepare(statement);
+
+  // D1: prefer bind()+all(); detect via batch without better-sqlite3 transaction.
+  const isD1 =
+    typeof client.batch === "function" && typeof client.transaction !== "function";
+  if (isD1 || typeof prepared.bind === "function") {
+    const bound =
+      typeof prepared.bind === "function"
+        ? params.length > 0
+          ? prepared.bind(...params)
+          : prepared.bind()
+        : null;
+    if (bound) {
+      const raw = await bound.all();
+      if (Array.isArray(raw)) return raw as T[];
+      if (raw && Array.isArray(raw.results)) return raw.results;
+      return [];
+    }
+  }
+
   const result = prepared.all(...params);
-  return Array.isArray(result) ? result : await result;
+  const resolved = Array.isArray(result) ? result : await result;
+  if (Array.isArray(resolved)) return resolved;
+  if (resolved && typeof resolved === "object" && Array.isArray((resolved as D1AllResult).results)) {
+    return (resolved as D1AllResult).results as T[];
+  }
+  throw new Error("admin runRaw: unexpected driver result shape");
 }
 
 async function countPlayersRaw(db: AdminDb, whereSql: string, params: string[]): Promise<number> {
@@ -232,8 +285,16 @@ async function queryPlayersRaw(
            COALESCE(r.total_win, 0) AS total_win,
            COALESCE(fs.free_spins, 0) AS free_spins,
            COALESCE(fs.open_sessions, 0) AS open_sessions,
-           r.last_active_at
+           r.last_active_at,
+           pf.nickname AS pf_nickname,
+           pf.avatar_id AS pf_avatar_id,
+           pf.phone_e164 AS pf_phone,
+           pf.last_login_at AS pf_last_login,
+           v.level AS vip_level,
+           v.status AS vip_status
     FROM players p
+    LEFT JOIN player_profiles pf ON pf.player_id = p.id
+    LEFT JOIN player_vip v ON v.player_id = p.id
     LEFT JOIN (
       SELECT player_id, COUNT(*) AS round_count, SUM(total_bet_minor) AS total_bet,
              SUM(CASE WHEN status = 'SETTLED' THEN total_win_minor ELSE 0 END) AS total_win,
@@ -249,32 +310,77 @@ async function queryPlayersRaw(
     ORDER BY ${orderCol} ${order === "asc" ? "ASC" : "DESC"}
     LIMIT ${Math.floor(limit)} OFFSET ${Math.floor(offset)}
   `, params);
-  return rows.map((row) => ({
-    id: String(row.id),
-    walletAdapterRef: String(row.wallet_adapter_ref),
-    currency: String(row.currency),
-    status: String(row.status),
-    createdAt: String(row.created_at),
-    updatedAt: String(row.updated_at),
-    roundCount: Number(row.round_count ?? 0),
-    totalBetMinor: Number(row.total_bet ?? 0),
-    totalWinMinor: Number(row.total_win ?? 0),
-    freeSpins: Number(row.free_spins ?? 0),
-    openSessions: Number(row.open_sessions ?? 0),
-    lastActiveAt: row.last_active_at ? String(row.last_active_at) : null,
-    nickname: null,
-    avatar: null,
-    vipLevel: null,
-    lastLoginAt: null,
-    device: null,
-    ip: null,
-  }));
+  // Latest auth session IP/device (additive player_auth_sessions sidecar).
+  const authMeta = new Map<string, { ip: string | null; device: string | null }>();
+  try {
+    const ids = rows.map((r) => String(r.id));
+    if (ids.length > 0) {
+      const placeholders = ids.map(() => "?").join(",");
+      const metaRows = await runRaw<Record<string, unknown>>(
+        db,
+        `SELECT s.player_id, s.ip, s.device
+         FROM player_auth_sessions s
+         INNER JOIN (
+           SELECT player_id, MAX(COALESCE(last_seen_at, created_at)) AS mx
+           FROM player_auth_sessions
+           WHERE player_id IN (${placeholders})
+           GROUP BY player_id
+         ) t ON t.player_id = s.player_id
+            AND COALESCE(s.last_seen_at, s.created_at) = t.mx`,
+        ids,
+      );
+      for (const m of metaRows) {
+        authMeta.set(String(m.player_id), {
+          ip: m.ip ? String(m.ip) : null,
+          device: m.device ? String(m.device) : null,
+        });
+      }
+    }
+  } catch {
+    /* auth sidecar may not exist yet — leave ip/device null */
+  }
+
+  return rows.map((row) => {
+    const avatarId = row.pf_avatar_id ? String(row.pf_avatar_id) : null;
+    const meta = authMeta.get(String(row.id));
+    return {
+      id: String(row.id),
+      walletAdapterRef: String(row.wallet_adapter_ref),
+      currency: String(row.currency),
+      status: String(row.status),
+      createdAt: String(row.created_at),
+      updatedAt: String(row.updated_at),
+      roundCount: Number(row.round_count ?? 0),
+      totalBetMinor: Number(row.total_bet ?? 0),
+      totalWinMinor: Number(row.total_win ?? 0),
+      freeSpins: Number(row.free_spins ?? 0),
+      openSessions: Number(row.open_sessions ?? 0),
+      lastActiveAt: row.last_active_at ? String(row.last_active_at) : null,
+      nickname: row.pf_nickname ? String(row.pf_nickname) : null,
+      avatar: avatarId,
+      avatarId,
+      vipLevel: row.vip_level == null ? null : Number(row.vip_level),
+      vipStatus: row.vip_status ? String(row.vip_status) : null,
+      phoneMasked: maskPhoneAdmin(row.pf_phone ? String(row.pf_phone) : null),
+      lastLoginAt: row.pf_last_login ? String(row.pf_last_login) : null,
+      device: meta?.device ?? null,
+      ip: meta?.ip ?? null,
+    };
+  });
 }
 
 export async function getPlayerDetail(db: AdminDb, playerId: string) {
   const playersRows = await db.all<Record<string, unknown>>(sql`
-    SELECT id, wallet_adapter_ref, currency, status, created_at, updated_at
-    FROM players WHERE id = ${playerId} LIMIT 1
+    SELECT p.id, p.wallet_adapter_ref, p.currency, p.status, p.created_at, p.updated_at,
+           pf.nickname AS pf_nickname, pf.avatar_id AS pf_avatar_id, pf.phone_e164 AS pf_phone,
+           pf.last_login_at AS pf_last_login, pf.registered_at AS pf_registered,
+           v.level AS vip_level, v.status AS vip_status,
+           v.vip_started_at AS vip_started_at, v.vip_expires_at AS vip_expires_at
+    FROM players p
+    LEFT JOIN player_profiles pf ON pf.player_id = p.id
+    LEFT JOIN player_vip v ON v.player_id = p.id
+    WHERE p.id = ${playerId}
+    LIMIT 1
   `);
   const player = playersRows[0];
   if (!player) return null;
@@ -301,6 +407,25 @@ export async function getPlayerDetail(db: AdminDb, playerId: string) {
     FROM ledger_accounts WHERE player_id = ${playerId}
   `);
 
+  let authIp: string | null = null;
+  let authDevice: string | null = null;
+  try {
+    const authRows = await db.all<Record<string, unknown>>(sql`
+      SELECT ip, device FROM player_auth_sessions
+      WHERE player_id = ${playerId}
+      ORDER BY COALESCE(last_seen_at, created_at) DESC
+      LIMIT 1
+    `);
+    const auth = authRows[0];
+    if (auth) {
+      authIp = auth.ip ? String(auth.ip) : null;
+      authDevice = auth.device ? String(auth.device) : null;
+    }
+  } catch {
+    /* sidecar optional */
+  }
+
+  const avatarId = player.pf_avatar_id ? String(player.pf_avatar_id) : null;
   return {
     player: {
       id: String(player.id),
@@ -309,12 +434,18 @@ export async function getPlayerDetail(db: AdminDb, playerId: string) {
       status: String(player.status),
       createdAt: String(player.created_at),
       updatedAt: String(player.updated_at),
-      nickname: null,
-      avatar: null,
-      vipLevel: null,
-      lastLoginAt: null,
-      device: null,
-      ip: null,
+      nickname: player.pf_nickname ? String(player.pf_nickname) : null,
+      avatar: avatarId,
+      avatarId,
+      vipLevel: player.vip_level == null ? null : Number(player.vip_level),
+      vipStatus: player.vip_status ? String(player.vip_status) : null,
+      vipStartedAt: player.vip_started_at ? String(player.vip_started_at) : null,
+      vipExpiresAt: player.vip_expires_at ? String(player.vip_expires_at) : null,
+      phoneMasked: maskPhoneAdmin(player.pf_phone ? String(player.pf_phone) : null),
+      lastLoginAt: player.pf_last_login ? String(player.pf_last_login) : null,
+      registeredAt: player.pf_registered ? String(player.pf_registered) : null,
+      device: authDevice,
+      ip: authIp,
     },
     aggregates: {
       roundCount: Number(aggregates[0]?.round_count ?? 0),
@@ -956,12 +1087,6 @@ export async function listGameAuditEvents(db: AdminDb, query: PageQuery) {
 
 export async function listAdmins(db: AdminDb) {
   return db.all<Record<string, unknown>>(sql`
-<<<<<<< Updated upstream
-    SELECT id, username, role, status, last_login_at, created_at, updated_at
-    FROM admin_users ORDER BY created_at ASC
-  `);
-}
-=======
     SELECT u.id, u.username, u.role, u.status, u.last_login_at, u.created_at, u.updated_at,
            (SELECT s.ip FROM admin_sessions s WHERE s.admin_id = u.id
             ORDER BY s.created_at DESC LIMIT 1) AS last_login_ip,
@@ -1193,4 +1318,3 @@ export async function getSystemMonitor(db: AdminDb) {
     checkedAt: new Date().toISOString(),
   };
 }
->>>>>>> Stashed changes

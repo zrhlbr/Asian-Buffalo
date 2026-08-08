@@ -458,25 +458,15 @@ table.ab-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 }
 
 /* ---- Responsive: tablet & mobile (view + approve) ---- */
-<<<<<<< Updated upstream
-=======
 @media (max-width: 1100px) {
   .ab-chart-grid { grid-template-columns: 1fr; }
 }
->>>>>>> Stashed changes
 @media (max-width: 900px) {
   .ab-sidebar { width: 64px; }
   .ab-sidebar .ab-brand-title, .ab-sidebar .ab-brand-sub, .ab-nav-group, .ab-nav-item span { display: none; }
   .ab-nav-item { justify-content: center; padding: 11px 0; }
   .ab-content { padding: 14px; }
   .ab-chart-grid { grid-template-columns: 1fr; }
-<<<<<<< Updated upstream
-}
-@media (max-width: 640px) {
-  .ab-topbar { flex-wrap: wrap; gap: 8px; }
-  .ab-grid-stats { grid-template-columns: repeat(2, 1fr); }
-  .ab-toolbar .ab-input, .ab-toolbar .ab-select { width: 100%; }
-=======
   .ab-modal.wide { width: min(96vw, 920px); max-height: 90vh; overflow: auto; }
   .ab-stat-grid { grid-template-columns: repeat(2, 1fr); }
 }
@@ -517,5 +507,4 @@ table.ab-table { width: 100%; border-collapse: collapse; font-size: 13px; }
   .ab-toolbar { flex-wrap: wrap; }
   .ab-toolbar .ab-input, .ab-toolbar .ab-select { width: 100%; min-width: 0; }
   .ab-modal.wide { width: 100vw; max-height: 92vh; border-radius: 12px 12px 0 0; }
->>>>>>> Stashed changes
 }

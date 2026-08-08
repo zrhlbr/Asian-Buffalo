@@ -1,0 +1,584 @@
+{
+  "base": "http://127.0.0.1:5173",
+  "startedAt": "2026-08-07T17:18:18.276Z",
+  "hydrationErrors": 0,
+  "unhandledErrors": 0,
+  "blackProbeFails": 0,
+  "duplicateGameClient": 0,
+  "loopsOk": 20,
+  "navTimesMs": [
+    {
+      "step": "lobby→hub",
+      "ms": 316,
+      "loop": 0
+    },
+    {
+      "step": "hub→play",
+      "ms": 5291,
+      "loop": 0
+    },
+    {
+      "step": "play→hub",
+      "ms": 3486,
+      "loop": 0
+    },
+    {
+      "step": "hub→lobby",
+      "ms": 638,
+      "loop": 0
+    },
+    {
+      "step": "lobby→hub",
+      "ms": 514,
+      "loop": 1
+    },
+    {
+      "step": "hub→play",
+      "ms": 2212,
+      "loop": 1
+    },
+    {
+      "step": "play→hub",
+      "ms": 3542,
+      "loop": 1
+    },
+    {
+      "step": "hub→lobby",
+      "ms": 483,
+      "loop": 1
+    },
+    {
+      "step": "lobby→hub",
+      "ms": 523,
+      "loop": 2
+    },
+    {
+      "step": "hub→play",
+      "ms": 2186,
+      "loop": 2
+    },
+    {
+      "step": "play→hub",
+      "ms": 3882,
+      "loop": 2
+    },
+    {
+      "step": "hub→lobby",
+      "ms": 464,
+      "loop": 2
+    },
+    {
+      "step": "lobby→hub",
+      "ms": 575,
+      "loop": 3
+    },
+    {
+      "step": "hub→play",
+      "ms": 2285,
+      "loop": 3
+    },
+    {
+      "step": "play→hub",
+      "ms": 4499,
+      "loop": 3
+    },
+    {
+      "step": "hub→lobby",
+      "ms": 499,
+      "loop": 3
+    },
+    {
+      "step": "lobby→hub",
+      "ms": 452,
+      "loop": 4
+    },
+    {
+      "step": "hub→play",
+      "ms": 2550,
+      "loop": 4
+    },
+    {
+      "step": "play→hub",
+      "ms": 3723,
+      "loop": 4
+    },
+    {
+      "step": "hub→lobby",
+      "ms": 565,
+      "loop": 4
+    },
+    {
+      "step": "lobby→hub",
+      "ms": 524,
+      "loop": 5
+    },
+    {
+      "step": "hub→play",
+      "ms": 2984,
+      "loop": 5
+    },
+    {
+      "step": "play→hub",
+      "ms": 3716,
+      "loop": 5
+    },
+    {
+      "step": "hub→lobby",
+      "ms": 613,
+      "loop": 5
+    },
+    {
+      "step": "lobby→hub",
+      "ms": 573,
+      "loop": 6
+    },
+    {
+      "step": "hub→play",
+      "ms": 2264,
+      "loop": 6
+    },
+    {
+      "step": "play→hub",
+      "ms": 3732,
+      "loop": 6
+    },
+    {
+      "step": "hub→lobby",
+      "ms": 630,
+      "loop": 6
+    },
+    {
+      "step": "lobby→hub",
+      "ms": 547,
+      "loop": 7
+    },
+    {
+      "step": "hub→play",
+      "ms": 4279,
+      "loop": 7
+    },
+    {
+      "step": "play→hub",
+      "ms": 3690,
+      "loop": 7
+    },
+    {
+      "step": "hub→lobby",
+      "ms": 614,
+      "loop": 7
+    },
+    {
+      "step": "lobby→hub",
+      "ms": 561,
+      "loop": 8
+    },
+    {
+      "step": "hub→play",
+      "ms": 4372,
+      "loop": 8
+    },
+    {
+      "step": "play→hub",
+      "ms": 3851,
+      "loop": 8
+    },
+    {
+      "step": "hub→lobby",
+      "ms": 602,
+      "loop": 8
+    },
+    {
+      "step": "lobby→hub",
+      "ms": 438,
+      "loop": 9
+    },
+    {
+      "step": "hub→play",
+      "ms": 2224,
+      "loop": 9
+    },
+    {
+      "step": "play→hub",
+      "ms": 3404,
+      "loop": 9
+    },
+    {
+      "step": "hub→lobby",
+      "ms": 590,
+      "loop": 9
+    },
+    {
+      "step": "lobby→hub",
+      "ms": 548,
+      "loop": 10
+    },
+    {
+      "step": "hub→play",
+      "ms": 2497,
+      "loop": 10
+    },
+    {
+      "step": "play→hub",
+      "ms": 4104,
+      "loop": 10
+    },
+    {
+      "step": "hub→lobby",
+      "ms": 600,
+      "loop": 10
+    },
+    {
+      "step": "lobby→hub",
+      "ms": 549,
+      "loop": 11
+    },
+    {
+      "step": "hub→play",
+      "ms": 2473,
+      "loop": 11
+    },
+    {
+      "step": "play→hub",
+      "ms": 3828,
+      "loop": 11
+    },
+    {
+      "step": "hub→lobby",
+      "ms": 570,
+      "loop": 11
+    },
+    {
+      "step": "lobby→hub",
+      "ms": 544,
+      "loop": 12
+    },
+    {
+      "step": "hub→play",
+      "ms": 2406,
+      "loop": 12
+    },
+    {
+      "step": "play→hub",
+      "ms": 4163,
+      "loop": 12
+    },
+    {
+      "step": "hub→lobby",
+      "ms": 597,
+      "loop": 12
+    },
+    {
+      "step": "lobby→hub",
+      "ms": 544,
+      "loop": 13
+    },
+    {
+      "step": "hub→play",
+      "ms": 2405,
+      "loop": 13
+    },
+    {
+      "step": "play→hub",
+      "ms": 3753,
+      "loop": 13
+    },
+    {
+      "step": "hub→lobby",
+      "ms": 619,
+      "loop": 13
+    },
+    {
+      "step": "lobby→hub",
+      "ms": 431,
+      "loop": 14
+    },
+    {
+      "step": "hub→play",
+      "ms": 2451,
+      "loop": 14
+    },
+    {
+      "step": "play→hub",
+      "ms": 4006,
+      "loop": 14
+    },
+    {
+      "step": "hub→lobby",
+      "ms": 546,
+      "loop": 14
+    },
+    {
+      "step": "lobby→hub",
+      "ms": 497,
+      "loop": 15
+    },
+    {
+      "step": "hub→play",
+      "ms": 2422,
+      "loop": 15
+    },
+    {
+      "step": "play→hub",
+      "ms": 4346,
+      "loop": 15
+    },
+    {
+      "step": "hub→lobby",
+      "ms": 568,
+      "loop": 15
+    },
+    {
+      "step": "lobby→hub",
+      "ms": 528,
+      "loop": 16
+    },
+    {
+      "step": "hub→play",
+      "ms": 2357,
+      "loop": 16
+    },
+    {
+      "step": "play→hub",
+      "ms": 2339,
+      "loop": 16
+    },
+    {
+      "step": "hub→lobby",
+      "ms": 581,
+      "loop": 16
+    },
+    {
+      "step": "lobby→hub",
+      "ms": 518,
+      "loop": 17
+    },
+    {
+      "step": "hub→play",
+      "ms": 1994,
+      "loop": 17
+    },
+    {
+      "step": "play→hub",
+      "ms": 4456,
+      "loop": 17
+    },
+    {
+      "step": "hub→lobby",
+      "ms": 494,
+      "loop": 17
+    },
+    {
+      "step": "lobby→hub",
+      "ms": 547,
+      "loop": 18
+    },
+    {
+      "step": "hub→play",
+      "ms": 2758,
+      "loop": 18
+    },
+    {
+      "step": "play→hub",
+      "ms": 4483,
+      "loop": 18
+    },
+    {
+      "step": "hub→lobby",
+      "ms": 608,
+      "loop": 18
+    },
+    {
+      "step": "lobby→hub",
+      "ms": 573,
+      "loop": 19
+    },
+    {
+      "step": "hub→play",
+      "ms": 2500,
+      "loop": 19
+    },
+    {
+      "step": "play→hub",
+      "ms": 4031,
+      "loop": 19
+    },
+    {
+      "step": "hub→lobby",
+      "ms": 481,
+      "loop": 19
+    }
+  ],
+  "clickFeedbackMs": [
+    2,
+    10,
+    2,
+    1,
+    1,
+    9,
+    2,
+    2,
+    1,
+    8,
+    2,
+    1,
+    1,
+    11,
+    3,
+    1,
+    1,
+    11,
+    2,
+    1,
+    1,
+    8,
+    2,
+    1,
+    1,
+    12,
+    2,
+    1,
+    1,
+    10,
+    2,
+    1,
+    1,
+    10,
+    2,
+    1,
+    1,
+    12,
+    2,
+    1,
+    1,
+    11,
+    2,
+    1,
+    1,
+    11,
+    2,
+    1,
+    1,
+    10,
+    2,
+    1,
+    1,
+    14,
+    2,
+    1,
+    1,
+    11,
+    1,
+    1,
+    1,
+    10,
+    2,
+    1,
+    1,
+    10,
+    2,
+    1,
+    1,
+    10,
+    2,
+    1,
+    1,
+    12,
+    2,
+    1,
+    1,
+    12,
+    2,
+    1,
+    1,
+    11,
+    4,
+    1,
+    1,
+    13,
+    2,
+    1,
+    1,
+    12,
+    2,
+    1
+  ],
+  "locales": {
+    "zh-CN": {
+      "ok": true,
+      "dataLang": "zh-CN"
+    },
+    "en": {
+      "ok": true,
+      "dataLang": "en"
+    },
+    "my-MM": {
+      "ok": true,
+      "dataLang": "my-MM"
+    }
+  },
+  "mobileSimulated": {
+    "viewport": "390x844",
+    "network": "Slow-4G-approx",
+    "cpuThrottling": 4,
+    "note": "SIMULATED",
+    "fullCycleMs": 11988,
+    "ok": true
+  },
+  "details": [],
+  "finishedAt": "2026-08-07T17:28:31.607Z",
+  "pass": true,
+  "summary": {
+    "loopsOk": 20,
+    "hydrationErrors": 0,
+    "unhandledErrors": 0,
+    "blackProbeFails": 0,
+    "duplicateGameClient": 0,
+    "avgClickFeedbackMs": 4,
+    "avgNavByStep": [
+      {
+        "step": "lobby→hub",
+        "avgMs": 515,
+        "n": 20
+      },
+      {
+        "step": "hub→play",
+        "avgMs": 2746,
+        "n": 20
+      },
+      {
+        "step": "play→hub",
+        "avgMs": 3852,
+        "n": 20
+      },
+      {
+        "step": "hub→lobby",
+        "avgMs": 568,
+        "n": 20
+      }
+    ],
+    "locales": {
+      "zh-CN": {
+        "ok": true,
+        "dataLang": "zh-CN"
+      },
+      "en": {
+        "ok": true,
+        "dataLang": "en"
+      },
+      "my-MM": {
+        "ok": true,
+        "dataLang": "my-MM"
+      }
+    },
+    "mobileSimulated": {
+      "viewport": "390x844",
+      "network": "Slow-4G-approx",
+      "cpuThrottling": 4,
+      "note": "SIMULATED",
+      "fullCycleMs": 11988,
+      "ok": true
+    },
+    "pass": true,
+    "hydraBeforeLocale": 0
+  }
+}

@@ -1,0 +1,16 @@
+﻿# Presentation Near-Miss + LDW — SHA-256 (Option 1 whitelist)
+# Algorithm: SHA256. Paths relative to repo root. Generated 2026-08-08.
+
+644fa140bc21220805564bcf7b1247534c8ab0b96de6edf747a151edd7ab65f6  client/m5/win-presentation.ts
+69c2dd7d145e062e3af8c18a62c71be070587036ab3e47dfdc7186a52d74cf56  client/m5/game/game.ts
+4fc03e304c49c4ad37da86416c7d7aa4a8025446909f30993a0ec8f45ecd2cea  client/m5/game/reels.ts
+f88ded816559509ce51f09f97f276776a21e7f0f6e857586e87eb4d814ea818e  client/m5/audio.ts
+c57d4c17d82a852888bc425abbba84208df0b08cc472aa24c731c4da69cfa32b  client/m5/i18n.ts
+bfc2962634482f3648aac0387f75832b85a14c3cd5d2ba4fd6905310b5b2c711  tests/r1-m8-presentation-near-miss-ldw.test.mjs
+722af9821e2754b6c645578b42684dfe3022ad73a9cf33ef07aa0bd97967369c  tests/r1-m8-win-presentation.test.mjs
+57ad6700314929657f9f09a68bc36923d45bbe722138b31aa3db2b4d31ab735c  docs/m8-review/xi-game-v2/presentation-near-miss-ldw/MODULE_IMPACT_ANALYSIS.md
+dcca1ec6d30accbee6e5f4b4cf03a92294eec04d14d101ee4e36958238b8c515  docs/m8-review/xi-game-v2/presentation-near-miss-ldw/FILE_LIST.md
+4a679303820adeb99e458c401a5639d832846b190a641fc0811d09faf55bbb5f  docs/m8-review/xi-game-v2/presentation-near-miss-ldw/REVIEW_PATCH.md
+63a034e160c4cbefc13f4c33bfdeec4c5b2e4cc31d20de658f240858edef9318  docs/m8-review/xi-game-v2/presentation-near-miss-ldw/REGRESSION_REPORT.md
+86a37e67bbd14a1b0fff4720e72fbeca436fc0d4991e0eb9a6db5e280dc8a3fe  docs/m8-review/xi-game-v2/presentation-near-miss-ldw/TEST_RESULTS.md
+5ee43576272981773f93b687aceb3e6a93d5d359ece5e75843ff36975b0d04c4  docs/m8-review/xi-game-v2/presentation-near-miss-ldw/BLOCKED_CAPTURE.md

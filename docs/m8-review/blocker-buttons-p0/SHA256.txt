@@ -1,0 +1,6 @@
+a3b2dd4dd0c7a16ac62e2164f0b21ed88fd4f23dabeb421ef164b53476bc255e  client/m5/styles.css
+63e33a9facf3637edf3f6eaa49e8e60738163ceb58cb64f71aad69feaff4daa9  client/m5/ui/hud.ts
+225ee2b6b6ca1dcea1ea3304895aa6609dd7c6defe52de7773e91310b841506c  client/m5/game/game.ts
+98e005da9fff8af69503bf1a0eac1c5c75f6732b2d1bc46d0e90b9ee6391cf64  client/m5/boot.ts
+d3ed58cbefdb3476b234eb5d8034784b1dc12276d554babcdffe09ec63425a27  client/m5/i18n.ts
+dc158124318ea76df179b599fb339b97c2bfa0d468dce540b46fd819b6300dd1  app/game-client.tsx

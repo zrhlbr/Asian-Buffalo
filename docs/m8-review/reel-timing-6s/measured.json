@@ -1,0 +1,12 @@
+{
+  "source": "contract",
+  "note": "Headless wall-clock discarded (RAF throttle). Values from reel-timing.ts + unit tests.",
+  "NORMAL_SPIN_TOTAL_MS": 6000,
+  "NORMAL_REEL_STOP_MS": [4200, 4600, 5000, 5400, 5800],
+  "NORMAL_BOUNCE_MS": 200,
+  "TURBO_SPIN_TOTAL_MS": 2500,
+  "TURBO_REEL_STOP_MS": [1400, 1650, 1900, 2150, 2350],
+  "TURBO_BOUNCE_MS": 150,
+  "SPIN_SPEED_MULT": 1.35,
+  "direction": "down"
+}

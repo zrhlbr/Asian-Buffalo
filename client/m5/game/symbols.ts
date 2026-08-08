@@ -20,8 +20,20 @@ import jArt from "../assets/symbols/j.png?url";
 import tenArt from "../assets/symbols/ten.png?url";
 import nineArt from "../assets/symbols/nine.png?url";
 
-/** Runtime plate resolution — M8 Phase3: 1024 minimum (never downscale commercial PNGs to 512). */
+/**
+ * Runtime plate resolution — native master max (1024).
+ * Do NOT load upsampled 2048 review files; they add no real detail.
+ * See docs/m8-review/clarity-v2/TEXTURE_AUDIT.md ASSET_SOURCE_LIMITATION.
+ */
 const SIZE = 1024;
+/** Expected on-disk / plate dimensions for the 13 official symbols. */
+export const SYMBOL_TEXTURE_EXPECTATIONS = {
+  plateSize: SIZE,
+  nativeMaster: 1024,
+  fakeUpsample: 2048,
+  atlasTileUnsafeForHighDpr: 512,
+  count: 13,
+} as const;
 /** Logical size for procedural fallback painters (scaled up onto SIZE). */
 const LOGIC = 512;
 
@@ -270,36 +282,40 @@ async function ensureArt(id: SymbolId): Promise<void> {
       img.crossOrigin = "anonymous";
       img.onload = () => {
         const [canvas, g] = makeCanvas();
-        // M8 commercial 3D symbols already include metal frames — keep plate light
+        // Native 1:1 when source is already SIZE — avoid needless resample blur
         g.fillStyle = "#0a0603";
         g.fillRect(0, 0, SIZE, SIZE);
-        const pad = 10;
+        const pad = 8;
         g.save();
-        roundRect(g, pad, pad, SIZE - pad * 2, SIZE - pad * 2, 28);
+        roundRect(g, pad, pad, SIZE - pad * 2, SIZE - pad * 2, 26);
         g.clip();
+        // Prefer crisp copy when dimensions match plate
+        g.imageSmoothingEnabled = img.width !== SIZE || img.height !== SIZE;
+        g.imageSmoothingQuality = "high";
         g.drawImage(img, pad, pad, SIZE - pad * 2, SIZE - pad * 2);
-        // warm key-light wash (unify light direction across the set)
+        // M8 commercial 3D symbols already include metal frames — keep plate light
+        // warm key-light wash (Clarity V2: lighter — keep dimension without mushing fur/horn)
         const wash = g.createLinearGradient(0, pad, 0, SIZE - pad);
-        wash.addColorStop(0, "rgba(255, 230, 160, 0.10)");
-        wash.addColorStop(0.5, "rgba(180, 120, 255, 0.03)");
-        wash.addColorStop(1, "rgba(20, 8, 0, 0.18)");
+        wash.addColorStop(0, "rgba(255, 230, 160, 0.05)");
+        wash.addColorStop(0.5, "rgba(180, 120, 255, 0.015)");
+        wash.addColorStop(1, "rgba(20, 8, 0, 0.10)");
         g.fillStyle = wash;
         g.fillRect(pad, pad, SIZE - pad * 2, SIZE - pad * 2);
-        // subtle contact AO at bottom edge (thickness read)
-        const ao = g.createLinearGradient(0, SIZE * 0.72, 0, SIZE - pad);
+        // lighter contact AO (was crushing blacks)
+        const ao = g.createLinearGradient(0, SIZE * 0.78, 0, SIZE - pad);
         ao.addColorStop(0, "rgba(0,0,0,0)");
-        ao.addColorStop(1, "rgba(0,0,0,0.28)");
+        ao.addColorStop(1, "rgba(0,0,0,0.16)");
         g.fillStyle = ao;
-        g.fillRect(pad, SIZE * 0.72, SIZE - pad * 2, SIZE * 0.28 - pad);
+        g.fillRect(pad, SIZE * 0.78, SIZE - pad * 2, SIZE * 0.22 - pad);
         g.restore();
-        // outer specular rim — black-gold unify
+        // outer specular rim — black-gold unify (thinner — less blown buffalo face)
         const rim = g.createLinearGradient(0, 0, SIZE, SIZE);
-        rim.addColorStop(0, "rgba(255, 245, 200, 0.9)");
-        rim.addColorStop(0.45, "rgba(224, 179, 74, 0.75)");
-        rim.addColorStop(1, "rgba(40, 24, 8, 0.95)");
+        rim.addColorStop(0, "rgba(255, 245, 200, 0.78)");
+        rim.addColorStop(0.45, "rgba(224, 179, 74, 0.62)");
+        rim.addColorStop(1, "rgba(40, 24, 8, 0.9)");
         g.strokeStyle = rim;
-        g.lineWidth = 8;
-        roundRect(g, 8, 8, SIZE - 16, SIZE - 16, 30);
+        g.lineWidth = 6;
+        roundRect(g, 6, 6, SIZE - 12, SIZE - 12, 28);
         g.stroke();
         canvasCache.set(id, canvas);
         // refresh texture if already created from fallback
@@ -319,6 +335,11 @@ async function ensureArt(id: SymbolId): Promise<void> {
     pending.set(id, job);
   }
   await job;
+}
+
+/** Priority-1 symbol image URLs for Hub idle prefetch (no WebGL / Session). */
+export function listSymbolArtUrls(): string[] {
+  return Object.values(ART_URL).filter((u): u is string => typeof u === "string" && u.length > 0);
 }
 
 /** Kick off commercial art preload; resolves when all PNG slots settle (or fail). */

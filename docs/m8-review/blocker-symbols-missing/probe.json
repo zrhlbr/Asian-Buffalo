@@ -1,0 +1,205 @@
+{
+  "probe": {
+    "ok": true,
+    "meshCount": 58,
+    "visibleMeshes": 48,
+    "shaderOk": 0,
+    "shaderFail": 0,
+    "basicOk": 30,
+    "samples": [
+      {
+        "type": "MeshBasicMaterial",
+        "visible": false,
+        "opacity": 0,
+        "transparent": true,
+        "depthWrite": false,
+        "pos": {
+          "x": 0,
+          "y": 2.8510120738636373,
+          "z": 0
+        },
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        },
+        "hasMap": true
+      },
+      {
+        "type": "MeshBasicMaterial",
+        "visible": true,
+        "opacity": 1,
+        "transparent": true,
+        "depthWrite": false,
+        "pos": {
+          "x": 0,
+          "y": 1.7117187500000004,
+          "z": 0
+        },
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        },
+        "hasMap": true
+      },
+      {
+        "type": "MeshBasicMaterial",
+        "visible": true,
+        "opacity": 1,
+        "transparent": true,
+        "depthWrite": false,
+        "pos": {
+          "x": 0,
+          "y": 0.5724254261363638,
+          "z": 0
+        },
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        },
+        "hasMap": true
+      },
+      {
+        "type": "MeshBasicMaterial",
+        "visible": true,
+        "opacity": 1,
+        "transparent": true,
+        "depthWrite": false,
+        "pos": {
+          "x": 0,
+          "y": -0.5724254261363638,
+          "z": 0
+        },
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        },
+        "hasMap": true
+      },
+      {
+        "type": "MeshBasicMaterial",
+        "visible": true,
+        "opacity": 1,
+        "transparent": true,
+        "depthWrite": false,
+        "pos": {
+          "x": 0,
+          "y": -1.7117187500000004,
+          "z": 0
+        },
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        },
+        "hasMap": true
+      },
+      {
+        "type": "MeshBasicMaterial",
+        "visible": false,
+        "opacity": 0,
+        "transparent": true,
+        "depthWrite": false,
+        "pos": {
+          "x": 0,
+          "y": -2.8510120738636373,
+          "z": 0
+        },
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        },
+        "hasMap": true
+      }
+    ],
+    "pixel": {
+      "x": 640,
+      "y": 360,
+      "rgba": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "cssW": 1280,
+      "cssH": 720,
+      "bufW": 1280,
+      "bufH": 720
+    },
+    "reelScale": 1.95189101144932,
+    "reelPos": {
+      "x": 0,
+      "y": 2.32,
+      "z": 0
+    },
+    "state": {
+      "lang": "zh-CN",
+      "busy": false,
+      "freeSpins": 0,
+      "balance": 99685,
+      "bet": {
+        "roomBase": 50,
+        "betLevel": 1,
+        "betMultiplier": 1,
+        "totalBetMinor": 50
+      },
+      "sessionId": "sess_96d2c7b2889af9f8e6c4b18c",
+      "mathVersionId": "ab-math-1.0.0",
+      "auto": false,
+      "turbo": false,
+      "qualityMode": "auto",
+      "qualityTier": "high",
+      "reelScale": 1.95189101144932,
+      "reelX": 0,
+      "camZ": 9.2,
+      "fov": 46,
+      "edge": {
+        "leftNdc": -0.8794939654323523,
+        "rightNdc": 0.8804993723263739,
+        "fill": 0.879996668879363,
+        "scale": 1.95189101144932
+      },
+      "clarity": {
+        "cssW": 1280,
+        "cssH": 720,
+        "drawingBufferW": 1280,
+        "drawingBufferH": 720,
+        "pixelRatio": 1,
+        "renderScale": 1,
+        "toneMappingExposure": 1.02,
+        "bloomStrength": 0.2,
+        "bloomRadius": 0.4,
+        "bloomThreshold": 0.92,
+        "bloomEnabled": true,
+        "maxAnisotropy": 16,
+        "maxTextureSize": 8192,
+        "tier": "high"
+      }
+    }
+  },
+  "logs": [
+    "[error] Failed to load resource: the server responded with a status of 404 (Not Found)",
+    "[error] Failed to load resource: the server responded with a status of 404 (Not Found)",
+    "[error] Failed to load resource: the server responded with a status of 404 (Not Found)",
+    "[error] Failed to load resource: the server responded with a status of 404 (Not Found)",
+    "[error] Failed to load resource: the server responded with a status of 404 (Not Found)",
+    "[error] Failed to load resource: the server responded with a status of 404 (Not Found)",
+    "[error] Failed to load resource: the server responded with a status of 404 (Not Found)",
+    "[error] Failed to load resource: the server responded with a status of 404 (Not Found)",
+    "[error] Failed to load resource: the server responded with a status of 404 (Not Found)",
+    "[error] Failed to load resource: the server responded with a status of 404 (Not Found)",
+    "[error] Failed to load resource: the server responded with a status of 404 (Not Found)",
+    "[debug] [vite] connecting...",
+    "[debug] [vite] connected.",
+    "[info] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold",
+    "[warning] [GroupMarkerNotSet(crbug.com/242999)!:A0802400CC260000]Automatic fallback to software WebGL has been deprecated. Please use the --enable-unsafe-swiftshader (about:flags#enable-unsafe-swiftshader) flag to opt in to lower security guarantees for trusted content.",
+    "[warning] [.WebGL-0x4dc00604000]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels",
+    "[warning] [.WebGL-0x4dc00604000]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels",
+    "[warning] [.WebGL-0x4dc00604000]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels",
+    "[warning] [.WebGL-0x4dc00604000]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels (this message will no longer repeat)"
+  ]
+}

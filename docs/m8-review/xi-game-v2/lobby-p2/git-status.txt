@@ -1,0 +1,7 @@
+﻿?? app/xi/loading.tsx
+?? client/xi-lobby/api.ts
+?? client/xi-lobby/i18n.ts
+?? client/xi-lobby/lobby-app.tsx
+?? client/xi-lobby/lobby.css
+?? client/xi-lobby/quality.ts
+?? docs/m8-review/xi-game-v2/lobby-p2/

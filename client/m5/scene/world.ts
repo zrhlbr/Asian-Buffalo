@@ -14,10 +14,18 @@ import { BokehPass } from "three/examples/jsm/postprocessing/BokehPass.js";
 import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 import {
   detectInitialTier,
+  effectivePixelRatio,
   profileFor,
+  withSoftRenderScale,
   type QualityProfile,
 } from "../quality.ts";
 import { setSymbolMaxAnisotropy } from "../game/symbols.ts";
+
+/** Idle bloom — tight so glow does not eat symbol edges (Clarity V2). */
+export const BLOOM_IDLE = 0.2;
+export const BLOOM_FREESPIN = 0.34;
+export const BLOOM_RADIUS = 0.4;
+export const BLOOM_THRESHOLD = 0.92;
 
 /** @deprecated use QualityProfile — kept for any residual callers */
 export interface Quality {
@@ -103,6 +111,12 @@ export class World {
   private lookY = 2.35;
   private frameHalfW = 3.2;
   private baseZ = 11.2;
+  private celebWash = 0;
+  private celebDarken = 0;
+  private celebLightning = 0;
+  private celebWind = 0;
+  private celebSlowMo = 0;
+  private lightningFlash = 0;
   /** Legacy alias used by older call sites */
   readonly quality: Quality;
 
@@ -124,7 +138,7 @@ export class World {
     this.renderer.setPixelRatio(this.clarityPixelRatio());
     this.renderer.setSize(window.innerWidth, window.innerHeight, false);
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping; // HDR pipeline
-    this.renderer.toneMappingExposure = 1.05;
+    this.renderer.toneMappingExposure = 1.02;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.shadowMap.enabled = this.profile.tier !== "low";
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -188,15 +202,19 @@ export class World {
           float h = clamp(vDir.y, -0.1, 1.0);
           // slow golden-hour cycle (subtle breathing of the sky)
           float cycle = 0.5 + 0.5 * sin(uTime * 0.02);
-          vec3 zenith  = mix(vec3(0.10, 0.16, 0.34), vec3(0.15, 0.21, 0.40), cycle);
-          vec3 mid     = mix(vec3(0.62, 0.40, 0.24), vec3(0.72, 0.48, 0.29), cycle);
-          vec3 horizon = mix(vec3(0.86, 0.60, 0.35), vec3(0.95, 0.68, 0.40), cycle);
+          // Mythic dusk wash (heaven zenith + flame-mountain horizon) — visual only
+          vec3 zenith  = mix(vec3(0.11, 0.15, 0.36), vec3(0.16, 0.20, 0.42), cycle);
+          vec3 mid     = mix(vec3(0.58, 0.36, 0.26), vec3(0.70, 0.44, 0.30), cycle);
+          vec3 horizon = mix(vec3(0.90, 0.52, 0.28), vec3(0.98, 0.62, 0.34), cycle);
           vec3 col = mix(horizon, mid, smoothstep(0.0, 0.22, h));
           col = mix(col, zenith, smoothstep(0.18, 0.75, h));
           // sun disc + halo
           float d = dot(normalize(vDir), uSunDir);
           col += vec3(1.2, 0.85, 0.5) * pow(max(d, 0.0), 220.0) * 0.9; // disc
           col += vec3(1.0, 0.62, 0.30) * pow(max(d, 0.0), 8.0) * 0.15; // halo
+          // distant thunder flicker (sparse; does not occlude reel)
+          float flash = step(0.992, sin(uTime * 0.37 + vDir.x * 3.0)) * 0.08;
+          col += vec3(0.55, 0.65, 0.95) * flash * smoothstep(0.35, 0.9, h);
           // faint stars high up, twinkling
           float star = step(0.9985, fract(sin(dot(floor(vDir * 220.0).xy, vec2(12.9898, 78.233))) * 43758.5453));
           col += star * smoothstep(0.5, 0.9, h) * (0.25 + 0.2 * sin(uTime * 3.0 + vDir.x * 40.0));
@@ -385,13 +403,15 @@ export class World {
 
     // ---------- post-processing: bloom + optional god rays + DOF ----------
     this.composer = new EffectComposer(this.renderer);
+    // Keep composer buffer locked to renderer DPR (Clarity V2 — was stale after LOD)
+    this.composer.setPixelRatio(this.renderer.getPixelRatio());
     this.composer.addPass(new RenderPass(this.scene, this.camera));
-    // Slightly tighter bloom — less soft glow wash on Symbol edges
+    // Tighter bloom — glow must not eat buffalo/symbol edges
     this.bloom = new UnrealBloomPass(
       new THREE.Vector2(window.innerWidth, window.innerHeight),
-      this.profile.enableBloom ? 0.28 : 0,
-      0.55,
-      0.88,
+      this.profile.enableBloom ? BLOOM_IDLE : 0,
+      BLOOM_RADIUS,
+      BLOOM_THRESHOLD,
     );
     this.bloom.enabled = this.profile.enableBloom;
     this.composer.addPass(this.bloom);
@@ -410,12 +430,13 @@ export class World {
     this.composer.addPass(new OutputPass());
   }
 
-  /** Cap DPR for clarity; never below min(deviceDPR, 2) when profile allows ≥2. */
+  /**
+   * Cap DPR × optional last-resort renderScale.
+   * Ultra≤3 / High≤2.5 / Mid≤2 / Low≤1.5 — never drop Symbol readability first.
+   */
   private clarityPixelRatio(): number {
     const dpr = typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1;
-    const cap = this.profile.pixelRatio;
-    // Prefer sharp output: use full device DPR up to profile cap (high up to 3)
-    return Math.min(Math.max(dpr, 1), cap);
+    return effectivePixelRatio(dpr, this.profile.tier, this.profile.renderScale ?? 1);
   }
 
   /** Runtime LOD — pixel ratio / postfx / fog / shadows (grass count fixed at build). */
@@ -424,14 +445,21 @@ export class World {
     this.quality.pixelRatioCap = profile.pixelRatio;
     this.quality.enableDOF = profile.enableDof;
     this.renderer.setPixelRatio(this.clarityPixelRatio());
-    this.renderer.shadowMap.enabled = profile.tier !== "low";
-    this.sun.castShadow = profile.tier !== "low";
+    const shadows = profile.enableShadows !== false && profile.tier !== "low";
+    this.renderer.shadowMap.enabled = shadows;
+    this.sun.castShadow = shadows;
+    if (shadows && this.sun.shadow?.mapSize) {
+      const size = profile.shadowMapSize || 1024;
+      this.sun.shadow.mapSize.set(size, size);
+    }
     this.bloom.enabled = profile.enableBloom;
     this.bloom.strength = profile.enableBloom
       ? this.freeSpinMood
-        ? 0.48
-        : 0.28
+        ? BLOOM_FREESPIN
+        : BLOOM_IDLE
       : 0;
+    this.bloom.radius = BLOOM_RADIUS;
+    this.bloom.threshold = BLOOM_THRESHOLD;
     if (this.godRays) this.godRays.enabled = profile.enableGodRays;
     if (this.bokeh) this.bokeh.enabled = profile.enableDof;
     if (this.scene.fog instanceof THREE.FogExp2) {
@@ -440,14 +468,19 @@ export class World {
     this.resize();
   }
 
+  /** Soft last-resort scale (low tier only) — see DEGRADE_ORDER.renderScale. */
+  applySoftRenderScale(scale: number): void {
+    this.applyQuality(withSoftRenderScale(this.profile, scale));
+  }
+
   setFreeSpinMood(on: boolean): void {
     this.freeSpinMood = on;
     if (on) {
       this.hemi.color.setHex(0xffd4a8);
       this.hemi.groundColor.setHex(0x5a3a18);
       this.sun.intensity = 2.55;
-      this.renderer.toneMappingExposure = 1.1;
-      if (this.profile.enableBloom) this.bloom.strength = 0.48;
+      this.renderer.toneMappingExposure = 1.06;
+      if (this.profile.enableBloom) this.bloom.strength = BLOOM_FREESPIN;
       if (this.scene.fog instanceof THREE.FogExp2) {
         this.scene.fog.color.setHex(0xd4a86a);
       }
@@ -455,12 +488,51 @@ export class World {
       this.hemi.color.setHex(0xffe3b0);
       this.hemi.groundColor.setHex(0x6b4a22);
       this.sun.intensity = 2.2;
-      this.renderer.toneMappingExposure = 1.05;
-      if (this.profile.enableBloom) this.bloom.strength = 0.28;
+      this.renderer.toneMappingExposure = 1.02;
+      if (this.profile.enableBloom) this.bloom.strength = BLOOM_IDLE;
       if (this.scene.fog instanceof THREE.FogExp2) {
         this.scene.fog.color.setHex(0xc89a5c);
       }
     }
+  }
+
+  /** Runtime clarity probe for QA / capture scripts. */
+  getClarityProbe(): {
+    cssW: number;
+    cssH: number;
+    drawingBufferW: number;
+    drawingBufferH: number;
+    pixelRatio: number;
+    renderScale: number;
+    toneMappingExposure: number;
+    bloomStrength: number;
+    bloomRadius: number;
+    bloomThreshold: number;
+    bloomEnabled: boolean;
+    maxAnisotropy: number;
+    maxTextureSize: number;
+    tier: string;
+  } {
+    const css = new THREE.Vector2();
+    this.renderer.getSize(css);
+    const buf = new THREE.Vector2();
+    this.renderer.getDrawingBufferSize(buf);
+    return {
+      cssW: css.x,
+      cssH: css.y,
+      drawingBufferW: buf.x,
+      drawingBufferH: buf.y,
+      pixelRatio: this.renderer.getPixelRatio(),
+      renderScale: this.profile.renderScale ?? 1,
+      toneMappingExposure: this.renderer.toneMappingExposure,
+      bloomStrength: this.bloom.strength,
+      bloomRadius: this.bloom.radius,
+      bloomThreshold: this.bloom.threshold,
+      bloomEnabled: this.bloom.enabled,
+      maxAnisotropy: this.renderer.capabilities.getMaxAnisotropy(),
+      maxTextureSize: this.renderer.capabilities.maxTextureSize,
+      tier: this.profile.tier,
+    };
   }
 
   dispose(): void {
@@ -508,7 +580,8 @@ export class World {
       this.bloom.strength = 0;
       return;
     }
-    this.bloom.strength = strength;
+    // Cap celebration bloom so full-screen wash cannot melt symbol edges
+    this.bloom.strength = Math.min(0.52, Math.max(0, strength));
   }
 
   /** Commercial win camera shake — amplitude decays over update(). */
@@ -520,6 +593,45 @@ export class World {
   /** Brief dolly-in for Big/Mega/Ultra — UI-only presentation. */
   punchZoom(amount = 0.35): void {
     this.zoomAmp = Math.max(this.zoomAmp, amount);
+  }
+
+  /**
+   * Presentation celebration mood — color wash / darken / lightning / wind / slow-mo.
+   * Does not alter spin timing authority or grid.
+   */
+  setCelebrationMood(opts: {
+    colorWash?: number;
+    darkenBg?: number;
+    lightning?: number;
+    wind?: number;
+    slowMo?: number;
+  }): void {
+    this.celebWash = Math.max(0, Math.min(1, opts.colorWash ?? 0));
+    this.celebDarken = Math.max(0, Math.min(1, opts.darkenBg ?? 0));
+    this.celebLightning = Math.max(0, Math.min(1, opts.lightning ?? 0));
+    this.celebWind = Math.max(0, opts.wind ?? 0);
+    this.celebSlowMo = Math.max(0, Math.min(0.5, opts.slowMo ?? 0));
+    if (this.celebLightning > 0.05) {
+      this.lightningFlash = Math.max(this.lightningFlash, 0.55 + this.celebLightning * 0.45);
+    }
+  }
+
+  clearCelebrationMood(): void {
+    this.celebWash = 0;
+    this.celebDarken = 0;
+    this.celebLightning = 0;
+    this.celebWind = 0;
+    this.celebSlowMo = 0;
+    this.lightningFlash = 0;
+    if (!this.freeSpinMood) {
+      this.renderer.toneMappingExposure = 1.02;
+      this.sun.intensity = 2.2;
+    }
+  }
+
+  /** dt scale for presentation slow-mo (1 = normal). */
+  celebrationDtScale(): number {
+    return 1 - this.celebSlowMo * 0.55;
   }
 
   /** Sync camera framing to the commercial full-bleed reel half-width. */
@@ -580,18 +692,46 @@ export class World {
     this.fitCamera();
     this.renderer.setPixelRatio(this.clarityPixelRatio());
     this.renderer.setSize(w, h, false);
+    // Critical: composer must track renderer DPR or post path upscales soft
+    this.composer.setPixelRatio(this.renderer.getPixelRatio());
     this.composer.setSize(w, h);
   }
 
   update(dt: number): void {
-    this.time += dt;
+    const scaledDt = dt * this.celebrationDtScale();
+    this.time += scaledDt;
     this.skyMat.uniforms.uTime.value = this.time;
     this.grassMat.uniforms.uTime.value = this.time;
-    // wind gust cycle
+    // wind gust cycle + celebration grassland surge
     const gust = 0.75 + 0.35 * Math.sin(this.time * 0.35);
-    this.grassMat.uniforms.uWindStrength.value = this.freeSpinMood
-      ? gust * 1.35
-      : gust;
+    const windMul =
+      (this.freeSpinMood ? 1.35 : 1) * (1 + this.celebWind * 1.1);
+    this.grassMat.uniforms.uWindStrength.value = gust * windMul;
+
+    // Celebration sky / exposure (presentation only)
+    if (this.celebWash > 0.01 || this.celebDarken > 0.01 || this.lightningFlash > 0.01) {
+      const wash = this.celebWash;
+      const dark = this.celebDarken;
+      if (wash > 0.01) {
+        this.hemi.color.setRGB(
+          1.0,
+          0.82 - wash * 0.15,
+          0.55 - wash * 0.25 + wash * 0.35,
+        );
+      }
+      const baseExp = this.freeSpinMood ? 1.06 : 1.02;
+      let exp = baseExp * (1 - dark * 0.35) + wash * 0.08;
+      if (this.lightningFlash > 0.01) {
+        exp += this.lightningFlash * 0.55;
+        this.lightningFlash *= Math.exp(-6.5 * scaledDt);
+        if (this.celebLightning > 0.4 && Math.random() < scaledDt * 1.8) {
+          this.lightningFlash = 0.7 + Math.random() * 0.4;
+        }
+      }
+      this.renderer.toneMappingExposure = exp;
+      this.sun.intensity = (this.freeSpinMood ? 2.55 : 2.2) * (1 - dark * 0.25) +
+        this.lightningFlash * 1.4;
+    }
     for (const c of this.clouds) {
       c.position.x += c.userData.speed * dt * (this.freeSpinMood ? 1.4 : 1);
       if (c.position.x > 130) c.position.x = -130;
@@ -642,10 +782,15 @@ export class World {
   }
 
   render(): void {
-    if (this.profile.enableBloom || this.godRays?.enabled || this.bokeh?.enabled) {
-      this.composer.render();
-    } else {
-      this.renderer.render(this.scene, this.camera);
+    if (this.disposed) return;
+    try {
+      if (this.profile.enableBloom || this.godRays?.enabled || this.bokeh?.enabled) {
+        this.composer.render();
+      } else {
+        this.renderer.render(this.scene, this.camera);
+      }
+    } catch {
+      /* Context loss / dispose race — skip frame; never throw out of rAF */
     }
   }
 }

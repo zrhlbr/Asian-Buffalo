@@ -1,5 +1,5 @@
 /**
- * Reel timing contracts — ~10s normal spin, faster cruise, downward only.
+ * Reel timing contracts — ~6s normal spin, faster cruise, downward only.
  * Presentation-only; does not touch Wallet / Math / API.
  */
 import assert from "node:assert/strict";
@@ -21,18 +21,19 @@ const {
   spinStripDistance,
 } = await import("../client/m5/game/reel-timing.ts");
 
-test("normal spin total is ~10s with staggered stops before bounce", () => {
-  assert.equal(NORMAL_SPIN_TOTAL_MS, 10_000);
+test("normal spin total is ~6s with staggered stops before bounce", () => {
+  assert.equal(NORMAL_SPIN_TOTAL_MS, 6_000);
+  assert.deepEqual([...NORMAL_REEL_STOP_MS], [4200, 4600, 5000, 5400, 5800]);
   assert.equal(NORMAL_REEL_STOP_MS.length, 5);
-  assert.equal(NORMAL_REEL_STOP_MS[0], 8000);
-  assert.equal(NORMAL_REEL_STOP_MS[4], 9700);
   for (let i = 1; i < NORMAL_REEL_STOP_MS.length; i++) {
     assert.ok(NORMAL_REEL_STOP_MS[i] > NORMAL_REEL_STOP_MS[i - 1], "stops stagger forward");
   }
   const lastStop = NORMAL_REEL_STOP_MS[4];
   const profile = spinTimingProfile(false);
-  assert.ok(lastStop + profile.bounceMs <= NORMAL_SPIN_TOTAL_MS + 50);
-  assert.ok(lastStop + profile.bounceMs >= NORMAL_SPIN_TOTAL_MS - 200);
+  // 5800 + bounce(200) = 6000; allow ±150ms product tolerance band in contract
+  assert.ok(lastStop + profile.bounceMs <= NORMAL_SPIN_TOTAL_MS + 150);
+  assert.ok(lastStop + profile.bounceMs >= NORMAL_SPIN_TOTAL_MS - 150);
+  assert.equal(lastStop + profile.bounceMs, NORMAL_SPIN_TOTAL_MS);
 });
 
 test("turbo keeps independent fast cadence (2–3s), still uses same profile helper", () => {
@@ -81,4 +82,17 @@ test("direction remains down in reels module", () => {
   const reels = readFileSync(join(root, "client/m5/game/reels.ts"), "utf8");
   assert.match(reels, /REEL_SPIN_DIRECTION = \"down\"/);
   assert.match(reels, /spinMotionProgress/);
+});
+
+test("free spin / auto share the same non-turbo timing profile (no scattered hardcodes)", () => {
+  const game = readFileSync(join(root, "client/m5/game/game.ts"), "utf8");
+  const reels = readFileSync(join(root, "client/m5/game/reels.ts"), "utf8");
+  // Single choreography entry — turbo flag only; FS uses same spinAll path
+  assert.match(game, /spinAll\(result\.grid,\s*this\.turbo\)/);
+  assert.match(reels, /spinTimingProfile\(turbo\)/);
+  assert.doesNotMatch(game, /NORMAL_SPIN_TOTAL_MS\s*=\s*10_?000/);
+  assert.doesNotMatch(reels, /10_000|10000/);
+  const normal = spinTimingProfile(false);
+  assert.equal(normal.totalMs, 6_000);
+  assert.deepEqual([...normal.stopMs], [4200, 4600, 5000, 5400, 5800]);
 });

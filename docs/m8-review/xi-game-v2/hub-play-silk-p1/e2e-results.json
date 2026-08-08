@@ -1,0 +1,163 @@
+{
+  "base": "http://127.0.0.1:5173",
+  "startedAt": "2026-08-07T18:06:33.958Z",
+  "hydrationErrors": 0,
+  "unhandledErrors": 0,
+  "blackProbeFails": 0,
+  "duplicateGameClient": 0,
+  "duplicateCanvas": 0,
+  "hubToPlayMs": [
+    724,
+    482,
+    440,
+    436,
+    413,
+    420,
+    311,
+    477,
+    413,
+    416,
+    497,
+    350,
+    462,
+    388,
+    358,
+    201,
+    175,
+    122,
+    182,
+    213
+  ],
+  "playToHubMs": [
+    91,
+    117,
+    97,
+    84,
+    88,
+    115,
+    87,
+    94,
+    85,
+    97,
+    90,
+    59,
+    61,
+    64,
+    326,
+    43,
+    57,
+    48,
+    79,
+    81
+  ],
+  "clickFeedbackMs": [
+    24,
+    33,
+    13,
+    15,
+    12,
+    13,
+    14,
+    15,
+    13,
+    13,
+    16,
+    12,
+    12,
+    11,
+    13,
+    13,
+    13,
+    13,
+    12,
+    15
+  ],
+  "locales": {
+    "zh-CN": {
+      "ok": true
+    },
+    "en": {
+      "ok": true
+    },
+    "my-MM": {
+      "ok": true
+    }
+  },
+  "mobileSimulated": {
+    "device": "iPhone 13",
+    "hubToPlay": {
+      "n": 20,
+      "avg": 374,
+      "p50": 413,
+      "p95": 724,
+      "max": 724,
+      "min": 122
+    },
+    "playToHub": {
+      "n": 20,
+      "avg": 93,
+      "p50": 87,
+      "p95": 326,
+      "max": 326,
+      "min": 43
+    },
+    "clickFeedback": {
+      "n": 20,
+      "avg": 15,
+      "p50": 13,
+      "p95": 33,
+      "max": 33,
+      "min": 11
+    },
+    "hydrationErrors": 0,
+    "unhandledErrors": 0,
+    "blackProbeFails": 0,
+    "duplicateGameClient": 0,
+    "duplicateCanvas": 0
+  },
+  "details": [],
+  "summary": {
+    "hubToPlay": {
+      "n": 20,
+      "avg": 374,
+      "p50": 413,
+      "p95": 724,
+      "max": 724,
+      "min": 122
+    },
+    "playToHub": {
+      "n": 20,
+      "avg": 93,
+      "p50": 87,
+      "p95": 326,
+      "max": 326,
+      "min": 43
+    },
+    "clickFeedback": {
+      "n": 20,
+      "avg": 15,
+      "p50": 13,
+      "p95": 33,
+      "max": 33,
+      "min": 11
+    },
+    "hydrationErrors": 0,
+    "unhandledErrors": 0,
+    "blackProbeFails": 0,
+    "duplicateGameClient": 0,
+    "duplicateCanvas": 0,
+    "locales": {
+      "zh-CN": {
+        "ok": true
+      },
+      "en": {
+        "ok": true
+      },
+      "my-MM": {
+        "ok": true
+      }
+    }
+  },
+  "finishedAt": "2026-08-07T18:07:38.177Z",
+  "note": "20 Hub↔Play loops completed; locale nav verified separately after goto fix"
+}

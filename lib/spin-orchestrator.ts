@@ -846,6 +846,7 @@ async function completeFromPendingRow(
         betMinor: chargeMinor,
         winMinor: partial.totalWinMinor,
         isFreeGame: partial.isFreeGame,
+        roundId: working.id,
       });
       result = {
         ...partial,

@@ -1,0 +1,101 @@
+{
+  "stack": {
+    "gl": {
+      "pe": "none",
+      "z": "0",
+      "transform": "matrix(1, 0, 0, 1, 0, 0)"
+    },
+    "hud": {
+      "pe": "none",
+      "z": "1",
+      "transform": "none"
+    },
+    "loadingDone": true,
+    "loadingDisplay": "none",
+    "spinHit": {
+      "id": "spin-label",
+      "tag": "SPAN",
+      "cls": ""
+    },
+    "hasGame": true,
+    "edge": {
+      "leftNdc": -0.8787860611239975,
+      "rightNdc": 0.8812072637486726,
+      "fill": 0.8799966624363351,
+      "scale": 1.95189101144932
+    },
+    "sceneN": 47
+  },
+  "buttons": {
+    "btn-turbo": {
+      "before": {
+        "turbo": false
+      },
+      "after": {
+        "turbo": true
+      },
+      "ok": true
+    },
+    "bet-plus": {
+      "before": {
+        "bet": "50"
+      },
+      "after": {
+        "bet": "100"
+      },
+      "ok": true
+    },
+    "btn-settings": {
+      "before": {
+        "open": false
+      },
+      "after": {
+        "open": true
+      },
+      "ok": true
+    },
+    "btn-paytable": {
+      "before": {
+        "open": false
+      },
+      "after": {
+        "open": true
+      },
+      "ok": true
+    },
+    "lang": {
+      "before": "zh-CN",
+      "after": "en",
+      "ok": true
+    },
+    "sound": {
+      "cls": "icon-btn metal off",
+      "ok": true
+    },
+    "back": {
+      "ok": true
+    },
+    "btn-auto": {
+      "before": {
+        "auto": false
+      },
+      "after": {
+        "auto": true
+      },
+      "ok": true
+    },
+    "spin": {
+      "bal0": "98,210",
+      "bal1": "98,200",
+      "busyMid": true,
+      "busyEnd": false,
+      "ok": true
+    }
+  },
+  "phone": {
+    "hasGame": true,
+    "fill": 0.9938524691804295,
+    "loadingDisplay": "none"
+  },
+  "errors": []
+}

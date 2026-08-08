@@ -118,7 +118,7 @@ test("ledger posts are balanced, CAS-safe, and idempotent", () => {
 
 test("money service debit/credit/settle are idempotent and no double spend", async () => {
   const money = new MoneyService({ mode: "TEST" });
-  money.seed("p1", "MMK", 500);
+  await money.seed("p1", "MMK", 500);
   const first = await money.settleRound({
     idempotencyKey: "s1",
     playerId: "p1",
@@ -153,7 +153,7 @@ test("money service debit/credit/settle are idempotent and no double spend", asy
 
 test("rollback reverses ledger once", async () => {
   const money = new MoneyService({ mode: "TEST" });
-  money.seed("p1", "MMK", 200);
+  await money.seed("p1", "MMK", 200);
   await money.debit({
     playerId: "p1",
     currency: "MMK",
@@ -177,7 +177,7 @@ test("rollback reverses ledger once", async () => {
 
 test("timeout/unknown recovery does not double post", async () => {
   const money = new MoneyService({ mode: "TEST" });
-  money.seed("p1", "MMK", 300);
+  await money.seed("p1", "MMK", 300);
   money.forceUnknownAfterProcessing = true;
   await assert.rejects(
     () =>
@@ -229,7 +229,7 @@ test("REAL gate fail-closed; TEST gate required for money service", () => {
 test("DbWalletAdapter settleRound matches MoneyService", async () => {
   const money = new MoneyService({ mode: "TEST" });
   const adapter = new DbWalletAdapter(money);
-  adapter.creditAvailable("p1", "MMK", 100);
+  await adapter.creditAvailable("p1", "MMK", 100);
   const settled = await adapter.settleRound({
     idempotencyKey: "a1",
     playerId: "p1",
@@ -244,7 +244,7 @@ test("DbWalletAdapter settleRound matches MoneyService", async () => {
 
 test("insufficient balance fails closed before provider settle", async () => {
   const money = new MoneyService({ mode: "TEST" });
-  money.seed("p1", "MMK", 10);
+  await money.seed("p1", "MMK", 10);
   await assert.rejects(
     () =>
       money.settleRound({

@@ -1,0 +1,29 @@
+﻿*** Lobby V3 boutique polish — review patch (summary)
+*** Scope: client/xi-lobby/{lobby-app.tsx,lobby.css,i18n.ts,quality.ts}
+*** Forbidden paths: unchanged (hub/play/nav/keepalive/auth/m5 game)
+
+=== client/xi-lobby/quality.ts ===
+ particleCountForTier:
+-  low:0 med:3 high/ultra:~8*intensity
++  low:0 med:0 high:4 ultra:6  (spirit dots only)
+
+=== client/xi-lobby/lobby-app.tsx ===
++ className includes xi-lobby-v3; data-xi-lobby-v3="1"
++ hero sun breath layer (xi-hero-sun xi-hero-sun-breath)
+- hero cranes removed from lobby
++ particles class xi-hero-spirit-dots
++ vip pill class xi-vip-breath; wallet xi-wallet-breath + xi-wallet-amount
++ coming_soon modal wrapper xi-coming-soon-toast testid xi-coming-soon-modal
+
+=== client/xi-lobby/i18n.ts ===
++ lobby.comingSoon.toast in zh-CN / en / my-MM
+
+=== client/xi-lobby/lobby.css ===
++ Tier FX: LOW static; MED light clouds 5-8s; HIGH/ULTRA rays+sun
++ .xi-lobby-v3 black-gold boutique block
++ HOT glow / soon dimmer / quick unify / ticker more 44px
++ HIGH-only vip/wallet breath; safe-area bottom nav
++ reduced-motion + fx-off gates for V3 ambient
++ ornament content ◆
+
+*** End of summary patch — full file bodies live in workspace; SHA256.txt hashes sources.

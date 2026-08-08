@@ -1,0 +1,10 @@
+﻿497f88cf2f0bdaffa59e355eb2fcbcc00f2f73e3616565dc8696a06e53014567  app/page.tsx
+b107c676b7b9a034ec9dfe61d7734c57dc6550d5d810100180dc0423ed7b2f1b  app/game/page.tsx
+6eeba6a6572ac7993185509486ad615b435cad996df26a28db47ce1996b6d148  app/admin/login/page.tsx
+9641db8b1d7ba3107526efec60900e9acdb90820fae9fefe5a77f65f8bef7569  app/xi/page.tsx
+2068007eb6ff391077848bd91ab002ab103254524f2b9b690eb93c8e09320d7d  next.config.ts
+b0ff2904296cd3ebf81b6c650bdd7151686ce9806f09ddaace63179a244f0464  client/m5/styles.css
+b80cc7fc97bdb5b725402baedea9cc54f7f6f3a7a33f8e8ab13aea899d68bd0b  tests/xi-lobby-phase1.test.mjs
+004f8eb21f0e0f9978f8434bb9fda4ccabb6c8a8cc30b614897fc919a4098f57  tests/xi-integrated-rc.test.mjs
+751172390f9ef2d92303b6418beb9bd588bfe11038d7217a13ca7e88a965811d  docs/m8-review/xi-game-v2/integrated-rc/_smoke-integrated.mjs
+0e61601fe8dbe67d329d6a0a2327e8738b9af5ce74fe801e1ac838290957fc6b  docs/m8-review/xi-game-v2/integrated-rc/PRE_MERGE_SNAPSHOT.md

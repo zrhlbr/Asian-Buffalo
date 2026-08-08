@@ -1,0 +1,61 @@
+{
+  "base": "http://127.0.0.1:5173",
+  "results": [
+    {
+      "id": "S1_lobby",
+      "ok": true,
+      "detail": "status=200 root=true url=http://127.0.0.1:5173/xi"
+    },
+    {
+      "id": "S2_card_to_hub",
+      "ok": true,
+      "detail": "href=/xi/bull-demon-king url=/xi/bull-demon-king"
+    },
+    {
+      "id": "S3_start_to_play",
+      "ok": true,
+      "detail": "path=/xi/bull-demon-king/play play=true gl=true"
+    },
+    {
+      "id": "S4_play_back_hub",
+      "ok": true,
+      "detail": "path=/xi/bull-demon-king"
+    },
+    {
+      "id": "S5_hub_back_lobby",
+      "ok": true,
+      "detail": "path=/xi"
+    },
+    {
+      "id": "S6_browser_back_chain",
+      "ok": true,
+      "detail": "afterPlayBack=/xi/bull-demon-king afterHubBack=/xi"
+    },
+    {
+      "id": "S7_legacy_bdk_redirect",
+      "ok": true,
+      "detail": "final=/xi/bull-demon-king status=200"
+    },
+    {
+      "id": "I18N_zh-CN",
+      "ok": true,
+      "detail": "start=\"开始游戏\" backXi=\"← 返回西游戏\" backHub=\"← 返回牛魔王首页\" title=\"西游戏之牛魔王\""
+    },
+    {
+      "id": "I18N_en",
+      "ok": true,
+      "detail": "start=\"Start game\" backXi=\"← Back to XI GAME\" backHub=\"← Back to Bull Demon King home\" title=\"XI GAME · Bull Demon King\""
+    },
+    {
+      "id": "I18N_my-MM",
+      "ok": true,
+      "detail": "start=\"ဂိမ်းစတင်မည်\" backXi=\"← XI GAME သို့ ပြန်ရန်\" backHub=\"← နွားနတ်ဆိုးဘုရင် ပင်မသို့\" title=\"XI GAME · နွားနတ်ဆိုးဘုရင်\""
+    },
+    {
+      "id": "STACK_gl_hud",
+      "ok": true,
+      "detail": "{\"hasGl\":true,\"hasHud\":true,\"glTransform\":\"matrix(1, 0, 0, 1, 0, 0)\",\"hudTransform\":\"none\"}"
+    }
+  ],
+  "failed": []
+}

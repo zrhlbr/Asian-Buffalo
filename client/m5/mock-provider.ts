@@ -71,6 +71,14 @@ export class MockProvider implements GameProvider {
     return null;
   }
 
+  async refreshBalance(): Promise<number> {
+    return this.balance;
+  }
+
+  async fetchAnnouncements() {
+    return [];
+  }
+
   async spin(req: SpinRequest): Promise<PresentationSpinResult> {
     const totalBet = req.roomBase * req.betLevel * req.betMultiplier;
     const inFree = this.freeGamesRemaining > 0;

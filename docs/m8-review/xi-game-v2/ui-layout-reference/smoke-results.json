@@ -1,0 +1,117 @@
+{
+  "base": "http://localhost:5174",
+  "checks": [
+    {
+      "name": "topbar",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "lang-direct",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "lang-zh",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "lang-my",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "lang-en",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "hero-img",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "ticker",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "recommended",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "bdk-card",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "quick",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "promo",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "bottom-nav",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "section-order",
+      "ok": true,
+      "detail": "[135.1875,368.96875,405.015625,633.265625,768.421875,780.234375]"
+    },
+    {
+      "name": "lang-switch-en",
+      "ok": true,
+      "detail": "XI GAME"
+    },
+    {
+      "name": "lang-persist",
+      "ok": true,
+      "detail": "en"
+    },
+    {
+      "name": "hub-lang",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "hub-start",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "hub-breadcrumb",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "play-gl-present",
+      "ok": true,
+      "detail": "{\"ok\":true,\"transform\":\"matrix(1, 0, 0, 1, 0, 0)\",\"display\":\"block\",\"visibility\":\"visible\",\"black\":\"rgb(11, 7, 3)\"}"
+    },
+    {
+      "name": "play-gl-translateZ-kept",
+      "ok": true,
+      "detail": "matrix(1, 0, 0, 1, 0, 0)"
+    },
+    {
+      "name": "play-back-hub",
+      "ok": true,
+      "detail": "http://localhost:5174/xi/bull-demon-king"
+    }
+  ],
+  "shots": [
+    "D:\\Asian-Buffalo-R1-M8-Cursor-Clean\\docs\\m8-review\\xi-game-v2\\ui-layout-reference\\screenshots\\01-lobby-phone-after.png",
+    "D:\\Asian-Buffalo-R1-M8-Cursor-Clean\\docs\\m8-review\\xi-game-v2\\ui-layout-reference\\screenshots\\02-hub-phone-after.png",
+    "D:\\Asian-Buffalo-R1-M8-Cursor-Clean\\docs\\m8-review\\xi-game-v2\\ui-layout-reference\\screenshots\\03-play-after.png",
+    "D:\\Asian-Buffalo-R1-M8-Cursor-Clean\\docs\\m8-review\\xi-game-v2\\ui-layout-reference\\screenshots\\04-lobby-tablet-after.png",
+    "D:\\Asian-Buffalo-R1-M8-Cursor-Clean\\docs\\m8-review\\xi-game-v2\\ui-layout-reference\\screenshots\\05-lobby-pc-after.png"
+  ]
+}

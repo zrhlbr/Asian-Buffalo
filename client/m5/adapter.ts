@@ -76,6 +76,16 @@ export interface PresentationSpinResult {
   mathVersion: string;
 }
 
+export type PlayerAnnouncementDto = {
+  id: string;
+  title: string;
+  level: string;
+  locales: { zh: string; en: string; my: string };
+  publishAt: string | null;
+  expiresAt: string | null;
+  createdAt: string;
+};
+
 export interface GameProvider {
   ensureReady(): Promise<void>;
   getBalance(): number;
@@ -87,19 +97,40 @@ export interface GameProvider {
   canBet(totalBetMinor: number): boolean;
   spin(req: SpinRequest): Promise<PresentationSpinResult>;
   recoverLastRound(): Promise<PresentationSpinResult | null>;
+  /** Re-read formal wallet balance (login/resume/recovery). */
+  refreshBalance(): Promise<number>;
+  /** Live PUBLISHED announcements (trilingual); empty if none. */
+  fetchAnnouncements(): Promise<PlayerAnnouncementDto[]>;
 }
 
 /**
  * UI_ONLY celebration thresholds (× total bet).
  * Presentation only — must never alter totalWin, Balance, Ledger, RTP, or Settlement.
+ * Super / Epic sit between Ultra and Jackpot (commercial ladder).
  */
-export const WIN_TIERS = { big: 10, mega: 25, ultra: 50, jackpot: 100 } as const;
+export const WIN_TIERS = {
+  big: 10,
+  mega: 25,
+  ultra: 50,
+  super: 70,
+  epic: 85,
+  jackpot: 100,
+} as const;
 export const WIN_TIERS_UI_ONLY = true;
-export type WinTier = "none" | "big" | "mega" | "ultra" | "jackpot";
+export type WinTier =
+  | "none"
+  | "big"
+  | "mega"
+  | "ultra"
+  | "super"
+  | "epic"
+  | "jackpot";
 
 export function winTier(winMinor: number, totalBetMinor: number): WinTier {
   const x = totalBetMinor > 0 ? winMinor / totalBetMinor : 0;
   if (x >= WIN_TIERS.jackpot) return "jackpot";
+  if (x >= WIN_TIERS.epic) return "epic";
+  if (x >= WIN_TIERS.super) return "super";
   if (x >= WIN_TIERS.ultra) return "ultra";
   if (x >= WIN_TIERS.mega) return "mega";
   if (x >= WIN_TIERS.big) return "big";

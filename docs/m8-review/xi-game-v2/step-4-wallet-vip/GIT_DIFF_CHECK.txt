@@ -1,0 +1,8 @@
+﻿git : warning: in the working copy of 'client/xi-lobby/lobby.css', LF will be replaced by CRLF the next time Git touche
+s it
+所在位置 C:\Users\zhaor\AppData\Local\Temp\ps-script-1212c0b8-ce55-4cc6-a99b-4c5a6f9f862c.ps1:121 字符: 1
++ git diff --check 2>&1 | Out-File -Encoding utf8 "docs/m8-review/xi-ga ...
++ ~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (warning: in the... Git touches it:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 

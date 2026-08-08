@@ -1,0 +1,3706 @@
+/* XI GAME lobby ? additive; does not touch #gl / #hud stacking */
+@import url("https://fonts.googleapis.com/css2?family=ZCOOL+XiaoWei&family=Noto+Sans+SC:wght@500;700&family=Noto+Sans+Myanmar:wght@500;700&family=Cinzel:wght@700&display=swap");
+
+.xi-lobby-root {
+  --xi-ink: #0c1018;
+  --xi-dusk: #1a2233;
+  --xi-gold: #e8c56a;
+  --xi-gold-deep: #b8892d;
+  --xi-vermilion: #c43c2c;
+  --xi-jade: #3d8b7a;
+  --xi-jade-deep: #1a4a40;
+  --xi-mist: rgba(232, 220, 190, 0.88);
+  --xi-panel: rgba(14, 18, 28, 0.78);
+  --xi-line: rgba(232, 197, 106, 0.28);
+  /* Display calligraphy ONLY for zh-CN titles ? en/my stay readable */
+  --xi-font-display: "Cinzel", "Noto Sans SC", "Noto Sans Myanmar", Georgia, serif;
+  --xi-font-body: "Noto Sans SC", "Noto Sans Myanmar", "Source Sans 3", "Segoe UI", sans-serif;
+
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  overflow-x: hidden;
+  overflow-y: auto;
+  color: var(--xi-mist);
+  font-family: var(--xi-font-body);
+  background:
+    radial-gradient(90% 55% at 50% -5%, rgba(90, 140, 160, 0.22), transparent 55%),
+    radial-gradient(120% 80% at 50% -10%, #2a3348 0%, var(--xi-ink) 55%, #07090f 100%);
+  -webkit-overflow-scrolling: touch;
+}
+
+.xi-lobby-root[data-lang="zh-CN"],
+.xi-lobby-root:lang(zh-CN) {
+  --xi-font-display: "ZCOOL XiaoWei", "Noto Serif SC", "Source Han Serif SC", "Songti SC", Georgia, serif;
+}
+
+.xi-lobby-root * {
+  box-sizing: border-box;
+}
+
+.xi-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.4fr) auto;
+  gap: 0.4rem;
+  align-items: center;
+  padding: 0.5rem 0.65rem;
+  background: linear-gradient(180deg, rgba(8, 10, 16, 0.92), rgba(8, 10, 16, 0.72));
+  border-bottom: 1px solid var(--xi-line);
+  backdrop-filter: blur(10px);
+}
+
+/* Jade tablet + gold edge + cloud motif (CSS) */
+.xi-topbar.xi-jade-tablet {
+  position: sticky;
+  margin: 0.35rem 0.5rem 0;
+  border-radius: 0.85rem;
+  border: 1px solid rgba(232, 197, 106, 0.55);
+  box-shadow:
+    0 0 0 1px rgba(61, 139, 122, 0.35) inset,
+    0 0 0 3px rgba(20, 40, 36, 0.55) inset,
+    0 8px 24px rgba(0, 0, 0, 0.35);
+  background:
+    linear-gradient(180deg, rgba(36, 72, 64, 0.92), rgba(12, 22, 28, 0.9) 55%, rgba(8, 12, 18, 0.94));
+  overflow: hidden;
+}
+
+.xi-tablet-cloud {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(18% 80% at 8% 120%, rgba(255, 255, 255, 0.12), transparent 70%),
+    radial-gradient(22% 90% at 92% 110%, rgba(255, 255, 255, 0.1), transparent 72%),
+    linear-gradient(90deg, transparent, rgba(232, 197, 106, 0.12), transparent);
+  opacity: 0.85;
+}
+
+.xi-jade-tablet .xi-top-left,
+.xi-jade-tablet .xi-top-center,
+.xi-jade-tablet .xi-top-right {
+  position: relative;
+  z-index: 1;
+}
+
+.xi-jade-tablet .xi-balance-chip {
+  border-color: rgba(61, 139, 122, 0.4);
+  background: rgba(20, 40, 36, 0.45);
+}
+
+.xi-jade-tablet .xi-icon-btn {
+  border-color: rgba(232, 197, 106, 0.35);
+  background: linear-gradient(180deg, rgba(61, 139, 122, 0.22), rgba(255, 255, 255, 0.03));
+}
+
+@media (max-width: 520px) {
+  .xi-topbar {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "user actions"
+      "balances balances";
+    row-gap: 0.35rem;
+  }
+  .xi-top-left { grid-area: user; }
+  .xi-top-center {
+    grid-area: balances;
+    justify-content: flex-start;
+  }
+  .xi-top-right { grid-area: actions; }
+  .xi-icon-btn {
+    padding: 0.25rem 0.35rem;
+    font-size: 0.62rem;
+  }
+}
+
+.xi-top-left,
+.xi-top-center,
+.xi-top-right {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 0;
+}
+
+.xi-top-center {
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.xi-top-right {
+  justify-content: flex-end;
+}
+
+.xi-avatar {
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 50%;
+  border: 1px solid var(--xi-gold);
+  background:
+    radial-gradient(circle at 35% 30%, #f0d78a, transparent 45%),
+    linear-gradient(145deg, #3a2a14, #1a1208);
+  flex-shrink: 0;
+}
+
+.xi-user-meta {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.15;
+}
+
+.xi-nickname {
+  font-family: var(--xi-font-display);
+  font-size: 0.95rem;
+  color: #f4e7c2;
+  white-space:nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 7.5rem;
+}
+
+.xi-vip-pill {
+  appearance: none;
+  border: 0;
+  font-size: 0.68rem;
+  letter-spacing: 0.04em;
+  color: #1a1208;
+  background: linear-gradient(90deg, var(--xi-gold), #f3e2a8);
+  border-radius: 999px;
+  padding: 0.1rem 0.45rem;
+  width: fit-content;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.xi-balance-chip {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.28rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid var(--xi-line);
+  background: rgba(255, 255, 255, 0.04);
+  font-size: 0.72rem;
+}
+
+.xi-balance-chip strong {
+  color: #fff6d8;
+  font-variant-numeric: tabular-nums;
+}
+
+.xi-balance-chip.is-error strong,
+.xi-balance-chip.is-loading strong {
+  color: rgba(244, 231, 194, 0.65);
+  font-weight: 500;
+}
+
+.xi-icon-btn,
+.xi-recharge-btn {
+  appearance: none;
+  border: 1px solid var(--xi-line);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.02));
+  color: var(--xi-mist);
+  border-radius: 0.55rem;
+  min-height: 2rem;
+  padding: 0.25rem 0.55rem;
+  font-size: 0.72rem;
+  cursor: pointer;
+}
+
+.xi-recharge-btn {
+  border-color: rgba(196, 60, 44, 0.55);
+  background: linear-gradient(180deg, #d4553f, #8f2418);
+  color: #fff8e8;
+  font-weight: 700;
+}
+
+.xi-icon-btn:active,
+.xi-recharge-btn:active,
+.xi-feat-btn:active,
+.xi-game-card:active,
+.xi-nav-btn:active {
+  transform: translateY(1px) scale(0.98);
+}
+
+.xi-hero {
+  position: relative;
+  margin: 0.65rem 0.75rem 0.4rem;
+  min-height: clamp(11rem, 34vw, 17rem);
+  border-radius: 1rem;
+  overflow: hidden;
+  border: 1px solid var(--xi-line);
+  isolation: isolate;
+  transform: translateZ(0);
+  box-shadow:
+    0 0 0 1px rgba(232, 197, 106, 0.18) inset,
+    0 12px 36px rgba(0, 0, 0, 0.35);
+}
+
+.xi-hero-mythic {
+  border-color: rgba(232, 197, 106, 0.42);
+}
+
+.xi-hero-bg {
+  position: absolute;
+  inset: -8%;
+  background:
+    radial-gradient(42% 48% at 72% 18%, rgba(255, 220, 140, 0.42), transparent 62%),
+    radial-gradient(50% 55% at 18% 78%, rgba(61, 139, 122, 0.18), transparent 70%),
+    linear-gradient(155deg, #152038 0%, #2a1c28 40%, #0c1424 100%);
+  will-change: transform;
+  animation: xi-breath 11s ease-in-out infinite;
+}
+
+.xi-hero-sky {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(180deg, rgba(120, 160, 200, 0.22) 0%, transparent 42%),
+    radial-gradient(60% 40% at 50% 0%, rgba(255, 236, 180, 0.2), transparent 70%);
+  pointer-events: none;
+}
+
+.xi-hero-rays {
+  position: absolute;
+  inset: -20%;
+  background:
+    conic-gradient(from 210deg at 70% 18%,
+      transparent 0deg,
+      rgba(255, 220, 140, 0.08) 12deg,
+      transparent 24deg,
+      rgba(255, 230, 160, 0.1) 40deg,
+      transparent 55deg,
+      rgba(255, 210, 120, 0.07) 70deg,
+      transparent 90deg);
+  mix-blend-mode: screen;
+  animation: xi-rays 18s linear infinite;
+  pointer-events: none;
+  opacity: 0.85;
+}
+
+.xi-hero-mountains {
+  position: absolute;
+  left: -5%;
+  right: -5%;
+  bottom: 0;
+  height: 55%;
+  background:
+    linear-gradient(180deg, transparent 0%, rgba(8, 12, 22, 0.15) 30%, rgba(8, 12, 22, 0.55) 100%),
+    radial-gradient(40% 70% at 18% 100%, #1a2438 0%, transparent 70%),
+    radial-gradient(45% 80% at 52% 110%, #243048 0%, transparent 68%),
+    radial-gradient(38% 70% at 88% 100%, #1c2030 0%, transparent 70%);
+  clip-path: polygon(0 100%, 0 48%, 12% 58%, 22% 42%, 34% 55%, 48% 35%, 58% 48%, 70% 30%, 82% 50%, 92% 38%, 100% 52%, 100% 100%);
+  pointer-events: none;
+  opacity: 0.92;
+}
+
+.xi-hero-palace {
+  position: absolute;
+  left: 58%;
+  bottom: 28%;
+  width: 22%;
+  height: 28%;
+  background:
+    linear-gradient(180deg, rgba(255, 220, 150, 0.35), transparent 40%),
+    linear-gradient(90deg, transparent, rgba(232, 197, 106, 0.45) 20%, rgba(232, 197, 106, 0.55) 50%, rgba(232, 197, 106, 0.4) 80%, transparent);
+  clip-path: polygon(8% 100%, 12% 55%, 22% 55%, 28% 20%, 38% 20%, 42% 0%, 58% 0%, 62% 20%, 72% 20%, 78% 55%, 88% 55%, 92% 100%);
+  filter: drop-shadow(0 0 12px rgba(255, 210, 120, 0.35));
+  opacity: 0.55;
+  pointer-events: none;
+  animation: xi-palace 8s ease-in-out infinite;
+}
+
+.xi-hero-cloudsea {
+  position: absolute;
+  left: -10%;
+  right: -10%;
+  bottom: 8%;
+  height: 38%;
+  background:
+    radial-gradient(20% 55% at 15% 60%, rgba(255, 255, 255, 0.22), transparent 70%),
+    radial-gradient(28% 60% at 45% 70%, rgba(255, 255, 255, 0.18), transparent 72%),
+    radial-gradient(24% 55% at 78% 55%, rgba(255, 255, 255, 0.2), transparent 70%);
+  filter: blur(2px);
+  animation: xi-cloudsea 36s linear infinite;
+  pointer-events: none;
+  opacity: 0.75;
+}
+
+.xi-hero-clouds {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(18% 22% at 15% 28%, rgba(255, 255, 255, 0.16), transparent 70%),
+    radial-gradient(22% 28% at 70% 20%, rgba(255, 255, 255, 0.12), transparent 72%),
+    radial-gradient(16% 20% at 45% 50%, rgba(255, 255, 255, 0.1), transparent 70%);
+  animation: xi-clouds 28s linear infinite;
+  opacity: 0.9;
+  pointer-events: none;
+}
+
+.xi-hero-mist {
+  position: absolute;
+  inset: auto 0 0;
+  height: 45%;
+  background: linear-gradient(180deg, transparent, rgba(200, 220, 230, 0.12) 40%, rgba(12, 18, 28, 0.35));
+  pointer-events: none;
+  animation: xi-mist 10s ease-in-out infinite;
+}
+
+.xi-hero-sun {
+  position: absolute;
+  width: 8rem;
+  height: 8rem;
+  right: 14%;
+  top: 6%;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle, rgba(255, 236, 180, 0.7), rgba(255, 190, 80, 0.18) 45%, transparent 70%);
+  filter: blur(0.5px);
+  animation: xi-sun 6s ease-in-out infinite;
+  pointer-events: none;
+}
+
+.xi-hero-cranes {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.xi-hero-cranes i {
+  position: absolute;
+  width: 5px;
+  height: 2px;
+  background: rgba(255, 255, 255, 0.75);
+  border-radius: 40%;
+  box-shadow: 0 0 4px rgba(255, 255, 255, 0.5);
+  opacity: 0;
+  animation: xi-crane 14s linear infinite;
+}
+
+.xi-hero-cranes i:nth-child(1) { top: 28%; left: 10%; animation-delay: 0s; }
+.xi-hero-cranes i:nth-child(2) { top: 36%; left: 22%; animation-delay: 4s; width: 4px; }
+.xi-hero-cranes i:nth-child(3) { top: 22%; left: 40%; animation-delay: 8s; width: 6px; }
+
+.xi-hero-particles {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.xi-hero-particles span {
+  position: absolute;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: rgba(255, 230, 160, 0.85);
+  box-shadow: 0 0 6px rgba(255, 210, 120, 0.55);
+  animation: xi-particle 8s linear infinite;
+  opacity: 0;
+}
+
+.xi-hero-particles span:nth-child(1) { left: 12%; animation-delay: 0s; }
+.xi-hero-particles span:nth-child(2) { left: 28%; animation-delay: 1.2s; }
+.xi-hero-particles span:nth-child(3) { left: 46%; animation-delay: 2.1s; }
+.xi-hero-particles span:nth-child(4) { left: 63%; animation-delay: 0.7s; }
+.xi-hero-particles span:nth-child(5) { left: 81%; animation-delay: 3s; }
+.xi-hero-particles span:nth-child(6) { left: 55%; animation-delay: 4.2s; }
+.xi-hero-particles span:nth-child(7) { left: 35%; animation-delay: 5.1s; width: 2px; height: 2px; }
+.xi-hero-particles span:nth-child(8) { left: 72%; animation-delay: 6s; width: 2px; height: 2px; }
+
+.xi-hero-copy {
+  position: relative;
+  z-index: 2;
+  padding: 1.15rem 1.1rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-height: inherit;
+  justify-content: flex-end;
+}
+
+.xi-hero-brand {
+  font-family: var(--xi-font-display);
+  font-size: clamp(1.8rem, 6vw, 2.6rem);
+  color: #fff2c8;
+  text-shadow: 0 2px 18px rgba(0, 0, 0, 0.45), 0 0 28px rgba(255, 210, 120, 0.25);
+  letter-spacing: 0.04em;
+}
+
+.xi-hero-sub {
+  font-size: 0.85rem;
+  color: rgba(255, 240, 210, 0.82);
+}
+
+.xi-hero-journey {
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+  color: rgba(200, 235, 220, 0.88);
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.4);
+}
+
+.xi-hero-gap {
+  margin-top: 0.35rem;
+  font-size: 0.7rem;
+  color: rgba(255, 220, 160, 0.7);
+  border: 1px dashed rgba(232, 197, 106, 0.35);
+  border-radius: 999px;
+  padding: 0.2rem 0.55rem;
+  width: fit-content;
+  backdrop-filter: blur(4px);
+  background: rgba(8, 12, 20, 0.25);
+}
+
+@keyframes xi-breath {
+  0%, 100% { transform: scale(1) translate3d(0, 0, 0); }
+  50% { transform: scale(1.03) translate3d(0, -1.2%, 0); }
+}
+
+@keyframes xi-clouds {
+  0% { transform: translate3d(0, 0, 0); }
+  100% { transform: translate3d(-8%, 0, 0); }
+}
+
+@keyframes xi-cloudsea {
+  0% { transform: translate3d(0, 0, 0); }
+  100% { transform: translate3d(-6%, -2%, 0); }
+}
+
+@keyframes xi-rays {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+@keyframes xi-palace {
+  0%, 100% { opacity: 0.48; filter: drop-shadow(0 0 10px rgba(255, 210, 120, 0.28)); }
+  50% { opacity: 0.62; filter: drop-shadow(0 0 18px rgba(255, 220, 140, 0.45)); }
+}
+
+@keyframes xi-mist {
+  0%, 100% { opacity: 0.7; }
+  50% { opacity: 1; }
+}
+
+@keyframes xi-crane {
+  0% { transform: translate3d(0, 0, 0); opacity: 0; }
+  10% { opacity: 0.85; }
+  90% { opacity: 0.5; }
+  100% { transform: translate3d(55vw, -18%, 0); opacity: 0; }
+}
+
+@keyframes xi-sun {
+  0%, 100% { opacity: 0.75; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.06); }
+}
+
+@keyframes xi-particle {
+  0% { transform: translate3d(0, 110%, 0); opacity: 0; }
+  15% { opacity: 0.9; }
+  100% { transform: translate3d(12px, -20%, 0); opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .xi-hero-bg,
+  .xi-hero-clouds,
+  .xi-hero-cloudsea,
+  .xi-hero-rays,
+  .xi-hero-sun,
+  .xi-hero-palace,
+  .xi-hero-mist,
+  .xi-hero-cranes i,
+  .xi-hero-particles span {
+    animation: none;
+  }
+}
+
+.xi-main {
+  padding: 0.35rem 0.75rem 6.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.xi-layout-v2 .xi-main {
+  /* Bottom fixed nav clearance ? no promo banner spacer */
+  padding-bottom: calc(5.85rem + env(safe-area-inset-bottom, 0px));
+  gap: 0.75rem;
+}
+
+.xi-section-title {
+  font-family: var(--xi-font-display);
+  font-size: 1.05rem;
+  color: #f3e2a8;
+  margin: 0 0 0.45rem;
+}
+
+.xi-cats {
+  display: flex;
+  gap: 0.4rem;
+  overflow-x: auto;
+  padding-bottom: 0.15rem;
+  scrollbar-width: none;
+}
+
+.xi-cats::-webkit-scrollbar { display: none; }
+
+.xi-cat-chip {
+  flex: 0 0 auto;
+  border: 1px solid var(--xi-line);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--xi-mist);
+  border-radius: 999px;
+  padding: 0.35rem 0.75rem;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.xi-cat-chip.is-active {
+  background: linear-gradient(90deg, rgba(232, 197, 106, 0.28), rgba(196, 60, 44, 0.2));
+  border-color: rgba(232, 197, 106, 0.55);
+  color: #fff4d2;
+}
+
+.xi-game-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.65rem;
+}
+
+@media (min-width: 720px) {
+  .xi-game-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .xi-topbar {
+    padding-inline: 1.1rem;
+  }
+  .xi-main,
+  .xi-hero {
+    margin-inline: auto;
+    max-width: 960px;
+  }
+  .xi-main {
+    padding-inline: 1.1rem;
+    width: 100%;
+  }
+  .xi-hero {
+    width: calc(100% - 2.2rem);
+  }
+}
+
+.xi-game-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 9.5rem;
+  border-radius: 0.85rem;
+  border: 1px solid var(--xi-line);
+  background:
+    linear-gradient(160deg, rgba(255, 255, 255, 0.06), transparent 40%),
+    linear-gradient(180deg, #243049, #151b28);
+  color: inherit;
+  text-align: left;
+  padding: 0.7rem;
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.xi-game-card.is-soon {
+  opacity: 0.82;
+}
+
+.xi-game-card.is-soon::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, transparent 40%, rgba(0, 0, 0, 0.35));
+  pointer-events: none;
+}
+
+.xi-game-art {
+  position: absolute;
+  inset: auto -10% -20% auto;
+  width: 55%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: radial-gradient(circle at 40% 35%, rgba(232, 197, 106, 0.35), transparent 65%);
+  opacity: 0.9;
+}
+
+.xi-game-card[data-id="bdk"] {
+  background:
+    linear-gradient(160deg, rgba(196, 60, 44, 0.28), transparent 45%),
+    linear-gradient(180deg, #3a2418, #151018);
+}
+
+.xi-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  position: relative;
+  z-index: 1;
+}
+
+.xi-badge {
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  padding: 0.12rem 0.35rem;
+  border-radius: 0.3rem;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.xi-badge.hot { color: #ffb4a8; border-color: rgba(255, 120, 90, 0.45); }
+.xi-badge.new { color: #a8e7ff; border-color: rgba(120, 200, 255, 0.4); }
+.xi-badge.jackpot { color: #ffe08a; border-color: rgba(232, 197, 106, 0.55); }
+.xi-badge.recommended { color: #c8f0df; border-color: rgba(61, 139, 122, 0.5); }
+
+.xi-game-title {
+  position: relative;
+  z-index: 1;
+  margin-top: auto;
+  font-family: var(--xi-font-display);
+  font-size: 1.05rem;
+  color: #fff1c8;
+}
+
+.xi-game-meta {
+  position: relative;
+  z-index: 1;
+  margin-top: 0.2rem;
+  font-size: 0.68rem;
+  color: rgba(255, 240, 210, 0.7);
+  display: flex;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+
+.xi-feat-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.45rem;
+}
+
+@media (min-width: 720px) {
+  .xi-feat-grid {
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+  }
+}
+
+.xi-feat-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.28rem;
+  min-height: 4.2rem;
+  border-radius: 0.75rem;
+  border: 1px solid var(--xi-line);
+  background: var(--xi-panel);
+  color: var(--xi-mist);
+  font-size: 0.68rem;
+  cursor: pointer;
+  padding: 0.35rem;
+}
+
+.xi-feat-ico {
+  width: 1.55rem;
+  height: 1.55rem;
+  border-radius: 0.45rem;
+  background: linear-gradient(145deg, rgba(232, 197, 106, 0.35), rgba(196, 60, 44, 0.25));
+  border: 1px solid rgba(232, 197, 106, 0.35);
+  position: relative;
+  overflow: hidden;
+}
+
+.xi-feat-ico::before,
+.xi-feat-ico::after {
+  content: "";
+  position: absolute;
+  inset: 18%;
+  opacity: 0.85;
+  pointer-events: none;
+}
+
+/* cloud / lotus / jingubang / jade / palace ? readable silhouettes */
+.xi-feat-ico.motif-cloud {
+  background: linear-gradient(145deg, rgba(180, 210, 230, 0.35), rgba(61, 139, 122, 0.22));
+}
+.xi-feat-ico.motif-cloud::before {
+  inset: 28% 12% 22%;
+  border-radius: 50% 50% 40% 40%;
+  background: rgba(255, 255, 255, 0.55);
+  box-shadow: -6px 2px 0 -1px rgba(255, 255, 255, 0.4), 6px 3px 0 -2px rgba(255, 255, 255, 0.35);
+}
+
+.xi-feat-ico.motif-lotus {
+  background: linear-gradient(145deg, rgba(255, 180, 190, 0.28), rgba(232, 197, 106, 0.28));
+}
+.xi-feat-ico.motif-lotus::before {
+  inset: 22%;
+  background:
+    radial-gradient(circle at 50% 70%, rgba(255, 220, 180, 0.9) 0 28%, transparent 30%),
+    conic-gradient(from 0deg, transparent 0 20deg, rgba(255, 200, 210, 0.75) 20deg 40deg, transparent 40deg 60deg);
+  border-radius: 50%;
+  clip-path: polygon(50% 8%, 62% 38%, 92% 42%, 70% 62%, 78% 92%, 50% 74%, 22% 92%, 30% 62%, 8% 42%, 38% 38%);
+  background: rgba(255, 200, 210, 0.75);
+}
+
+.xi-feat-ico.motif-jingubang {
+  background: linear-gradient(145deg, rgba(232, 197, 106, 0.45), rgba(140, 80, 30, 0.35));
+}
+.xi-feat-ico.motif-jingubang::before {
+  inset: 14% 42%;
+  border-radius: 3px;
+  background: linear-gradient(180deg, #ffe9a8, #b8892d 40%, #ffe9a8 70%, #8a6414);
+  box-shadow: 0 0 0 1px rgba(255, 230, 160, 0.35);
+}
+
+.xi-feat-ico.motif-jade {
+  background: linear-gradient(145deg, rgba(120, 200, 170, 0.4), rgba(40, 90, 80, 0.35));
+}
+.xi-feat-ico.motif-jade::before {
+  inset: 22%;
+  border-radius: 0.35rem;
+  border: 1.5px solid rgba(180, 240, 210, 0.75);
+  background: linear-gradient(145deg, rgba(180, 240, 210, 0.35), transparent 60%);
+  box-shadow: inset 0 0 6px rgba(100, 200, 160, 0.35);
+}
+
+.xi-feat-ico.motif-palace {
+  background: linear-gradient(145deg, rgba(255, 220, 140, 0.4), rgba(90, 50, 30, 0.35));
+}
+.xi-feat-ico.motif-palace::before {
+  inset: 18% 20% 14%;
+  clip-path: polygon(8% 100%, 12% 48%, 28% 48%, 34% 18%, 50% 0, 66% 18%, 72% 48%, 88% 48%, 92% 100%);
+  background: linear-gradient(180deg, rgba(255, 230, 160, 0.9), rgba(180, 120, 40, 0.75));
+}
+
+.xi-bottom-nav {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 45;
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 0.15rem;
+  padding: 0.45rem 0.4rem calc(0.45rem + env(safe-area-inset-bottom, 0px));
+  background: linear-gradient(180deg, rgba(8, 10, 16, 0.72), rgba(8, 10, 16, 0.96));
+  border-top: 1px solid var(--xi-line);
+  backdrop-filter: blur(12px);
+}
+
+.xi-nav-btn {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: rgba(244, 231, 194, 0.62);
+  font-size: 0.68rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.15rem;
+  padding: 0.25rem;
+  cursor: pointer;
+}
+
+.xi-nav-btn.is-active {
+  color: #ffe7a4;
+}
+
+.xi-nav-dot {
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.85;
+}
+
+.xi-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: rgba(4, 6, 10, 0.62);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 1rem;
+}
+
+@media (min-width: 720px) {
+  .xi-modal-backdrop {
+    align-items: center;
+  }
+}
+
+.xi-modal {
+  width: min(420px, 100%);
+  max-height: min(78vh, 640px);
+  overflow: auto;
+  border-radius: 1rem 1rem 0.75rem 0.75rem;
+  border: 1px solid var(--xi-line);
+  background: linear-gradient(180deg, #1c2435, #10151f);
+  padding: 1rem 1rem 1.1rem;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
+}
+
+.xi-modal h2 {
+  margin: 0 0 0.55rem;
+  font-family: var(--xi-font-display);
+  font-size: 1.2rem;
+  color: #ffe7a4;
+}
+
+.xi-modal p {
+  margin: 0 0 0.75rem;
+  font-size: 0.88rem;
+  line-height: 1.45;
+  color: rgba(244, 231, 194, 0.82);
+}
+
+.xi-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.45rem;
+}
+
+.xi-lang-row {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.85rem;
+}
+
+.xi-lang-row button.is-active {
+  border-color: rgba(232, 197, 106, 0.7);
+  color: #fff2c8;
+}
+
+.xi-announce-list {
+  list-style: none;
+  margin: 0 0 0.85rem;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.xi-announce-list li {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 0.55rem;
+  padding: 0.55rem 0.65rem;
+  font-size: 0.8rem;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+/* ---------- BDK hub ? heaven / mid / flame layers ---------- */
+.xi-bdk-root {
+  background: #0a080c;
+}
+
+.xi-bdk-scene {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.xi-bdk-layer {
+  position: absolute;
+  inset: 0;
+}
+
+.xi-bdk-heaven {
+  background:
+    radial-gradient(60% 45% at 50% -2%, rgba(255, 230, 160, 0.65), transparent 62%),
+    radial-gradient(45% 35% at 18% 8%, rgba(180, 210, 255, 0.32), transparent 70%),
+    radial-gradient(40% 30% at 82% 10%, rgba(255, 200, 120, 0.28), transparent 70%),
+    linear-gradient(180deg, #3a4560 0%, #1a2235 28%, transparent 48%);
+}
+
+.xi-bdk-clouds {
+  background:
+    radial-gradient(22% 14% at 18% 18%, rgba(255, 255, 255, 0.22), transparent 70%),
+    radial-gradient(28% 16% at 72% 14%, rgba(240, 245, 255, 0.18), transparent 72%),
+    radial-gradient(20% 12% at 48% 22%, rgba(255, 230, 190, 0.12), transparent 70%);
+  animation: xi-bdk-clouds 18s ease-in-out infinite;
+  opacity: 0.85;
+  filter: blur(1px);
+}
+
+.xi-bdk-thunder {
+  background:
+    linear-gradient(115deg, transparent 40%, rgba(200, 220, 255, 0.08) 48%, transparent 52%),
+    linear-gradient(250deg, transparent 55%, rgba(255, 240, 180, 0.06) 58%, transparent 62%);
+  animation: xi-bdk-thunder 7s ease-in-out infinite;
+  opacity: 0.55;
+  mix-blend-mode: screen;
+}
+
+.xi-bdk-mid {
+  background:
+    radial-gradient(55% 50% at 50% 46%, rgba(50, 70, 90, 0.45), transparent 70%),
+    linear-gradient(180deg, transparent 22%, rgba(35, 48, 65, 0.7) 48%, transparent 68%);
+  clip-path: polygon(0 38%, 8% 46%, 18% 36%, 30% 48%, 45% 32%, 58% 46%, 72% 30%, 85% 44%, 100% 36%, 100% 70%, 0 70%);
+  opacity: 0.95;
+}
+
+.xi-bdk-palace {
+  left: 58%;
+  top: 22%;
+  width: 22%;
+  height: 20%;
+  inset: auto;
+  background: linear-gradient(180deg, rgba(255, 230, 160, 0.65), rgba(160, 100, 40, 0.35));
+  clip-path: polygon(10% 100%, 15% 50%, 30% 50%, 38% 15%, 50% 0, 62% 15%, 70% 50%, 85% 50%, 90% 100%);
+  opacity: 0.62;
+  filter: drop-shadow(0 0 18px rgba(255, 210, 120, 0.55));
+}
+
+.xi-bdk-flame {
+  top: 48%;
+  background:
+    radial-gradient(45% 55% at 28% 75%, rgba(255, 90, 30, 0.62), transparent 70%),
+    radial-gradient(50% 60% at 72% 82%, rgba(255, 50, 20, 0.55), transparent 72%),
+    radial-gradient(35% 40% at 50% 95%, rgba(255, 140, 40, 0.35), transparent 70%),
+    linear-gradient(180deg, transparent, rgba(100, 25, 10, 0.65) 35%, rgba(20, 6, 4, 0.9));
+}
+
+.xi-bdk-lava {
+  top: 68%;
+  background:
+    radial-gradient(30% 40% at 40% 70%, rgba(255, 140, 40, 0.35), transparent 70%),
+    radial-gradient(25% 35% at 65% 80%, rgba(255, 60, 20, 0.3), transparent 70%);
+  animation: xi-bdk-lava 5s ease-in-out infinite;
+  filter: blur(1px);
+}
+
+.xi-bdk-smoke {
+  top: 50%;
+  background:
+    radial-gradient(35% 40% at 25% 40%, rgba(40, 20, 20, 0.35), transparent 70%),
+    radial-gradient(40% 45% at 75% 35%, rgba(30, 15, 15, 0.3), transparent 72%);
+  animation: xi-bdk-smoke 12s ease-in-out infinite;
+  filter: blur(3px);
+}
+
+.xi-bdk-array {
+  position: absolute;
+  left: 50%;
+  top: 52%;
+  width: min(70vw, 340px);
+  height: min(70vw, 340px);
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  border: 1px solid rgba(232, 197, 106, 0.22);
+  box-shadow:
+    0 0 0 18px rgba(196, 60, 44, 0.06),
+    inset 0 0 40px rgba(255, 80, 40, 0.08);
+  background:
+    repeating-conic-gradient(from 0deg, rgba(232, 197, 106, 0.12) 0 4deg, transparent 4deg 30deg);
+  animation: xi-bdk-array 28s linear infinite;
+  opacity: 0.55;
+}
+
+.xi-bdk-clash {
+  position: absolute;
+  inset: 20% 10% 35%;
+  background:
+    linear-gradient(180deg, rgba(255, 230, 160, 0.12), transparent 40%),
+    linear-gradient(0deg, rgba(255, 60, 30, 0.14), transparent 45%);
+  mix-blend-mode: screen;
+  animation: xi-bdk-clash 6s ease-in-out infinite;
+}
+
+.xi-bdk-figure {
+  position: absolute;
+  left: 50%;
+  top: 38%;
+  width: min(42vw, 180px);
+  height: min(52vw, 220px);
+  transform: translate(-50%, -50%);
+}
+
+/* Static flame shelf ? readable even when motion reduced / headless mid-frame */
+.xi-bdk-scene::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 42%;
+  background:
+    radial-gradient(55% 70% at 50% 100%, rgba(255, 90, 20, 0.55), transparent 65%),
+    linear-gradient(180deg, transparent, rgba(120, 30, 10, 0.45) 40%, rgba(40, 10, 6, 0.75));
+  pointer-events: none;
+}
+
+.xi-bdk-aura {
+  position: absolute;
+  inset: -22%;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle, rgba(255, 70, 30, 0.55), transparent 58%),
+    radial-gradient(circle at 50% 15%, rgba(255, 230, 160, 0.4), transparent 52%),
+    radial-gradient(circle at 50% 80%, rgba(20, 0, 0, 0.45), transparent 60%);
+  animation: xi-bdk-aura 4s ease-in-out infinite;
+  filter: blur(1.5px);
+}
+
+.xi-bdk-cloak {
+  position: absolute;
+  left: 8%;
+  right: 8%;
+  top: 34%;
+  bottom: 4%;
+  border-radius: 40% 40% 48% 48%;
+  background:
+    radial-gradient(circle at 50% 20%, rgba(120, 30, 40, 0.35), transparent 55%),
+    linear-gradient(180deg, rgba(80, 18, 28, 0.55), rgba(20, 6, 10, 0.75) 70%, transparent);
+  filter: blur(0.4px);
+  animation: xi-bdk-cloak 6s ease-in-out infinite;
+  opacity: 0.85;
+}
+
+.xi-bdk-horns {
+  position: absolute;
+  left: 18%;
+  right: 18%;
+  top: 4%;
+  height: 22%;
+  background:
+    linear-gradient(120deg, transparent 40%, rgba(232, 197, 106, 0.85) 48%, transparent 56%),
+    linear-gradient(240deg, transparent 40%, rgba(232, 197, 106, 0.85) 48%, transparent 56%);
+  filter: drop-shadow(0 0 8px rgba(255, 200, 80, 0.55));
+  animation: xi-bdk-horn 3.5s ease-in-out infinite;
+}
+
+.xi-bdk-body {
+  position: absolute;
+  left: 22%;
+  right: 22%;
+  top: 22%;
+  bottom: 12%;
+  border-radius: 45% 45% 38% 38%;
+  background:
+    radial-gradient(circle at 50% 30%, rgba(255, 180, 100, 0.35), transparent 45%),
+    linear-gradient(180deg, #5a2a18, #1a0c0a 70%, #0a0606);
+  border: 1px solid rgba(232, 197, 106, 0.35);
+  box-shadow:
+    0 0 24px rgba(255, 60, 30, 0.35),
+    inset 0 -20px 30px rgba(0, 0, 0, 0.45);
+}
+
+.xi-bdk-weapon {
+  position: absolute;
+  right: 2%;
+  top: 30%;
+  width: 10%;
+  height: 55%;
+  border-radius: 3px;
+  background: linear-gradient(180deg, #f0d080, #8a6414 40%, #f0d080 70%, #5c3a0e);
+  box-shadow: 0 0 12px rgba(255, 200, 80, 0.45);
+  transform: rotate(18deg);
+  animation: xi-bdk-weapon 5s ease-in-out infinite;
+}
+
+.xi-bdk-spirit-dots i {
+  position: absolute;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: rgba(255, 230, 160, 0.85);
+  animation: xi-particle 9s linear infinite;
+  opacity: 0;
+}
+
+.xi-bdk-spirit-dots i:nth-child(1) { left: 20%; top: 30%; animation-delay: 0s; }
+.xi-bdk-spirit-dots i:nth-child(2) { left: 70%; top: 25%; animation-delay: 1.5s; background: rgba(255, 100, 60, 0.8); }
+.xi-bdk-spirit-dots i:nth-child(3) { left: 40%; top: 60%; animation-delay: 3s; }
+.xi-bdk-spirit-dots i:nth-child(4) { left: 55%; top: 45%; animation-delay: 4.2s; background: rgba(180, 210, 255, 0.75); }
+.xi-bdk-spirit-dots i:nth-child(5) { left: 30%; top: 70%; animation-delay: 5.5s; background: rgba(255, 80, 40, 0.7); }
+
+.xi-bdk-hub {
+  position: relative;
+  z-index: 2;
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 2rem 1.1rem 4.5rem;
+  text-align: center;
+  gap: 0.55rem;
+}
+
+.xi-bdk-hub-mythic {
+  background: linear-gradient(180deg, transparent 0%, rgba(8, 6, 10, 0.25) 35%, rgba(8, 6, 10, 0.72) 70%, rgba(8, 6, 10, 0.88) 100%);
+}
+
+.xi-bdk-hub h1 {
+  margin: 0;
+  font-family: var(--xi-font-display);
+  font-size: clamp(1.8rem, 6vw, 2.4rem);
+  color: #ffe7a4;
+  text-shadow: 0 0 24px rgba(255, 80, 40, 0.35), 0 2px 12px rgba(0, 0, 0, 0.55);
+}
+
+.xi-bdk-hub p {
+  margin: 0;
+  max-width: 28rem;
+  color: rgba(244, 231, 194, 0.8);
+}
+
+.xi-bdk-tag {
+  font-size: 0.78rem;
+  letter-spacing: 0.1em;
+  color: rgba(200, 220, 255, 0.85) !important;
+  text-transform: none;
+}
+
+.xi-bdk-ambient {
+  font-size: 0.7rem !important;
+  color: rgba(255, 180, 120, 0.65) !important;
+}
+
+.xi-decree-btn {
+  position: relative;
+  min-width: 12rem;
+  padding-inline: 1.4rem !important;
+  border-color: rgba(255, 220, 140, 0.75) !important;
+  background:
+    linear-gradient(180deg, #f0d070, #c48a28 45%, #8f6418) !important;
+  box-shadow:
+    0 0 0 2px rgba(40, 20, 8, 0.55) inset,
+    0 0 28px rgba(255, 180, 60, 0.45),
+    0 8px 20px rgba(0, 0, 0, 0.4);
+  overflow: hidden;
+}
+
+.xi-decree-seal {
+  position: absolute;
+  left: 0.55rem;
+  width: 1.1rem;
+  height: 1.1rem;
+  border-radius: 50%;
+  border: 1px solid rgba(120, 40, 20, 0.65);
+  background:
+    radial-gradient(circle at 40% 35%, #ff6a3a, #8a1810);
+  box-shadow: 0 0 8px rgba(255, 80, 40, 0.55);
+}
+
+.xi-decree-btn.is-pressing {
+  transform: scale(0.96);
+  filter: brightness(1.25);
+  box-shadow:
+    0 0 0 2px rgba(40, 20, 8, 0.55) inset,
+    0 0 48px rgba(255, 220, 120, 0.75),
+    0 0 80px rgba(255, 80, 40, 0.45);
+}
+
+@keyframes xi-bdk-clouds {
+  0%, 100% { transform: translateX(0); opacity: 0.75; }
+  50% { transform: translateX(2.5%); opacity: 0.95; }
+}
+
+@keyframes xi-bdk-cloak {
+  0%, 100% { transform: scaleY(1) translateY(0); opacity: 0.8; }
+  50% { transform: scaleY(1.04) translateY(1%); opacity: 0.95; }
+}
+
+@keyframes xi-bdk-thunder {
+  0%, 86%, 100% { opacity: 0.2; }
+  88% { opacity: 0.85; }
+  90% { opacity: 0.25; }
+  92% { opacity: 0.7; }
+}
+
+@keyframes xi-bdk-lava {
+  0%, 100% { opacity: 0.75; transform: translateY(0); }
+  50% { opacity: 1; transform: translateY(-2%); }
+}
+
+@keyframes xi-bdk-smoke {
+  0%, 100% { opacity: 0.55; transform: translateX(0); }
+  50% { opacity: 0.8; transform: translateX(2%); }
+}
+
+@keyframes xi-bdk-array {
+  to { transform: translate(-50%, -50%) rotate(360deg); }
+}
+
+@keyframes xi-bdk-clash {
+  0%, 100% { opacity: 0.45; }
+  50% { opacity: 0.85; }
+}
+
+@keyframes xi-bdk-aura {
+  0%, 100% { transform: scale(1); opacity: 0.75; }
+  50% { transform: scale(1.08); opacity: 1; }
+}
+
+@keyframes xi-bdk-horn {
+  0%, 100% { filter: drop-shadow(0 0 8px rgba(255, 200, 80, 0.45)); }
+  50% { filter: drop-shadow(0 0 16px rgba(180, 210, 255, 0.75)); }
+}
+
+@keyframes xi-bdk-weapon {
+  0%, 100% { filter: brightness(1); }
+  50% { filter: brightness(1.35); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .xi-bdk-thunder,
+  .xi-bdk-clouds,
+  .xi-bdk-lava,
+  .xi-bdk-smoke,
+  .xi-bdk-array,
+  .xi-bdk-clash,
+  .xi-bdk-aura,
+  .xi-bdk-cloak,
+  .xi-bdk-horns,
+  .xi-bdk-weapon,
+  .xi-bdk-spirit-dots i {
+    animation: none;
+  }
+}
+
+.xi-bdk-topbar {
+  position: relative;
+  z-index: 5;
+}
+
+.xi-bdk-brand-chip {
+  font-family: var(--xi-font-display);
+  font-size: 0.82rem;
+  color: #ffe7a4;
+  letter-spacing: 0.04em;
+  padding: 0.15rem 0.4rem;
+  border-radius: 0.35rem;
+  border: 1px solid rgba(232, 197, 106, 0.35);
+  background: rgba(10, 8, 14, 0.35);
+  white-space: nowrap;
+}
+
+.xi-bdk-feat-group {
+  margin-top: 0.85rem;
+}
+
+.xi-bdk-group-title {
+  margin: 0 0 0.4rem;
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+  color: rgba(255, 220, 160, 0.78);
+  font-weight: 650;
+}
+
+.xi-bdk-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  justify-content: center;
+  margin-top: 0.85rem;
+  width: 100%;
+  max-width: 28rem;
+}
+
+.xi-bdk-topnav {
+  position: relative;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  padding: 0.75rem 1rem 0;
+}
+
+.xi-bdk-back-xi {
+  appearance: none;
+  cursor: pointer;
+  color: rgba(230, 214, 170, 0.92);
+  text-decoration: none;
+  font-size: 0.92rem;
+  font-weight: 600;
+  padding: 0.35rem 0.55rem;
+  border-radius: 0.45rem;
+  background: rgba(10, 8, 14, 0.35);
+  border: 1px solid rgba(232, 197, 106, 0.28);
+}
+
+.xi-bdk-back-xi:hover {
+  color: #ffe7a4;
+  border-color: rgba(232, 197, 106, 0.55);
+}
+
+.xi-bdk-asset-gap {
+  font-size: 0.68rem !important;
+  color: rgba(200, 180, 140, 0.55) !important;
+}
+
+.xi-start-game-cta {
+  width: min(100%, 22rem) !important;
+  min-height: 3.6rem !important;
+  font-size: 1.28rem !important;
+  letter-spacing: 0.06em;
+  padding-inline: 2rem !important;
+  transition: transform 0.15s ease, filter 0.15s ease, box-shadow 0.15s ease;
+}
+
+.xi-start-game-cta:hover:not(:disabled) {
+  transform: translateY(-1px) scale(1.02);
+  filter: brightness(1.08);
+}
+
+.xi-start-game-cta:active:not(:disabled),
+.xi-start-game-cta.is-pressing {
+  transform: scale(0.97);
+}
+
+.xi-start-game-cta.is-loading {
+  opacity: 0.88;
+  cursor: wait;
+}
+
+.xi-bdk-feat-section {
+  width: min(100%, 36rem);
+  margin-top: 1.4rem;
+  text-align: left;
+}
+
+.xi-bdk-feat-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.45rem;
+}
+
+@media (min-width: 720px) {
+  .xi-bdk-feat-grid {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+}
+
+/* Hub/Play chrome keep-alive ? hide without unmount (warm nav) */
+.xi-layer-keep.is-hidden,
+.xi-layer-rsc.is-suppressed {
+  display: none !important;
+}
+.xi-layer-keep.is-active {
+  /* block (not contents) so visibility/offsetParent probes stay reliable */
+  display: block;
+  width: 100%;
+  min-height: 100dvh;
+  min-height: 100svh;
+}
+
+/* Persistent GameClient host ? never dispose on Hub?Play */
+.xi-game-host {
+  position: fixed;
+  inset: 0;
+  z-index: 5;
+  width: 100%;
+  height: 100%;
+  min-height: 100dvh;
+  min-height: 100svh;
+  pointer-events: none;
+  visibility: hidden;
+  opacity: 0;
+  /* Opacity only ? never translateZ the host (would affect #hud stacking). #gl keeps its own translateZ. */
+  transition: opacity 220ms ease;
+}
+.xi-game-host.is-active {
+  visibility: visible;
+  pointer-events: auto;
+  opacity: 1;
+  z-index: 8;
+}
+.xi-game-host.is-suspended {
+  visibility: hidden;
+  pointer-events: none;
+  opacity: 0;
+}
+.xi-game-host #app,
+.xi-game-host .m5-root {
+  min-height: 100dvh;
+  min-height: 100svh;
+}
+
+/* Light ??? loading overlay (>150ms enter) ? not solid black */
+.xi-play-loading {
+  position: fixed;
+  inset: 0;
+  z-index: 10050;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  background: rgba(8, 10, 16, 0.22);
+  opacity: 0;
+  transition: opacity 200ms ease;
+}
+.xi-play-loading.is-active {
+  opacity: 1;
+}
+.xi-play-loading.is-exit {
+  opacity: 0;
+}
+.xi-play-loading-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.85rem 1.25rem;
+  border-radius: 0.75rem;
+  border: 1px solid rgba(232, 197, 106, 0.35);
+  background: rgba(18, 14, 20, 0.72);
+  color: rgba(255, 248, 230, 0.92);
+  font-family: "Segoe UI", "Noto Sans SC", "Pyidaungsu", sans-serif;
+}
+.xi-play-loading-brand {
+  font-size: 1.05rem;
+  letter-spacing: 0.12em;
+  font-weight: 700;
+}
+.xi-play-loading-text {
+  font-size: 0.82rem;
+  opacity: 0.88;
+}
+
+/* ========== Step 3 play shell ? scoped; NEVER transform #hud shell ========== */
+.xi-play-shell {
+  position: relative;
+  width: 100%;
+  min-height: 100dvh;
+  min-height: 100svh;
+  overflow: hidden;
+  /* Fully transparent ? GameClient host paints beneath; chrome only overlays */
+  background: transparent;
+  z-index: 20;
+  pointer-events: none;
+}
+.xi-play-shell .xi-play-nav-row,
+.xi-play-shell .xi-breadcrumb,
+.xi-play-shell .xi-play-title-chip,
+.xi-play-shell .xi-play-vip-chip,
+.xi-play-shell .xi-play-leave-mask {
+  pointer-events: auto;
+}
+
+.xi-play-shell.xi-play-formal #app,
+.xi-play-shell.xi-play-formal .m5-root {
+  min-height: 100dvh;
+  min-height: 100svh;
+}
+
+.xi-play-boot {
+  min-height: 100dvh;
+  min-height: 100svh;
+  background: transparent;
+}
+
+.xi-play-nav-row {
+  position: fixed;
+  top: max(0.45rem, env(safe-area-inset-top));
+  left: max(0.45rem, env(safe-area-inset-left));
+  z-index: 40;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+  max-width: min(52vw, 16rem);
+  pointer-events: auto;
+}
+
+.xi-play-back,
+.xi-play-home {
+  position: static;
+  appearance: none;
+  border: 1px solid rgba(232, 197, 106, 0.5);
+  border-radius: 0.55rem;
+  background:
+    linear-gradient(180deg, rgba(40, 28, 18, 0.88), rgba(12, 10, 16, 0.82));
+  color: #ffe7a4;
+  font-size: 0.78rem;
+  font-weight: 650;
+  padding: 0.38rem 0.65rem;
+  cursor: pointer;
+  backdrop-filter: blur(6px);
+  pointer-events: auto;
+  text-decoration: none;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+  white-space: nowrap;
+}
+
+.xi-play-home {
+  font-size: 0.72rem;
+  border-color: rgba(200, 170, 90, 0.4);
+  background: rgba(18, 14, 20, 0.78);
+}
+
+.xi-play-back:hover,
+.xi-play-home:hover {
+  border-color: rgba(255, 220, 140, 0.8);
+  background: rgba(28, 18, 12, 0.9);
+}
+
+.xi-play-breadcrumb {
+  position: fixed;
+  top: max(2.55rem, calc(env(safe-area-inset-top) + 2.1rem));
+  left: max(0.45rem, env(safe-area-inset-left));
+  z-index: 39;
+  padding: 0.15rem 0.35rem;
+  max-width: min(70vw, 22rem);
+  pointer-events: auto;
+  background: rgba(8, 6, 10, 0.35);
+  border-radius: 0.35rem;
+}
+
+.xi-play-title-chip {
+  position: fixed;
+  top: max(0.45rem, env(safe-area-inset-top));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 39;
+  pointer-events: none;
+  padding: 0.28rem 0.85rem;
+  border-radius: 999px;
+  border: 1px solid rgba(232, 197, 106, 0.35);
+  background: rgba(12, 8, 10, 0.55);
+  color: #ffe7a4;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  max-width: min(46vw, 14rem);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: center;
+}
+
+.xi-play-vip-chip {
+  position: fixed;
+  top: max(0.5rem, env(safe-area-inset-top));
+  right: max(0.5rem, env(safe-area-inset-right));
+  z-index: 39;
+  pointer-events: none;
+  padding: 0.22rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid rgba(200, 170, 90, 0.4);
+  background: rgba(30, 18, 8, 0.55);
+  color: #f0d48a;
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+
+/* HUD game-only: hide hub stuffings on play (profile / wallet / help) */
+.xi-play-shell #btn-profile,
+.xi-play-shell #btn-wallet,
+.xi-play-shell #btn-help {
+  display: none !important;
+}
+
+/* VIP light badge ? no VIP center / intro modal from play */
+.xi-play-shell #btn-vip {
+  pointer-events: none !important;
+  cursor: default;
+  opacity: 0.92;
+  font-size: 0;
+  position: relative;
+  min-width: 2.1rem;
+}
+.xi-play-shell #btn-vip .xi-play-vip-label {
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  color: #ffe7a4;
+}
+
+/* Leave confirm ? above HUD; does not touch #gl / #hud stacking */
+.xi-play-leave-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  background: rgba(6, 4, 6, 0.62);
+  backdrop-filter: blur(3px);
+  padding: 1rem;
+  pointer-events: auto;
+}
+
+.xi-play-leave-card {
+  width: min(22rem, 92vw);
+  border-radius: 0.85rem;
+  border: 1px solid rgba(232, 197, 106, 0.45);
+  background:
+    linear-gradient(165deg, rgba(48, 28, 16, 0.96), rgba(14, 10, 12, 0.96));
+  color: #f6e7c2;
+  padding: 1.1rem 1.15rem 1rem;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5);
+}
+
+.xi-play-leave-card h2 {
+  margin: 0 0 0.45rem;
+  font-size: 1.05rem;
+  color: #ffe7a4;
+}
+
+.xi-play-leave-card p {
+  margin: 0 0 0.95rem;
+  font-size: 0.86rem;
+  line-height: 1.45;
+  color: rgba(246, 231, 194, 0.82);
+}
+
+.xi-play-leave-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  justify-content: flex-end;
+}
+
+.xi-play-leave-stay,
+.xi-play-leave-wait {
+  appearance: none;
+  border-radius: 0.55rem;
+  min-height: 2.35rem;
+  padding: 0.4rem 0.85rem;
+  font-size: 0.82rem;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.xi-play-leave-stay {
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.06);
+  color: #f6e7c2;
+}
+
+.xi-play-leave-wait {
+  border: 1px solid rgba(232, 197, 106, 0.55);
+  background: linear-gradient(180deg, #d9b056, #8f6418);
+  color: #1a1208;
+}
+
+/* Phone landscape first ? keep back/title readable without covering spin */
+@media (orientation: landscape) and (max-height: 500px) {
+  .xi-play-back,
+  .xi-play-home {
+    font-size: 0.66rem;
+    padding: 0.28rem 0.45rem;
+  }
+  .xi-play-nav-row {
+    max-width: min(58vw, 18rem);
+  }
+  .xi-play-breadcrumb {
+    top: max(2.2rem, calc(env(safe-area-inset-top) + 1.85rem));
+    font-size: 0.62rem;
+  }
+  .xi-play-title-chip {
+    font-size: 0.64rem;
+    padding: 0.18rem 0.6rem;
+    max-width: min(40vw, 12rem);
+  }
+  .xi-play-vip-chip {
+    font-size: 0.6rem;
+    padding: 0.16rem 0.45rem;
+  }
+}
+
+@media (min-width: 1920px) {
+  .xi-play-title-chip {
+    font-size: 0.85rem;
+  }
+}
+
+.xi-bdk-hub-mythic {
+  justify-content: flex-start;
+  padding-top: 1.25rem;
+  overflow-y: auto;
+}
+
+.xi-primary,
+.xi-secondary {
+  appearance: none;
+  border-radius: 0.7rem;
+  min-height: 2.6rem;
+  padding: 0.45rem 1.1rem;
+  font-size: 0.9rem;
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.xi-primary {
+  border: 1px solid rgba(232, 197, 106, 0.55);
+  background: linear-gradient(180deg, #d9b056, #8f6418);
+  color: #1a1208;
+  font-weight: 700;
+}
+
+.xi-secondary {
+  border: 1px solid var(--xi-line);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--xi-mist);
+}
+
+.xi-panel-card {
+  border: 1px solid var(--xi-line);
+  border-radius: 0.85rem;
+  background: var(--xi-panel);
+  padding: 0.9rem;
+}
+
+.xi-status-line {
+  font-size: 0.78rem;
+  color: rgba(244, 231, 194, 0.65);
+}
+
+/* Cinematic pilgrim silhouette band ? ASSET_GAP fallback (no Zhao still) */
+.xi-hero-pilgrims {
+  position: absolute;
+  left: 6%;
+  bottom: 18%;
+  width: 42%;
+  height: 22%;
+  pointer-events: none;
+  opacity: 0.42;
+  background:
+    radial-gradient(12% 55% at 12% 70%, rgba(20, 16, 12, 0.85), transparent 70%),
+    radial-gradient(10% 50% at 28% 72%, rgba(24, 18, 14, 0.8), transparent 70%),
+    radial-gradient(14% 65% at 48% 60%, rgba(18, 14, 12, 0.88), transparent 72%),
+    radial-gradient(9% 45% at 68% 74%, rgba(22, 16, 12, 0.75), transparent 70%),
+    radial-gradient(11% 58% at 86% 68%, rgba(16, 12, 10, 0.82), transparent 70%);
+  filter: blur(0.2px);
+}
+
+@media (min-width: 1024px) {
+  .xi-game-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+  .xi-hero {
+    min-height: clamp(14rem, 28vw, 20rem);
+  }
+  .xi-main,
+  .xi-hero {
+    max-width: 1100px;
+  }
+  .xi-feat-grid {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+}
+
+/* Step 1 next-route stub ? NOT full hub */
+.xi-bdk-stub {
+  display: grid;
+  place-items: center;
+  padding: 1.5rem;
+  background:
+    radial-gradient(70% 50% at 50% 0%, rgba(255, 180, 80, 0.14), transparent 55%),
+    radial-gradient(90% 70% at 50% 100%, rgba(120, 40, 20, 0.22), transparent 60%),
+    linear-gradient(180deg, #141018, #0a0c12 70%);
+}
+
+.xi-bdk-stub-card {
+  width: min(100%, 26rem);
+  text-align: center;
+  padding: 1.6rem 1.25rem 1.4rem;
+  border-radius: 1rem;
+  border: 1px solid rgba(232, 197, 106, 0.4);
+  background: rgba(12, 14, 20, 0.78);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.4);
+}
+
+.xi-bdk-stub-card h1 {
+  margin: 0.35rem 0 0.75rem;
+  font-family: var(--xi-font-display);
+  font-size: clamp(1.45rem, 5vw, 1.9rem);
+  color: #ffe7a4;
+}
+
+.xi-bdk-stub-tag {
+  margin: 0;
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+  color: rgba(200, 220, 255, 0.75);
+}
+
+.xi-bdk-stub-card p {
+  margin: 0 0 1.1rem;
+  color: rgba(244, 231, 194, 0.78);
+  line-height: 1.45;
+  font-size: 0.92rem;
+}
+
+.xi-bdk-stub-back {
+  display: inline-flex !important;
+  min-width: 12rem;
+  text-decoration: none;
+}
+
+/* Step 4 ?? commerce panels (additive; no Step1/2 layout changes) */
+.xi-commerce-panel {
+  display: grid;
+  gap: 0.55rem;
+  text-align: left;
+}
+.xi-commerce-label {
+  display: grid;
+  gap: 0.25rem;
+  font-size: 0.85rem;
+  color: rgba(244, 231, 194, 0.85);
+}
+.xi-commerce-label input,
+.xi-commerce-label select {
+  width: 100%;
+  border-radius: 0.45rem;
+  border: 1px solid rgba(232, 197, 106, 0.35);
+  background: rgba(10, 12, 18, 0.75);
+  color: #f4e7c2;
+  padding: 0.45rem 0.55rem;
+}
+.xi-commerce-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+/* Step 5 ? fail-closed readiness banner (additive) */
+.xi-readiness-banner {
+  margin: 0;
+  padding: 0.45rem 0.55rem;
+  border-radius: 0.4rem;
+  border: 1px solid rgba(232, 160, 80, 0.55);
+  background: rgba(80, 40, 10, 0.45);
+  color: #f6d7a8;
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+/* ========== UI Layout V2 ? Zhao reference match ========== */
+.xi-layout-v2 {
+  --xi-maroon: #4a1810;
+  --xi-maroon-deep: #2a0e0a;
+  --xi-gold: #e8c56a;
+  --xi-gold-bright: #f6e2a0;
+  background:
+    radial-gradient(90% 50% at 50% -8%, rgba(180, 90, 40, 0.28), transparent 55%),
+    linear-gradient(180deg, #3a1610 0%, #1a0c0a 42%, #0c0808 100%);
+  animation: xi-page-in 0.45s ease-out;
+}
+
+@keyframes xi-page-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.xi-topbar-v2 {
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 1.5fr) auto;
+  margin: 0.4rem 0.45rem 0;
+  border-radius: 0.75rem;
+  border: 1px solid rgba(232, 197, 106, 0.55);
+  background:
+    linear-gradient(180deg, rgba(90, 40, 28, 0.95), rgba(28, 12, 10, 0.94));
+  box-shadow:
+    0 0 0 1px rgba(232, 197, 106, 0.2) inset,
+    0 8px 22px rgba(0, 0, 0, 0.4);
+}
+
+.xi-user-id {
+  font-size: 0.62rem;
+  color: rgba(244, 231, 194, 0.72);
+  letter-spacing: 0.02em;
+}
+
+.xi-wallet-chip {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.2rem 0.28rem 0.2rem 0.4rem;
+  border-radius: 999px;
+  border: 1px solid rgba(232, 197, 106, 0.45);
+  background: linear-gradient(180deg, rgba(60, 28, 16, 0.9), rgba(20, 10, 8, 0.92));
+  min-width: 0;
+}
+
+.xi-wallet-meta {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.05;
+  min-width: 0;
+}
+
+.xi-wallet-code {
+  font-size: 0.58rem;
+  color: rgba(255, 230, 170, 0.75);
+}
+
+.xi-wallet-chip strong {
+  font-size: 0.72rem;
+  color: #fff6d8;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.xi-wallet-plus {
+  appearance: none;
+  width: 1.35rem;
+  height: 1.35rem;
+  border-radius: 50%;
+  border: 1px solid rgba(232, 197, 106, 0.7);
+  background: linear-gradient(180deg, #f0d78a, #b8892d);
+  color: #3a1c08;
+  font-weight: 800;
+  font-size: 0.95rem;
+  line-height: 1;
+  cursor: pointer;
+  flex-shrink: 0;
+  padding: 0;
+}
+
+.xi-wallet-ico {
+  width: 1.15rem;
+  height: 1.15rem;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.xi-wallet-ico-mmk {
+  background:
+    radial-gradient(circle at 35% 30%, #fff2c0, #d4a23a 55%, #8a6414);
+  box-shadow: 0 0 0 1px rgba(255, 220, 140, 0.45);
+}
+
+.xi-wallet-ico-usdt {
+  background:
+    radial-gradient(circle at 35% 30%, #9ff0d8, #26a17b 55%, #0d5c45);
+  box-shadow: 0 0 0 1px rgba(120, 220, 190, 0.45);
+}
+
+.xi-lang-direct {
+  display: flex;
+  align-items: center;
+  gap: 0.15rem;
+  padding: 0.12rem;
+  border-radius: 999px;
+  border: 1px solid rgba(232, 197, 106, 0.35);
+  background: rgba(0, 0, 0, 0.25);
+}
+
+.xi-lang-direct-btn {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: rgba(244, 231, 194, 0.7);
+  font-size: 0.62rem;
+  font-weight: 700;
+  padding: 0.22rem 0.35rem;
+  border-radius: 999px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.xi-lang-direct-btn.is-active {
+  background: linear-gradient(180deg, #f0d78a, #b8892d);
+  color: #2a1408;
+}
+
+.xi-icon-btn.xi-icon-msg,
+.xi-icon-btn.xi-icon-settings {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.05rem;
+  min-width: 2.2rem;
+  padding: 0.2rem 0.3rem;
+}
+
+.xi-icon-label {
+  font-size: 0.58rem;
+}
+
+.xi-ico-envelope,
+.xi-ico-gear {
+  width: 1rem;
+  height: 0.85rem;
+  display: block;
+  position: relative;
+}
+
+.xi-ico-envelope {
+  border: 1.5px solid rgba(232, 197, 106, 0.85);
+  border-radius: 2px;
+  background: rgba(232, 197, 106, 0.12);
+}
+.xi-ico-envelope::before {
+  content: "";
+  position: absolute;
+  left: 10%;
+  right: 10%;
+  top: 2px;
+  height: 1.5px;
+  background: rgba(232, 197, 106, 0.85);
+  transform: rotate(18deg);
+  transform-origin: left center;
+}
+.xi-ico-gear {
+  border: 1.5px solid rgba(232, 197, 106, 0.85);
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px rgba(20, 10, 8, 0.5), 0 0 0 3.5px rgba(232, 197, 106, 0.45);
+}
+
+/* Full hero photo ? keep pilgrims; cover on wide, contain-safe center on narrow */
+.xi-hero-photo {
+  margin: 0.45rem 0.45rem 0;
+  min-height: clamp(12.5rem, 42vw, 20rem);
+  border-radius: 0.85rem;
+  border: 1px solid rgba(232, 197, 106, 0.42);
+  background: #1a100c;
+}
+
+.xi-hero-img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  /* Keep Tang / Wukong / Bajie / Wujing in frame on wide */
+  object-position: 50% 58%;
+  pointer-events: none;
+  z-index: 0;
+  transform: translateZ(0);
+  will-change: opacity;
+}
+
+@media (max-width: 430px) {
+  .xi-hero-photo {
+    min-height: clamp(12.8rem, 56vw, 17rem);
+  }
+  .xi-hero-img {
+    object-fit: cover;
+    /* Bias slightly left-center so pilgrim group stays visible at 320?430 */
+    object-position: 42% 52%;
+  }
+}
+
+@media (min-width: 431px) and (max-width: 720px) {
+  .xi-hero-photo {
+    min-height: clamp(13.5rem, 50vw, 18.5rem);
+  }
+  .xi-hero-img {
+    object-position: 46% 54%;
+  }
+}
+
+@media (min-width: 900px) {
+  .xi-hero-photo {
+    min-height: clamp(16rem, 28vw, 22rem);
+  }
+  .xi-hero-img {
+    object-position: 50% 55%;
+  }
+}
+
+.xi-hero-photo .xi-hero-sky,
+.xi-hero-photo .xi-hero-rays,
+.xi-hero-photo .xi-hero-clouds,
+.xi-hero-photo .xi-hero-mist,
+.xi-hero-photo .xi-hero-cranes,
+.xi-hero-photo .xi-hero-particles {
+  z-index: 1;
+  pointer-events: none;
+}
+
+.xi-hero-copy-overlay {
+  z-index: 2;
+  pointer-events: none;
+  background: linear-gradient(180deg, transparent 35%, rgba(12, 6, 4, 0.55) 100%);
+  padding-top: 2.5rem;
+}
+
+.xi-hero-copy-overlay .xi-hero-brand {
+  font-size: clamp(1.35rem, 4.5vw, 2rem);
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.65);
+}
+
+/* Announcement ticker under hero */
+.xi-ticker {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0.35rem 0.45rem 0;
+  padding: 0.35rem 0.5rem;
+  border-radius: 0.45rem;
+  border: 1px solid rgba(232, 197, 106, 0.28);
+  background: linear-gradient(180deg, rgba(40, 16, 12, 0.95), rgba(18, 8, 6, 0.96));
+}
+
+.xi-ticker-speaker {
+  width: 1rem;
+  height: 1rem;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 40% 40%, #f0d78a, #8a6414);
+  box-shadow: 0 0 0 2px rgba(232, 197, 106, 0.25);
+  position: relative;
+}
+.xi-ticker-speaker::after {
+  content: "";
+  position: absolute;
+  inset: 28% 22% 28% 38%;
+  background: #2a1408;
+  clip-path: polygon(0 30%, 55% 30%, 100% 0, 100% 100%, 55% 70%, 0 70%);
+}
+
+.xi-ticker-track {
+  overflow: hidden;
+  mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent);
+}
+
+.xi-ticker.is-static .xi-ticker-track {
+  mask-image: none;
+}
+
+.xi-ticker-scroll {
+  display: flex;
+  gap: 3rem;
+  width: max-content;
+  animation: xi-ticker 22s linear infinite;
+  color: #f6e2a0;
+  font-size: 0.72rem;
+  white-space: nowrap;
+}
+
+.xi-ticker-static {
+  color: rgba(246, 226, 160, 0.72);
+  font-size: 0.72rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@keyframes xi-ticker {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+
+.xi-ticker-more {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: rgba(255, 230, 170, 0.85);
+  font-size: 0.68rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.xi-section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.xi-section-more {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: rgba(255, 220, 160, 0.8);
+  font-size: 0.72rem;
+  cursor: pointer;
+}
+
+.xi-ornament {
+  height: 10px;
+  margin: 0.15rem 0 0.55rem;
+  background:
+    linear-gradient(90deg, transparent, rgba(232, 197, 106, 0.55), transparent);
+  position: relative;
+}
+.xi-ornament::before {
+  content: "◆";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -55%);
+  color: #e8c56a;
+  font-size: 0.55rem;
+  background: #1a0c0a;
+  padding: 0 0.35rem;
+}
+
+/* Recommended horizontal cards */
+.xi-rec-row {
+  display: flex;
+  gap: 0.55rem;
+  overflow-x: auto;
+  padding: 0.1rem 0.1rem 0.35rem;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+}
+.xi-rec-row::-webkit-scrollbar { display: none; }
+
+.xi-rec-card {
+  flex: 0 0 auto;
+  width: 6.6rem;
+  min-height: 9.2rem;
+  scroll-snap-align: start;
+  border-radius: 0.7rem;
+  border: 1px solid rgba(232, 197, 106, 0.35);
+  background: linear-gradient(180deg, #3a2418, #151018);
+  color: inherit;
+  padding: 0.45rem 0.4rem 0.5rem;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.25rem;
+  position: relative;
+  cursor: pointer;
+  text-align: left;
+}
+
+.xi-rec-card.is-hot {
+  border: 2px solid #e8c56a;
+  box-shadow:
+    0 0 0 1px rgba(255, 220, 140, 0.35),
+    0 0 18px rgba(232, 160, 40, 0.35);
+  filter: none;
+  opacity: 1;
+}
+
+.xi-rec-card.is-soon {
+  opacity: 0.62;
+  filter: saturate(0.72) brightness(0.88);
+  border-color: rgba(232, 197, 106, 0.22);
+  box-shadow: none;
+}
+
+.xi-rec-card.is-soon .xi-rec-title {
+  color: rgba(255, 241, 200, 0.72);
+}
+
+.xi-rec-card.is-soon .xi-rec-meta {
+  color: rgba(255, 230, 170, 0.55);
+}
+
+.xi-rec-hot {
+  position: absolute;
+  top: 0.35rem;
+  left: 0.35rem;
+  z-index: 2;
+  font-size: 0.58rem;
+  font-weight: 800;
+  color: #fff;
+  background: linear-gradient(180deg, #e04838, #a01810);
+  border-radius: 0.25rem;
+  padding: 0.08rem 0.28rem;
+}
+
+.xi-rec-art {
+  flex: 1;
+  min-height: 4.8rem;
+  border-radius: 0.45rem;
+  overflow: hidden;
+  position: relative;
+  background:
+    radial-gradient(circle at 50% 30%, rgba(255, 220, 140, 0.35), transparent 55%),
+    linear-gradient(160deg, #4a2a18, #1a1014);
+}
+
+.xi-rec-art-img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center 35%;
+  display: block;
+}
+
+.xi-rec-soon {
+  position: absolute;
+  top: 0.35rem;
+  right: 0.35rem;
+  z-index: 2;
+  font-size: 0.55rem;
+  font-weight: 700;
+  color: #2a1408;
+  background: linear-gradient(180deg, #f0d78a, #b8892d);
+  border-radius: 0.25rem;
+  padding: 0.08rem 0.28rem;
+}
+
+.xi-rec-meta {
+  font-size: 0.58rem;
+  color: rgba(255, 230, 170, 0.72);
+  letter-spacing: 0.01em;
+}
+
+.xi-rec-card.art-bdk .xi-rec-art {
+  background:
+    radial-gradient(circle at 50% 28%, rgba(255, 120, 60, 0.45), transparent 50%),
+    linear-gradient(160deg, #5a2010, #180808);
+}
+.xi-rec-card.art-dragon .xi-rec-art {
+  background:
+    radial-gradient(circle at 50% 28%, rgba(80, 160, 255, 0.4), transparent 50%),
+    linear-gradient(160deg, #183050, #0c1420);
+}
+.xi-rec-card.art-phoenix .xi-rec-art {
+  background:
+    radial-gradient(circle at 50% 28%, rgba(255, 140, 60, 0.45), transparent 50%),
+    linear-gradient(160deg, #5a2810, #201008);
+}
+.xi-rec-card.art-wealth .xi-rec-art {
+  background:
+    radial-gradient(circle at 50% 28%, rgba(255, 220, 100, 0.5), transparent 50%),
+    linear-gradient(160deg, #5a4010, #201808);
+}
+.xi-rec-card.art-panda .xi-rec-art {
+  background:
+    radial-gradient(circle at 50% 28%, rgba(200, 220, 200, 0.35), transparent 50%),
+    linear-gradient(160deg, #2a3030, #101418);
+}
+
+.xi-rec-title {
+  font-family: var(--xi-font-display);
+  font-size: 0.92rem;
+  color: #fff1c8;
+}
+
+.xi-rec-jackpot {
+  font-size: 0.58rem;
+  color: #ffe08a;
+  letter-spacing: 0.02em;
+}
+
+/* Activity Center ? check-in (business preserved; lobby banner removed) */
+.xi-activity-checkin-entry {
+  margin-top: 0.85rem;
+}
+.xi-activity-checkin-entry .xi-primary {
+  min-height: 44px;
+  width: 100%;
+}
+
+/* Quick feature row ? 7 icons, unified height / ?44px touch */
+.xi-quick-section {
+  margin-bottom: 0.15rem;
+}
+
+.xi-quick-row {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 0.28rem;
+  align-items: stretch;
+}
+
+.xi-quick-btn {
+  position: relative;
+  min-width: 44px;
+  min-height: 44px;
+  height: 4.55rem;
+  font-size: 0.6rem;
+  padding: 0.35rem 0.12rem 0.3rem;
+  gap: 0.22rem;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+  background: linear-gradient(180deg, rgba(70, 30, 18, 0.75), rgba(20, 10, 8, 0.85));
+}
+
+.xi-quick-btn .xi-feat-ico {
+  width: 1.55rem;
+  height: 1.55rem;
+  flex-shrink: 0;
+}
+
+.xi-quick-label {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1.15;
+  color: rgba(244, 231, 194, 0.88);
+}
+
+.xi-feat-dot {
+  position: absolute;
+  top: 0.28rem;
+  right: 0.28rem;
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 50%;
+  background: #e04838;
+  box-shadow: 0 0 0 2px rgba(20, 8, 6, 0.7);
+  z-index: 1;
+}
+
+.xi-feat-ico.motif-chest {
+  background: linear-gradient(145deg, rgba(232, 197, 106, 0.55), rgba(140, 80, 30, 0.4));
+}
+.xi-feat-ico.motif-chest::before {
+  inset: 28% 18% 22%;
+  border-radius: 0.2rem;
+  border: 1.5px solid rgba(255, 230, 160, 0.8);
+  background: linear-gradient(180deg, rgba(255, 220, 140, 0.5), rgba(160, 90, 30, 0.5));
+}
+.xi-feat-ico.motif-pouch {
+  background: linear-gradient(145deg, rgba(80, 140, 220, 0.4), rgba(30, 50, 100, 0.4));
+}
+.xi-feat-ico.motif-pouch::before {
+  inset: 22% 28% 18%;
+  border-radius: 40% 40% 45% 45%;
+  background: rgba(140, 190, 255, 0.75);
+}
+.xi-feat-ico.motif-gift {
+  background: linear-gradient(145deg, rgba(232, 197, 106, 0.45), rgba(180, 40, 40, 0.35));
+}
+.xi-feat-ico.motif-gift::before {
+  inset: 24%;
+  border-radius: 0.2rem;
+  background: linear-gradient(180deg, #f0d78a, #c43c2c);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.2);
+}
+.xi-feat-ico.motif-crown {
+  background: linear-gradient(145deg, rgba(255, 220, 120, 0.5), rgba(120, 70, 20, 0.4));
+}
+.xi-feat-ico.motif-crown::before {
+  inset: 28% 18% 30%;
+  clip-path: polygon(0 100%, 0 45%, 20% 70%, 50% 20%, 80% 70%, 100% 45%, 100% 100%);
+  background: #ffe9a8;
+}
+.xi-feat-ico.motif-trophy {
+  background: linear-gradient(145deg, rgba(255, 210, 100, 0.45), rgba(90, 50, 20, 0.4));
+}
+.xi-feat-ico.motif-trophy::before {
+  inset: 20% 30% 22%;
+  border-radius: 40% 40% 20% 20%;
+  background: linear-gradient(180deg, #ffe9a8, #b8892d);
+}
+.xi-feat-ico.motif-scroll {
+  background: linear-gradient(145deg, rgba(240, 220, 180, 0.4), rgba(100, 70, 40, 0.35));
+}
+.xi-feat-ico.motif-scroll::before {
+  inset: 18% 22%;
+  border-radius: 0.15rem;
+  background: linear-gradient(180deg, #f6e8c8, #d4b070);
+}
+.xi-feat-ico.motif-headset {
+  background: linear-gradient(145deg, rgba(180, 200, 220, 0.4), rgba(50, 70, 90, 0.4));
+}
+.xi-feat-ico.motif-headset::before {
+  inset: 22% 20%;
+  border-radius: 50% 50% 20% 20%;
+  border: 2px solid rgba(220, 230, 240, 0.8);
+  background: transparent;
+}
+
+/* Bottom nav ? reference active gold/red; safe-area; tight after banner removal */
+.xi-bottom-nav-v2 {
+  background: linear-gradient(180deg, rgba(40, 14, 10, 0.88), rgba(16, 6, 4, 0.98));
+  border-top: 1px solid rgba(232, 197, 106, 0.35);
+  padding-top: 0.35rem;
+  padding-bottom: calc(0.35rem + env(safe-area-inset-bottom, 0px));
+}
+
+.xi-bottom-nav-v2 .xi-nav-btn {
+  position: relative;
+  gap: 0.2rem;
+  font-size: 0.65rem;
+  color: rgba(244, 231, 194, 0.55);
+}
+
+.xi-nav-ico {
+  width: 1.45rem;
+  height: 1.45rem;
+  border-radius: 0.45rem;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(232, 197, 106, 0.2);
+  position: relative;
+}
+.xi-nav-ico::before {
+  content: "";
+  position: absolute;
+  inset: 22%;
+  background: rgba(232, 197, 106, 0.55);
+}
+.xi-nav-ico.ico-temple::before {
+  clip-path: polygon(50% 8%, 92% 38%, 80% 38%, 80% 92%, 20% 92%, 20% 38%, 8% 38%);
+}
+.xi-nav-ico.ico-pad::before {
+  inset: 24% 20%;
+  border-radius: 0.2rem;
+  clip-path: none;
+}
+.xi-nav-ico.ico-bag::before {
+  inset: 22% 28% 18%;
+  border-radius: 40% 40% 35% 35%;
+  clip-path: none;
+}
+.xi-nav-ico.ico-gift::before {
+  inset: 24%;
+  border-radius: 0.15rem;
+  clip-path: none;
+}
+.xi-nav-ico.ico-user::before {
+  inset: 18% 28% 22%;
+  border-radius: 50% 50% 35% 35%;
+  clip-path: none;
+}
+
+.xi-bottom-nav-v2 .xi-nav-btn.is-active {
+  color: #ffe7a4;
+}
+.xi-bottom-nav-v2 .xi-nav-btn.is-active .xi-nav-ico {
+  background: linear-gradient(180deg, #e8a040, #a02818);
+  border-color: rgba(255, 220, 140, 0.65);
+  box-shadow: 0 0 12px rgba(232, 120, 40, 0.45);
+}
+.xi-bottom-nav-v2 .xi-nav-btn.is-active .xi-nav-ico::before {
+  background: rgba(255, 245, 210, 0.95);
+}
+
+.xi-nav-dot-badge {
+  position: absolute;
+  top: 0.1rem;
+  right: calc(50% - 1.05rem);
+  width: 0.38rem;
+  height: 0.38rem;
+  border-radius: 50%;
+  background: #e04838;
+}
+
+.xi-breadcrumb {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  padding: 0.45rem 0.85rem 0;
+  font-size: 0.72rem;
+  color: rgba(255, 230, 190, 0.72);
+}
+.xi-breadcrumb a,
+.xi-crumb-link {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  color: #f0d78a;
+  text-decoration: none;
+  cursor: pointer;
+}
+.xi-breadcrumb a:hover,
+.xi-crumb-link:hover {
+  text-decoration: underline;
+}
+.xi-crumb-sep {
+  opacity: 0.65;
+  user-select: none;
+}
+
+/* Persistent shell ? layout stays mounted across Lobby/Hub/Play */
+.xi-shell {
+  min-height: 100%;
+}
+
+/* Light route loading ? never a solid black trap */
+.xi-route-loading {
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: 0;
+  z-index: 40;
+  height: 3px;
+  pointer-events: none;
+  background: transparent;
+}
+.xi-route-loading-shell {
+  height: 100%;
+  width: 100%;
+}
+.xi-route-loading-bar {
+  height: 100%;
+  width: 40%;
+  background: linear-gradient(90deg, transparent, rgba(232, 197, 106, 0.85), transparent);
+  animation: xi-route-loading-slide 700ms ease-in-out infinite;
+  transform: translateX(0);
+}
+@keyframes xi-route-loading-slide {
+  0% {
+    transform: translateX(-120%);
+  }
+  100% {
+    transform: translateX(280%);
+  }
+}
+
+/* Page transitions ? light veil; never transform #gl or #hud shell */
+.xi-nav-leave {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  pointer-events: none;
+  background: rgba(8, 10, 16, 0.28);
+  opacity: 0;
+  transform: translateX(0) scale(1);
+  transition:
+    opacity 220ms ease,
+    transform 220ms ease;
+}
+.xi-nav-leave-soft {
+  background: rgba(8, 10, 16, 0.28);
+}
+.xi-nav-leave.is-active {
+  opacity: 1;
+}
+.xi-nav-leave.is-exit {
+  opacity: 0;
+}
+.xi-nav-leave-slide-left.is-active {
+  transform: translateX(-6%);
+}
+.xi-nav-leave-slide-right.is-active {
+  transform: translateX(6%);
+}
+.xi-nav-leave-zoom-fade.is-active {
+  transform: scale(1.03);
+}
+.xi-nav-leave-fade-slide.is-active {
+  transform: translateX(4%);
+}
+
+/* Immediate click feedback (<100ms) */
+html.xi-nav-pending {
+  cursor: progress;
+}
+
+/* Pause heavy ambient FX during nav on LOW/MED */
+html.xi-nav-busy[data-xi-tier="low"] .xi-hero-particles,
+html.xi-nav-busy[data-xi-tier="medium"] .xi-hero-particles,
+html.xi-nav-busy[data-xi-tier="low"] .xi-hero-clouds,
+html.xi-nav-busy[data-xi-tier="medium"] .xi-hero-clouds,
+html.xi-nav-busy[data-xi-tier="low"] .xi-bdk-scene,
+html.xi-nav-busy[data-xi-tier="medium"] .xi-bdk-scene,
+html.xi-nav-busy[data-xi-tier="low"] .xi-bdk-layer,
+html.xi-nav-busy[data-xi-tier="medium"] .xi-bdk-layer {
+  animation-play-state: paused !important;
+}
+
+.xi-nav-enter {
+  animation-duration: 220ms;
+  animation-timing-function: ease-out;
+  animation-fill-mode: both;
+}
+.xi-nav-enter-slide-left {
+  animation-name: xi-nav-in-from-right;
+}
+.xi-nav-enter-slide-right {
+  animation-name: xi-nav-in-from-left;
+}
+.xi-nav-enter-zoom-fade {
+  animation-name: xi-nav-in-zoom;
+}
+.xi-nav-enter-fade-slide {
+  animation-name: xi-nav-in-fade-slide;
+}
+
+@keyframes xi-nav-in-from-right {
+  from {
+    opacity: 0.35;
+    transform: translateX(10%);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+@keyframes xi-nav-in-from-left {
+  from {
+    opacity: 0.35;
+    transform: translateX(-10%);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+@keyframes xi-nav-in-zoom {
+  from {
+    opacity: 0.2;
+    transform: scale(0.94);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+@keyframes xi-nav-in-fade-slide {
+  from {
+    opacity: 0.25;
+    transform: translateX(-8%);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* Play enter ? light fade veil only (no transform on #gl ancestors) */
+.xi-nav-enter-veil {
+  background: rgba(8, 10, 16, 0.32);
+  opacity: 1;
+  transform: none !important;
+  transition: opacity 220ms ease;
+}
+.xi-nav-enter-veil.is-exit {
+  opacity: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .xi-nav-leave,
+  .xi-nav-enter,
+  .xi-nav-enter-veil {
+    transition: none !important;
+    animation: none !important;
+  }
+}
+
+.xi-play-chrome {
+  position: absolute;
+  top: 0.55rem;
+  left: 0.55rem;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  pointer-events: none;
+}
+.xi-play-chrome .xi-play-back,
+.xi-play-chrome .xi-play-title-chip {
+  pointer-events: auto;
+  position: static;
+}
+
+@media (max-width: 520px) {
+  .xi-topbar-v2 {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "user actions"
+      "balances balances";
+    gap: 0.35rem 0.4rem;
+    align-items: center;
+  }
+  .xi-topbar-v2 .xi-top-left {
+    grid-area: user;
+    min-width: 0;
+    overflow: hidden;
+  }
+  .xi-topbar-v2 .xi-top-center {
+    grid-area: balances;
+    justify-content: flex-start;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    gap: 0.35rem;
+    min-width: 0;
+    scrollbar-width: none;
+  }
+  .xi-topbar-v2 .xi-top-center::-webkit-scrollbar { display: none; }
+  .xi-topbar-v2 .xi-top-right {
+    grid-area: actions;
+    flex-wrap: nowrap;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 0.25rem;
+    max-width: none;
+    min-width: 0;
+  }
+  .xi-lang-direct {
+    flex-shrink: 0;
+  }
+  .xi-lang-direct-btn {
+    font-size: 0.55rem;
+    padding: 0.18rem 0.28rem;
+  }
+  .xi-wallet-chip strong {
+    font-size: 0.68rem;
+  }
+  .xi-quick-row {
+    grid-template-columns: repeat(7, minmax(2.85rem, 1fr));
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 0.1rem;
+  }
+  .xi-quick-btn {
+    min-width: 44px;
+    height: 4.65rem;
+  }
+}
+
+/* Phone band 320?430: prevent top crush / lang clip / wallet wrap mess */
+@media (max-width: 430px) {
+  .xi-topbar-v2 {
+    margin-inline: 0.35rem;
+    padding: 0.4rem 0.4rem;
+  }
+  .xi-topbar-v2 .xi-top-right {
+    gap: 0.18rem;
+  }
+  .xi-lang-direct {
+    gap: 0.08rem;
+    padding: 0.1rem;
+  }
+  .xi-lang-direct-btn {
+    font-size: 0.52rem;
+    padding: 0.16rem 0.24rem;
+  }
+  .xi-icon-btn.xi-icon-msg,
+  .xi-icon-btn.xi-icon-settings {
+    min-width: 2rem;
+    padding: 0.16rem 0.22rem;
+  }
+  .xi-icon-label {
+    font-size: 0.52rem;
+  }
+  .xi-wallet-chip {
+    padding: 0.16rem 0.22rem 0.16rem 0.32rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .xi-layout-v2 { animation: none; }
+  .xi-ticker-scroll { animation: none; }
+}
+
+/* ========== BDK hub ? Zhao official hero plate ========== */
+.xi-bdk-root.xi-layout-v2 {
+  background:
+    radial-gradient(90% 45% at 50% -5%, rgba(180, 60, 20, 0.35), transparent 55%),
+    linear-gradient(180deg, #2a100c 0%, #120808 45%, #080404 100%);
+}
+
+.xi-bdk-scene-ambient {
+  opacity: 0.55;
+}
+.xi-bdk-scene-ambient .xi-bdk-figure,
+.xi-bdk-scene-ambient .xi-bdk-array,
+.xi-bdk-scene-ambient .xi-bdk-clash,
+.xi-bdk-scene-ambient .xi-bdk-palace,
+.xi-bdk-scene-ambient .xi-bdk-mid,
+.xi-bdk-scene-ambient .xi-bdk-thunder,
+.xi-bdk-scene-ambient .xi-bdk-clouds {
+  display: none;
+}
+
+.xi-bdk-hub-photo {
+  padding-top: 0.35rem;
+}
+
+.xi-bdk-hero-photo {
+  position: relative;
+  margin: 0 0 0.75rem;
+  border-radius: 0.9rem;
+  overflow: hidden;
+  border: 1px solid rgba(232, 197, 106, 0.45);
+  background:
+    radial-gradient(60% 50% at 50% 40%, rgba(120, 40, 16, 0.55), #0a0606 75%);
+  /* Keep 4:3 plate fully visible ? no crop of main figure */
+  aspect-ratio: 4 / 3;
+  max-height: min(52vh, 28rem);
+  box-shadow:
+    0 0 0 1px rgba(255, 160, 60, 0.12) inset,
+    0 14px 36px rgba(0, 0, 0, 0.45);
+  isolation: isolate;
+}
+
+.xi-bdk-hero-img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: center 45%;
+  image-rendering: auto;
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+  transform: translateZ(0);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.xi-bdk-hero-fx {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.xi-bdk-hero-embers {
+  background:
+    radial-gradient(18% 22% at 18% 88%, rgba(255, 120, 40, 0.28), transparent 70%),
+    radial-gradient(22% 28% at 82% 90%, rgba(255, 80, 20, 0.22), transparent 72%);
+  mix-blend-mode: screen;
+  animation: xi-bdk-lava 5s ease-in-out infinite;
+}
+
+.xi-bdk-hero-rays {
+  background:
+    radial-gradient(45% 40% at 55% 20%, rgba(255, 210, 120, 0.18), transparent 70%);
+  mix-blend-mode: screen;
+  opacity: 0.85;
+}
+
+.xi-bdk-hero-copy {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 2;
+  pointer-events: none;
+  padding: 2.2rem 0.9rem 0.75rem;
+  background: linear-gradient(180deg, transparent 0%, rgba(8, 4, 4, 0.72) 55%, rgba(8, 4, 4, 0.9) 100%);
+}
+
+.xi-bdk-hero-copy .xi-bdk-tag {
+  margin: 0 0 0.2rem;
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  color: rgba(255, 210, 140, 0.85);
+}
+
+.xi-bdk-hero-copy h1 {
+  margin: 0 0 0.25rem;
+  font-family: var(--xi-font-display);
+  font-size: clamp(1.35rem, 5vw, 1.85rem);
+  color: #ffe7a4;
+  text-shadow: 0 2px 14px rgba(0, 0, 0, 0.65);
+}
+
+.xi-bdk-hero-copy p {
+  margin: 0;
+  font-size: 0.78rem;
+  color: rgba(255, 230, 200, 0.78);
+  line-height: 1.35;
+}
+
+.xi-bdk-hub-photo .xi-bdk-actions {
+  margin-top: 0.15rem;
+}
+
+.xi-bdk-hub-photo .xi-start-game-cta {
+  width: 100%;
+  min-height: 3.1rem;
+  font-size: 1.05rem;
+  letter-spacing: 0.06em;
+}
+
+@media (min-width: 720px) {
+  .xi-bdk-hero-photo {
+    max-height: min(56vh, 32rem);
+  }
+}
+
+@media (max-width: 520px) {
+  .xi-bdk-hero-photo {
+    /* Phone: still contain full plate; taller band if needed */
+    max-height: min(48vh, 22rem);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .xi-bdk-hero-embers { animation: none; }
+}
+
+/* Fix: hub flex was collapsing hero plate to ~0 width */
+.xi-bdk-hub.xi-bdk-hub-photo {
+  align-items: stretch;
+  justify-content: flex-start;
+  width: 100%;
+  max-width: 720px;
+  margin-inline: auto;
+  padding-top: 0.5rem;
+  padding-bottom: 5rem;
+  text-align: left;
+  background: transparent;
+}
+
+.xi-bdk-hub.xi-bdk-hub-photo .xi-bdk-hero-photo {
+  width: 100%;
+  align-self: stretch;
+  min-height: 14rem;
+}
+
+.xi-bdk-hub.xi-bdk-hub-photo .xi-bdk-actions,
+.xi-bdk-hub.xi-bdk-hub-photo .xi-bdk-feat-section {
+  width: 100%;
+  text-align: center;
+}
+
+.xi-bdk-hub.xi-bdk-hub-photo .xi-section-title {
+  text-align: left;
+}
+
+/* ========== Quality LOD (presentation) ? never touch #hud translateZ elsewhere ========== */
+:root {
+  --xi-transition-ms: 280ms;
+}
+
+.xi-quality-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin: 0.75rem 0 1rem;
+  text-align: left;
+}
+.xi-quality-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.xi-quality-label {
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+  color: rgba(240, 220, 160, 0.85);
+}
+.xi-quality-switch {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+/* Lobby V3 tier FX — LOW static / MED light clouds / HIGH+ rays+spirit dots */
+html[data-xi-tier="low"] .xi-hero-particles,
+html[data-xi-tier="low"] .xi-hero-cranes,
+html[data-xi-tier="medium"] .xi-hero-particles,
+html[data-xi-tier="medium"] .xi-hero-cranes {
+  display: none !important;
+}
+/* LOW: Journey art kept; FX fully static */
+html[data-xi-tier="low"] .xi-hero-rays,
+html[data-xi-tier="low"] .xi-hero-sun,
+html[data-xi-tier="low"] .xi-hero-sun-breath {
+  opacity: 0.14;
+  filter: none !important;
+  animation: none !important;
+}
+html[data-xi-tier="low"] .xi-hero-clouds,
+html[data-xi-tier="low"] .xi-hero-mist {
+  animation: none !important;
+  filter: none !important;
+  opacity: 0.26;
+}
+/* MED: light clouds only (5–8s), no rays/particles */
+html[data-xi-tier="medium"] .xi-hero-rays {
+  opacity: 0.12;
+  filter: none !important;
+  animation: none !important;
+}
+html[data-xi-tier="medium"] .xi-hero-sun,
+html[data-xi-tier="medium"] .xi-hero-sun-breath {
+  opacity: 0.55;
+  animation: xi-sun-breath 7s ease-in-out infinite;
+  filter: none !important;
+}
+html[data-xi-tier="medium"] .xi-hero-clouds {
+  opacity: 0.55;
+  filter: none !important;
+  animation: xi-clouds-slow 7.5s ease-in-out infinite;
+}
+html[data-xi-tier="medium"] .xi-hero-mist {
+  opacity: 0.45;
+  filter: none !important;
+  animation: xi-mist 8s ease-in-out infinite;
+}
+/* HIGH / ULTRA: light rays + spirit dots (no heavy blur) */
+html[data-xi-tier="high"] .xi-hero-rays,
+html[data-xi-tier="ultra"] .xi-hero-rays {
+  opacity: 0.55;
+  filter: none !important;
+  animation: xi-rays-slow 18s linear infinite;
+}
+html[data-xi-tier="high"] .xi-hero-sun,
+html[data-xi-tier="ultra"] .xi-hero-sun,
+html[data-xi-tier="high"] .xi-hero-sun-breath,
+html[data-xi-tier="ultra"] .xi-hero-sun-breath {
+  opacity: 0.85;
+  animation: xi-sun-breath 6.5s ease-in-out infinite;
+  filter: none !important;
+}
+html[data-xi-tier="high"] .xi-hero-clouds,
+html[data-xi-tier="ultra"] .xi-hero-clouds {
+  opacity: 0.72;
+  filter: none !important;
+  animation: xi-clouds-slow 6.5s ease-in-out infinite;
+}
+html[data-xi-tier="low"] .xi-lobby-root,
+html[data-xi-tier="medium"] .xi-lobby-root,
+html[data-xi-tier="low"] .xi-topbar,
+html[data-xi-tier="medium"] .xi-topbar,
+html[data-xi-tier="low"] .xi-bottom-nav,
+html[data-xi-tier="medium"] .xi-bottom-nav,
+html[data-xi-tier="low"] .xi-modal-backdrop,
+html[data-xi-tier="medium"] .xi-modal-backdrop {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+html[data-xi-tier="low"] .xi-bdk-hero-embers,
+html[data-xi-tier="low"] .xi-bdk-hero-rays {
+  opacity: 0.25;
+  animation: none !important;
+  filter: none;
+}
+html[data-xi-tier="medium"] .xi-bdk-hero-embers {
+  opacity: 0.55;
+}
+html[data-xi-tier="high"] .xi-bdk-hero-embers,
+html[data-xi-tier="ultra"] .xi-bdk-hero-embers {
+  opacity: 1;
+}
+html[data-xi-fx="off"] .xi-hero-particles,
+html[data-xi-fx="off"] .xi-hero-rays,
+html[data-xi-fx="off"] .xi-bdk-hero-embers,
+html[data-xi-fx="off"] .xi-bdk-hero-rays {
+  display: none !important;
+}
+
+/* Ultra-narrow phones 320?360 */
+@media (max-width: 360px) {
+  .xi-topbar-v2 {
+    margin-inline: 0.3rem;
+    gap: 0.28rem;
+  }
+  .xi-lang-direct-btn {
+    font-size: 0.48rem;
+    padding: 0.14rem 0.2rem;
+  }
+  .xi-rec-card {
+    width: 5.9rem;
+    min-height: 8.4rem;
+  }
+  .xi-quick-btn {
+    font-size: 0.55rem;
+    height: 4.5rem;
+  }
+  .xi-bottom-nav-v2 .xi-nav-btn {
+    font-size: 0.58rem;
+    min-height: 44px;
+  }
+}
+
+html[data-xi-tier="low"] .xi-layout-v2,
+html[data-xi-tier="low"] .xi-modal,
+html[data-xi-tier="low"] .xi-decree-btn,
+html[data-xi-tier="low"] .xi-primary {
+  transition-duration: var(--xi-transition-ms, 220ms) !important;
+}
+
+/* ===== P3 Auth (mythic black-gold, mobile-first 320?C430) ===== */
+.xi-auth-entry {
+  display: flex;
+  gap: 0.28rem;
+  align-items: center;
+}
+.xi-auth-entry-btn {
+  border: 1px solid rgba(232, 197, 106, 0.45);
+  background: rgba(12, 16, 24, 0.72);
+  color: var(--xi-gold, #e8c56a);
+  border-radius: 999px;
+  padding: 0.22rem 0.55rem;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.xi-auth-entry-btn.is-primary {
+  background: linear-gradient(180deg, #d4a84b, #8a5a18);
+  color: #1a1208;
+  border-color: rgba(255, 220, 140, 0.65);
+}
+.xi-auth-root {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 0.75rem 0.75rem 2rem;
+  min-height: 100dvh;
+}
+.xi-auth-shell {
+  width: min(100%, 26rem);
+  margin-top: 0.5rem;
+  padding: 1rem 1rem 1.25rem;
+  border-radius: 1rem;
+  border: 1px solid rgba(232, 197, 106, 0.38);
+  background:
+    radial-gradient(80% 60% at 50% 0%, rgba(232, 197, 106, 0.12), transparent 55%),
+    linear-gradient(180deg, rgba(22, 28, 40, 0.96), rgba(8, 10, 16, 0.98));
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
+}
+.xi-auth-header {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  margin-bottom: 0.75rem;
+}
+.xi-auth-back {
+  width: 2rem;
+  height: 2rem;
+  border-radius: 999px;
+  border: 1px solid rgba(232, 197, 106, 0.35);
+  background: rgba(0, 0, 0, 0.25);
+  color: var(--xi-mist, #e8dcbd);
+  cursor: pointer;
+}
+.xi-auth-brand {
+  font-family: var(--xi-font-display);
+  font-size: 1.15rem;
+  color: var(--xi-gold, #e8c56a);
+  letter-spacing: 0.06em;
+}
+.xi-auth-title {
+  margin: 0 0 0.85rem;
+  font-family: var(--xi-font-display);
+  font-size: 1.35rem;
+  color: #f3e6c2;
+}
+.xi-auth-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.35rem;
+  margin-bottom: 0.85rem;
+}
+.xi-auth-tabs button {
+  border: 1px solid rgba(232, 197, 106, 0.28);
+  background: rgba(0, 0, 0, 0.28);
+  color: rgba(243, 230, 194, 0.75);
+  border-radius: 0.65rem;
+  padding: 0.55rem 0.4rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.xi-auth-tabs button.is-active {
+  color: #1a1208;
+  background: linear-gradient(180deg, #e0c06a, #a67c2d);
+  border-color: rgba(255, 230, 160, 0.7);
+}
+.xi-auth-steps {
+  display: flex;
+  gap: 0.35rem;
+  list-style: none;
+  padding: 0;
+  margin: 0 0 0.85rem;
+  font-size: 0.68rem;
+  color: rgba(243, 230, 194, 0.45);
+}
+.xi-auth-steps li {
+  flex: 1;
+  text-align: center;
+  padding: 0.3rem 0.2rem;
+  border-bottom: 2px solid rgba(232, 197, 106, 0.15);
+}
+.xi-auth-steps li.is-on {
+  color: var(--xi-gold, #e8c56a);
+  border-bottom-color: var(--xi-gold, #e8c56a);
+}
+.xi-auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+.xi-auth-label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: 0.78rem;
+  color: rgba(243, 230, 194, 0.82);
+}
+.xi-auth-input {
+  border: 1px solid rgba(232, 197, 106, 0.32);
+  background: rgba(0, 0, 0, 0.35);
+  color: #f7efd8;
+  border-radius: 0.65rem;
+  padding: 0.7rem 0.75rem;
+  font-size: 1rem;
+  min-height: 2.75rem;
+}
+.xi-auth-input:focus {
+  outline: 1px solid rgba(232, 197, 106, 0.7);
+  border-color: rgba(232, 197, 106, 0.7);
+}
+.xi-auth-hint {
+  margin: 0;
+  font-size: 0.7rem;
+  color: rgba(243, 230, 194, 0.55);
+}
+.xi-auth-error {
+  margin: 0;
+  padding: 0.55rem 0.65rem;
+  border-radius: 0.55rem;
+  background: rgba(160, 40, 40, 0.28);
+  border: 1px solid rgba(220, 90, 80, 0.45);
+  color: #ffc9c2;
+  font-size: 0.78rem;
+}
+.xi-auth-info {
+  margin: 0;
+  font-size: 0.78rem;
+  color: #9fd9c2;
+}
+.xi-auth-cta {
+  margin-top: 0.35rem;
+  border: 0;
+  border-radius: 0.8rem;
+  min-height: 2.9rem;
+  font-size: 1rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  color: #1a1208;
+  background: linear-gradient(180deg, #f0d078, #b8892d 55%, #8a5a18);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
+}
+.xi-auth-cta:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+.xi-auth-links {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  margin-top: 1rem;
+}
+.xi-auth-links button {
+  border: 0;
+  background: transparent;
+  color: rgba(232, 197, 106, 0.85);
+  font-size: 0.8rem;
+  text-decoration: underline;
+  cursor: pointer;
+  padding: 0.25rem;
+}
+@media (max-width: 430px) {
+  .xi-auth-shell {
+    margin-top: 0.25rem;
+    padding: 0.85rem 0.85rem 1.1rem;
+  }
+  .xi-auth-title {
+    font-size: 1.2rem;
+  }
+}
+@media (max-width: 360px) {
+  .xi-auth-entry-btn {
+    font-size: 0.55rem;
+    padding: 0.18rem 0.4rem;
+  }
+  .xi-auth-input {
+    font-size: 0.95rem;
+  }
+}
+
+/* ========== Lobby V3 boutique polish (/xi only) ========== */
+.xi-lobby-v3 {
+  --xi-ink: #08060a;
+  --xi-dusk: #141018;
+  --xi-gold: #e8c56a;
+  --xi-gold-bright: #f6e2a0;
+  --xi-gold-deep: #a67c2d;
+  --xi-line: rgba(232, 197, 106, 0.32);
+  --xi-panel: rgba(12, 10, 14, 0.82);
+  background:
+    radial-gradient(95% 48% at 50% -10%, rgba(160, 70, 30, 0.26), transparent 58%),
+    radial-gradient(70% 40% at 80% 0%, rgba(232, 197, 106, 0.08), transparent 50%),
+    linear-gradient(180deg, #2a120e 0%, #120a0c 40%, #08060a 100%);
+}
+
+.xi-lobby-v3 .xi-topbar-v2 {
+  border-color: rgba(232, 197, 106, 0.58);
+  background:
+    linear-gradient(180deg, rgba(72, 32, 22, 0.96), rgba(18, 10, 10, 0.95));
+  box-shadow:
+    0 0 0 1px rgba(232, 197, 106, 0.18) inset,
+    0 10px 26px rgba(0, 0, 0, 0.45);
+}
+
+/* Slow hero FX (5–8s) — opacity/transform only, no blur spam */
+@keyframes xi-clouds-slow {
+  0%, 100% { transform: translate3d(0, 0, 0); opacity: 0.55; }
+  50% { transform: translate3d(-3.5%, 0.5%, 0); opacity: 0.78; }
+}
+@keyframes xi-sun-breath {
+  0%, 100% { opacity: 0.62; transform: scale(1); }
+  50% { opacity: 0.95; transform: scale(1.05); }
+}
+@keyframes xi-rays-slow {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+@keyframes xi-spirit-float {
+  0% { transform: translate3d(0, 110%, 0); opacity: 0; }
+  18% { opacity: 0.75; }
+  100% { transform: translate3d(8px, -18%, 0); opacity: 0; }
+}
+@keyframes xi-hot-glow {
+  0%, 100% {
+    box-shadow:
+      0 0 0 1px rgba(255, 220, 140, 0.4),
+      0 0 14px rgba(232, 160, 40, 0.35);
+  }
+  50% {
+    box-shadow:
+      0 0 0 1px rgba(255, 230, 160, 0.65),
+      0 0 22px rgba(255, 180, 60, 0.55);
+  }
+}
+@keyframes xi-vip-breath {
+  0%, 100% { filter: brightness(1); box-shadow: 0 0 0 rgba(232, 197, 106, 0); }
+  50% { filter: brightness(1.08); box-shadow: 0 0 10px rgba(232, 197, 106, 0.35); }
+}
+@keyframes xi-wallet-sheen {
+  0%, 100% { border-color: rgba(232, 197, 106, 0.45); }
+  50% { border-color: rgba(246, 226, 160, 0.72); }
+}
+
+.xi-lobby-v3 .xi-hero-photo {
+  border-color: rgba(232, 197, 106, 0.48);
+  box-shadow:
+    0 0 0 1px rgba(232, 197, 106, 0.16) inset,
+    0 14px 36px rgba(0, 0, 0, 0.42);
+}
+
+.xi-lobby-v3 .xi-hero-sun,
+.xi-lobby-v3 .xi-hero-sun-breath {
+  position: absolute;
+  width: 7.5rem;
+  height: 7.5rem;
+  right: 12%;
+  top: 4%;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle, rgba(255, 236, 180, 0.55), rgba(255, 190, 80, 0.14) 48%, transparent 72%);
+  pointer-events: none;
+  z-index: 1;
+  filter: none;
+}
+
+.xi-lobby-v3 .xi-hero-rays {
+  animation: xi-rays-slow 18s linear infinite;
+  opacity: 0.5;
+  filter: none;
+}
+
+.xi-lobby-v3 .xi-hero-clouds {
+  animation: xi-clouds-slow 7s ease-in-out infinite;
+  filter: none;
+}
+
+.xi-lobby-v3 .xi-hero-spirit-dots span {
+  width: 2.5px;
+  height: 2.5px;
+  background: rgba(255, 230, 160, 0.8);
+  box-shadow: 0 0 4px rgba(255, 210, 120, 0.4);
+  animation: xi-spirit-float 7.5s linear infinite;
+}
+
+/* HOT BDK gold glow → hub */
+.xi-lobby-v3 .xi-rec-card.is-hot {
+  border: 2px solid #e8c56a;
+  animation: xi-hot-glow 2.8s ease-in-out infinite;
+}
+.xi-lobby-v3 .xi-rec-card.is-hot:hover,
+.xi-lobby-v3 .xi-rec-card.is-hot:focus-visible {
+  transform: translateY(-2px);
+  filter: brightness(1.06);
+}
+
+/* Coming Soon — dimmer + badge */
+.xi-lobby-v3 .xi-rec-card.is-soon {
+  opacity: 0.52;
+  filter: saturate(0.55) brightness(0.82);
+  border-color: rgba(232, 197, 106, 0.16);
+  animation: none;
+}
+.xi-lobby-v3 .xi-rec-card.is-soon:hover,
+.xi-lobby-v3 .xi-rec-card.is-soon:focus-visible {
+  opacity: 0.62;
+  filter: saturate(0.6) brightness(0.88);
+}
+
+/* Quick actions — unified size / radius / stroke / touch / hover / red-dot */
+.xi-lobby-v3 .xi-quick-btn {
+  min-width: 44px;
+  min-height: 44px;
+  height: 4.6rem;
+  border-radius: 0.7rem;
+  border: 1px solid rgba(232, 197, 106, 0.34);
+  background: linear-gradient(180deg, rgba(58, 26, 16, 0.82), rgba(14, 8, 8, 0.9));
+  transition: border-color 160ms ease, transform 120ms ease, filter 160ms ease;
+}
+.xi-lobby-v3 .xi-quick-btn .xi-feat-ico {
+  width: 1.6rem;
+  height: 1.6rem;
+  border-radius: 0.42rem;
+  border: 1px solid rgba(232, 197, 106, 0.42);
+}
+.xi-lobby-v3 .xi-quick-btn:hover,
+.xi-lobby-v3 .xi-quick-btn:focus-visible {
+  border-color: rgba(246, 226, 160, 0.65);
+  filter: brightness(1.08);
+}
+.xi-lobby-v3 .xi-quick-btn:active {
+  transform: translateY(1px) scale(0.97);
+}
+.xi-lobby-v3 .xi-feat-dot {
+  width: 0.42rem;
+  height: 0.42rem;
+  background: #e04838;
+  box-shadow: 0 0 0 2px rgba(16, 6, 4, 0.75);
+}
+
+/* Announcement ticker polish */
+.xi-lobby-v3 .xi-ticker {
+  border-color: rgba(232, 197, 106, 0.34);
+  background: linear-gradient(180deg, rgba(36, 14, 10, 0.96), rgba(12, 6, 6, 0.97));
+}
+.xi-lobby-v3 .xi-ticker-more {
+  min-height: 44px;
+  min-width: 44px;
+  padding: 0 0.35rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255, 230, 170, 0.9);
+}
+
+/* Top wallets / VIP — breath on HIGH+ only */
+.xi-lobby-v3 .xi-wallet-amount {
+  font-variant-numeric: tabular-nums;
+  transition: none;
+}
+html[data-xi-tier="high"] .xi-lobby-v3 .xi-vip-breath,
+html[data-xi-tier="ultra"] .xi-lobby-v3 .xi-vip-breath {
+  animation: xi-vip-breath 3.6s ease-in-out infinite;
+}
+html[data-xi-tier="high"] .xi-lobby-v3 .xi-wallet-breath:not(.is-loading):not(.is-error),
+html[data-xi-tier="ultra"] .xi-lobby-v3 .xi-wallet-breath:not(.is-loading):not(.is-error) {
+  animation: xi-wallet-sheen 4.2s ease-in-out infinite;
+}
+html[data-xi-tier="low"] .xi-lobby-v3 .xi-vip-breath,
+html[data-xi-tier="medium"] .xi-lobby-v3 .xi-vip-breath,
+html[data-xi-tier="low"] .xi-lobby-v3 .xi-wallet-breath,
+html[data-xi-tier="medium"] .xi-lobby-v3 .xi-wallet-breath,
+html[data-xi-tier="low"] .xi-lobby-v3 .xi-rec-card.is-hot,
+html[data-xi-tier="medium"] .xi-lobby-v3 .xi-rec-card.is-hot {
+  animation: none !important;
+}
+html[data-xi-tier="low"] .xi-lobby-v3 .xi-wallet-amount,
+html[data-xi-tier="medium"] .xi-lobby-v3 .xi-wallet-amount {
+  transition: none !important;
+}
+
+/* Lang switch — instant class flip, no layout thrash */
+.xi-lobby-v3 .xi-lang-direct-btn {
+  min-height: 28px;
+  transition: background 120ms ease, color 120ms ease;
+}
+.xi-lobby-v3 .xi-lang-direct-btn.is-active {
+  background: linear-gradient(180deg, #f0d78a, #b8892d);
+  color: #2a1408;
+}
+
+/* Bottom nav boutique + safe-area */
+.xi-lobby-v3 .xi-bottom-nav-v2 {
+  border-top-color: rgba(232, 197, 106, 0.4);
+  background: linear-gradient(180deg, rgba(36, 12, 8, 0.92), rgba(10, 4, 4, 0.98));
+  padding-bottom: calc(0.4rem + env(safe-area-inset-bottom, 0px));
+  padding-left: env(safe-area-inset-left, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
+}
+.xi-lobby-v3 .xi-bottom-nav-v2 .xi-nav-btn {
+  min-height: 44px;
+  transition: color 140ms ease;
+}
+.xi-lobby-v3 .xi-bottom-nav-v2 .xi-nav-btn.is-active .xi-nav-ico {
+  box-shadow: 0 0 14px rgba(232, 120, 40, 0.5);
+}
+
+/* Coming Soon modal — mythic card */
+.xi-lobby-v3 .xi-modal {
+  border-color: rgba(232, 197, 106, 0.42);
+  background: linear-gradient(180deg, #1a1418, #0c0a0e);
+}
+.xi-lobby-v3 .xi-coming-soon-toast .xi-coming-soon-badge {
+  display: inline-block;
+  margin: 0 0 0.55rem;
+  padding: 0.18rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  color: #2a1408;
+  background: linear-gradient(180deg, #f0d78a, #b8892d);
+}
+
+/* Mobile 320–430 boutique densify */
+@media (max-width: 430px) {
+  .xi-lobby-v3 .xi-hero-photo {
+    min-height: clamp(12.6rem, 54vw, 16.5rem);
+    margin-inline: 0.35rem;
+  }
+  .xi-lobby-v3 .xi-ticker {
+    margin-inline: 0.35rem;
+  }
+  .xi-lobby-v3 .xi-rec-card {
+    width: 6.2rem;
+    min-height: 8.8rem;
+  }
+  .xi-lobby-v3 .xi-quick-btn {
+    height: 4.55rem;
+    font-size: 0.56rem;
+  }
+  .xi-lobby-v3 .xi-main {
+    padding-inline: 0.55rem;
+    padding-bottom: calc(5.9rem + env(safe-area-inset-bottom, 0px));
+  }
+}
+
+@media (max-width: 360px) {
+  .xi-lobby-v3 .xi-rec-card {
+    width: 5.7rem;
+    min-height: 8.2rem;
+  }
+  .xi-lobby-v3 .xi-quick-btn .xi-feat-ico {
+    width: 1.45rem;
+    height: 1.45rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .xi-lobby-v3 .xi-hero-sun,
+  .xi-lobby-v3 .xi-hero-sun-breath,
+  .xi-lobby-v3 .xi-hero-clouds,
+  .xi-lobby-v3 .xi-hero-rays,
+  .xi-lobby-v3 .xi-hero-spirit-dots span,
+  .xi-lobby-v3 .xi-rec-card.is-hot,
+  .xi-lobby-v3 .xi-vip-breath,
+  .xi-lobby-v3 .xi-wallet-breath {
+    animation: none !important;
+  }
+}
+
+/* FX off — strip ambient overlays */
+html[data-xi-fx="off"] .xi-lobby-v3 .xi-hero-sun,
+html[data-xi-fx="off"] .xi-lobby-v3 .xi-hero-sun-breath,
+html[data-xi-fx="off"] .xi-lobby-v3 .xi-hero-clouds,
+html[data-xi-fx="off"] .xi-lobby-v3 .xi-hero-mist {
+  animation: none !important;
+  opacity: 0.2;
+}

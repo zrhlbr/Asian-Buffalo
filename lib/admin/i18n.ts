@@ -12,7 +12,7 @@ export const ADMIN_LOCALES = ["zh", "en", "my"] as const;
 export type AdminLocale = (typeof ADMIN_LOCALES)[number];
 
 const zh = {
-  "common.appName": "亚洲水牛 · 运营后台",
+  "common.appName": "牛魔王 · 运营后台",
   "common.loading": "加载中…",
   "common.empty": "暂无数据",
   "common.search": "搜索",
@@ -57,11 +57,7 @@ const zh = {
   "common.updatedAt": "更新时间",
 
   "login.title": "管理员登录",
-<<<<<<< Updated upstream
-  "login.subtitle": "亚洲水牛 R1-M7 运营管理后台",
-=======
-  "login.subtitle": "亚洲水牛 R1-M9 运营管理后台",
->>>>>>> Stashed changes
+  "login.subtitle": "牛魔王 R1-M9 运营管理后台",
   "login.username": "用户名",
   "login.password": "密码",
   "login.submit": "登录",
@@ -70,29 +66,36 @@ const zh = {
 
   "nav.dashboard": "Dashboard",
   "nav.players": "玩家管理",
-<<<<<<< Updated upstream
-  "nav.rounds": "游戏记录",
-=======
   "nav.sessions": "Session 查询",
   "nav.rounds": "Round 查询",
   "nav.spins": "Spin 查询",
->>>>>>> Stashed changes
   "nav.wallet": "钱包管理",
+  "nav.deposits": "充值订单",
+  "nav.withdrawals": "提现审核",
+  "nav.activities": "活动/签到",
   "nav.ledger": "Ledger",
   "nav.math": "数学版本",
   "nav.risk": "风控中心",
-<<<<<<< Updated upstream
-=======
   "nav.reports": "运营报表",
->>>>>>> Stashed changes
   "nav.system": "系统管理",
   "nav.admins": "管理员",
   "nav.group.operations": "运营",
   "nav.group.finance": "资金",
   "nav.group.platform": "平台",
 
-<<<<<<< Updated upstream
-=======
+  "deposits.title": "充值订单",
+  "deposits.confirm": "测试确认入账",
+  "deposits.reason": "原因",
+  "deposits.pendingRules": "充值预设/通道见 BUSINESS_RULES_PENDING（BR-005/007）",
+  "withdrawals.title": "提现审核",
+  "withdrawals.approve": "通过",
+  "withdrawals.reject": "拒绝",
+  "withdrawals.pay": "标记已打款",
+  "withdrawals.pendingRules": "提现限额/手续费见 BUSINESS_RULES_PENDING（BR-006）",
+  "activities.title": "活动与签到",
+  "activities.save": "保存活动",
+  "activities.pendingRules": "活动奖励金额为可配置占位，非截图定法",
+
   "sessions.title": "Session 查询",
   "sessions.list": "Session 列表",
   "sessions.detail": "Session 详情",
@@ -136,7 +139,6 @@ const zh = {
   "system.riskCritical": "风控 Critical",
   "system.riskHigh": "风控 High",
 
->>>>>>> Stashed changes
   "dash.onlineNow": "当前在线",
   "dash.todayActive": "今日活跃",
   "dash.todayNew": "今日新增",
@@ -174,6 +176,7 @@ const zh = {
   "players.winRecords": "中奖记录",
   "players.freeSpins": "免费旋转",
   "players.lastLogin": "最近登录",
+  "players.registeredAt": "注册时间",
   "players.device": "设备",
   "players.riskTags": "风控标签",
   "players.freeze": "冻结",
@@ -193,6 +196,17 @@ const zh = {
   "players.recentRounds": "最近游戏记录",
   "players.recentWallet": "最近钱包流水",
   "players.noDeviceData": "未采集",
+  "players.phone": "手机",
+
+  "nav.vip": "VIP 管理",
+  "vip.level": "等级",
+  "vip.code": "代码",
+  "vip.title": "称号",
+  "vip.conditions": "条件(JSON)",
+  "vip.assignPlayer": "为玩家设置 VIP",
+  "vip.assign": "设置 VIP",
+  "vip.reasonRequired": "请填写原因与玩家 ID",
+  "vip.pendingRules": "VIP 门槛金额见 BUSINESS_RULES_PENDING — 请勿写死截图数字",
 
   "rounds.title": "游戏记录",
   "rounds.roundId": "Round ID",
@@ -394,7 +408,7 @@ export type AdminI18nKey = keyof typeof zh;
 export type AdminI18nDict = Record<AdminI18nKey, string>;
 
 const en: AdminI18nDict = {
-  "common.appName": "Asian Buffalo · Admin",
+  "common.appName": "Bull Demon King · Admin",
   "common.loading": "Loading…",
   "common.empty": "No data",
   "common.search": "Search",
@@ -439,11 +453,7 @@ const en: AdminI18nDict = {
   "common.updatedAt": "Updated at",
 
   "login.title": "Admin Sign In",
-<<<<<<< Updated upstream
-  "login.subtitle": "Asian Buffalo R1-M7 Operations Console",
-=======
-  "login.subtitle": "Asian Buffalo R1-M9 Operations Console",
->>>>>>> Stashed changes
+  "login.subtitle": "Bull Demon King R1-M9 Operations Console",
   "login.username": "Username",
   "login.password": "Password",
   "login.submit": "Sign in",
@@ -452,29 +462,36 @@ const en: AdminI18nDict = {
 
   "nav.dashboard": "Dashboard",
   "nav.players": "Players",
-<<<<<<< Updated upstream
-  "nav.rounds": "Game Records",
-=======
   "nav.sessions": "Sessions",
   "nav.rounds": "Rounds",
   "nav.spins": "Spins",
->>>>>>> Stashed changes
   "nav.wallet": "Wallet",
+  "nav.deposits": "Deposits",
+  "nav.withdrawals": "Withdrawals",
+  "nav.activities": "Activities",
   "nav.ledger": "Ledger",
   "nav.math": "Math Versions",
   "nav.risk": "Risk Control",
-<<<<<<< Updated upstream
-=======
   "nav.reports": "Ops Reports",
->>>>>>> Stashed changes
   "nav.system": "System",
   "nav.admins": "Administrators",
   "nav.group.operations": "Operations",
   "nav.group.finance": "Finance",
   "nav.group.platform": "Platform",
 
-<<<<<<< Updated upstream
-=======
+  "deposits.title": "Deposit orders",
+  "deposits.confirm": "Test confirm credit",
+  "deposits.reason": "Reason",
+  "deposits.pendingRules": "Deposit presets/channels in BUSINESS_RULES_PENDING (BR-005/007)",
+  "withdrawals.title": "Withdrawal review",
+  "withdrawals.approve": "Approve",
+  "withdrawals.reject": "Reject",
+  "withdrawals.pay": "Mark paid",
+  "withdrawals.pendingRules": "Withdrawal limits/fees in BUSINESS_RULES_PENDING (BR-006)",
+  "activities.title": "Activities & check-in",
+  "activities.save": "Save activity",
+  "activities.pendingRules": "Reward amounts are configurable placeholders, not screenshot law",
+
   "sessions.title": "Sessions",
   "sessions.list": "Session list",
   "sessions.detail": "Session detail",
@@ -518,7 +535,6 @@ const en: AdminI18nDict = {
   "system.riskCritical": "Risk critical",
   "system.riskHigh": "Risk high",
 
->>>>>>> Stashed changes
   "dash.onlineNow": "Online now",
   "dash.todayActive": "Active today",
   "dash.todayNew": "New today",
@@ -556,6 +572,7 @@ const en: AdminI18nDict = {
   "players.winRecords": "Win records",
   "players.freeSpins": "Free spins",
   "players.lastLogin": "Last login",
+  "players.registeredAt": "Registered at",
   "players.device": "Device",
   "players.riskTags": "Risk tags",
   "players.freeze": "Freeze",
@@ -575,6 +592,17 @@ const en: AdminI18nDict = {
   "players.recentRounds": "Recent rounds",
   "players.recentWallet": "Recent wallet activity",
   "players.noDeviceData": "Not collected",
+  "players.phone": "Phone",
+
+  "nav.vip": "VIP Management",
+  "vip.level": "Level",
+  "vip.code": "Code",
+  "vip.title": "Title",
+  "vip.conditions": "Conditions (JSON)",
+  "vip.assignPlayer": "Assign player VIP",
+  "vip.assign": "Set VIP",
+  "vip.reasonRequired": "Player ID and reason are required",
+  "vip.pendingRules": "VIP thresholds are in BUSINESS_RULES_PENDING — do not hardcode screenshot numbers",
 
   "rounds.title": "Game Records",
   "rounds.roundId": "Round ID",
@@ -773,7 +801,7 @@ const en: AdminI18nDict = {
 };
 
 const my: AdminI18nDict = {
-  "common.appName": "Asian Buffalo · Admin",
+  "common.appName": "Bull Demon King · Admin",
   "common.loading": "ဖွင့်နေသည်…",
   "common.empty": "ဒေတာမရှိပါ",
   "common.search": "ရှာဖွေရန်",
@@ -818,11 +846,7 @@ const my: AdminI18nDict = {
   "common.updatedAt": "ပြင်ဆင်ချိန်",
 
   "login.title": "Admin ဝင်ရောက်ရန်",
-<<<<<<< Updated upstream
-  "login.subtitle": "Asian Buffalo R1-M7 စီမံခန့်ခွဲမှု Console",
-=======
-  "login.subtitle": "Asian Buffalo R1-M9 စီမံခန့်ခွဲမှု Console",
->>>>>>> Stashed changes
+  "login.subtitle": "Bull Demon King R1-M9 စီမံခန့်ခွဲမှု Console",
   "login.username": "အသုံးပြုသူအမည်",
   "login.password": "စကားဝှက်",
   "login.submit": "ဝင်ရောက်ရန်",
@@ -831,29 +855,36 @@ const my: AdminI18nDict = {
 
   "nav.dashboard": "Dashboard",
   "nav.players": "ကစားသမားစီမံခန့်ခွဲမှု",
-<<<<<<< Updated upstream
-  "nav.rounds": "ဂိမ်းမှတ်တမ်းများ",
-=======
   "nav.sessions": "Session ရှာဖွေရန်",
   "nav.rounds": "Round ရှာဖွေရန်",
   "nav.spins": "Spin ရှာဖွေရန်",
->>>>>>> Stashed changes
   "nav.wallet": "ပိုက်ဆံအိတ်စီမံခန့်ခွဲမှု",
+  "nav.deposits": "ငွေသွင်း အော်ဒါ",
+  "nav.withdrawals": "ငွေထုတ် စိစစ်",
+  "nav.activities": "ပွဲ/လက်မှတ်",
   "nav.ledger": "Ledger",
   "nav.math": "သင်္ချာဗားရှင်းများ",
   "nav.risk": "အန္တရာယ်ထိန်းချုပ်မှုစင်တာ",
-<<<<<<< Updated upstream
-=======
   "nav.reports": "လည်ပတ်မှုအစီရင်ခံစာ",
->>>>>>> Stashed changes
   "nav.system": "စနစ်စီမံခန့်ခွဲမှု",
   "nav.admins": "Admin များ",
   "nav.group.operations": "လည်ပတ်မှု",
   "nav.group.finance": "ငွေကြေး",
   "nav.group.platform": "ပလက်ဖောင်း",
 
-<<<<<<< Updated upstream
-=======
+  "deposits.title": "ငွေသွင်း အော်ဒါ",
+  "deposits.confirm": "စမ်းသပ် အတည်ပြု ငွေသွင်း",
+  "deposits.reason": "အကြောင်းရင်း",
+  "deposits.pendingRules": "ငွေသွင်း presets/channels — BUSINESS_RULES_PENDING (BR-005/007)",
+  "withdrawals.title": "ငွေထုတ် စိစစ်",
+  "withdrawals.approve": "အတည်ပြု",
+  "withdrawals.reject": "ငြင်းပယ်",
+  "withdrawals.pay": "ပေးပြီးဟု မှတ်",
+  "withdrawals.pendingRules": "ငွေထုတ် ကန့်သတ်/ကြေး — BUSINESS_RULES_PENDING (BR-006)",
+  "activities.title": "ပွဲနှင့် နေ့စဉ်လက်မှတ်",
+  "activities.save": "ပွဲ သိမ်း",
+  "activities.pendingRules": "ဆုကြေးသည် ပြင်ဆင်နိုင်သော placeholder ဖြစ်သည်",
+
   "sessions.title": "Session ရှာဖွေရန်",
   "sessions.list": "Session စာရင်း",
   "sessions.detail": "Session အသေးစိတ်",
@@ -897,7 +928,6 @@ const my: AdminI18nDict = {
   "system.riskCritical": "Risk Critical",
   "system.riskHigh": "Risk High",
 
->>>>>>> Stashed changes
   "dash.onlineNow": "လက်ရှိအွန်လိုင်း",
   "dash.todayActive": "ယနေ့တက်ကြွ",
   "dash.todayNew": "ယနေ့အသစ်",
@@ -935,6 +965,7 @@ const my: AdminI18nDict = {
   "players.winRecords": "ဆုရမှတ်တမ်းများ",
   "players.freeSpins": "အခမဲ့လှည့်ပတ်မှုများ",
   "players.lastLogin": "နောက်ဆုံးဝင်ရောက်ချိန်",
+  "players.registeredAt": "မှတ်ပုံတင်ချိန်",
   "players.device": "စက်ပစ္စည်း",
   "players.riskTags": "အန္တရာယ်တက်ဂ်များ",
   "players.freeze": "ရပ်ဆိုင်းရန်",
@@ -954,6 +985,17 @@ const my: AdminI18nDict = {
   "players.recentRounds": "လတ်တလောဂိမ်းမှတ်တမ်းများ",
   "players.recentWallet": "လတ်တလော wallet လှုပ်ရှားမှုများ",
   "players.noDeviceData": "စုဆောင်းမထားပါ",
+  "players.phone": "ဖုန်း",
+
+  "nav.vip": "VIP စီမံခန့်ခွဲမှု",
+  "vip.level": "အဆင့်",
+  "vip.code": "ကုဒ်",
+  "vip.title": "ဘွဲ့အမည်",
+  "vip.conditions": "အခြေအနေ (JSON)",
+  "vip.assignPlayer": "ကစားသမား VIP သတ်မှတ်",
+  "vip.assign": "VIP သတ်မှတ်",
+  "vip.reasonRequired": "playerId နှင့် အကြောင်းရင်း လိုအပ်သည်",
+  "vip.pendingRules": "VIP စံနှုန်း BUSINESS_RULES_PENDING — screenshot ဂဏန်း မသုံးပါနှင့်",
 
   "rounds.title": "ဂိမ်းမှတ်တမ်းများ",
   "rounds.roundId": "Round ID",

@@ -1,0 +1,10 @@
+﻿446fce8038c5625aacae900a0f31830b77e520ca8666d9e92906976f764f3783  public/xi/heroes/bull-demon-king.png
+446fce8038c5625aacae900a0f31830b77e520ca8666d9e92906976f764f3783  client/xi-lobby/assets/heroes/bull-demon-king.png
+24930716763e55724f702eedebb8119a2fb57ec294cd8b2826be3b6482a13a77  client/xi-lobby/bdk-hub.tsx
+8335441840df6a4ed6d05201f319dccd075b646495e228384a6ee6c7110faa2f  client/xi-lobby/lobby.css
+fc05a48faf7d3d8d1b9c15f440cd7d25a7a41bdda3038eb9595ab54bfa2c6e91  public/xi/journey-hero.png
+8b29f50ef7597d1cd2b6cd1abf62197fd0403a6d584cf84ece9f01f8211a4ea8  public/xi/lobby-layout-reference.png
+
+# BDK hero CLEARED — public URL: /xi/heroes/bull-demon-king.png
+# Hub wired: [data-testid=xi-hub-hero-img] object-fit:contain
+# Screenshots: screenshots/02-hub-bdk-hero-official.png

@@ -23,7 +23,7 @@ export class DbWalletAdapter implements WalletAdapter {
     currency: Currency,
   ): Promise<{ available: WalletAccount; clearing: WalletAccount }> {
     assertTestWalletAllowed(this.money.mode);
-    const { available, clearing } = this.money.ledger.ensurePlayerAccounts(
+    const { available, clearing } = await this.money.ledger.ensurePlayerAccounts(
       playerId,
       currency,
     );
@@ -58,12 +58,17 @@ export class DbWalletAdapter implements WalletAdapter {
     betMinor: number;
     winMinor: number;
     isFreeGame: boolean;
+    roundId?: string;
   }): Promise<RoundSettlement> {
     return this.money.settleRound(input);
   }
 
-  creditAvailable(playerId: string, currency: Currency, amountMinor: number): void {
-    this.money.seed(playerId, currency, amountMinor);
+  async creditAvailable(
+    playerId: string,
+    currency: Currency,
+    amountMinor: number,
+  ): Promise<void> {
+    await this.money.seed(playerId, currency, amountMinor);
   }
 }
 

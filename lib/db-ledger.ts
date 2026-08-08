@@ -14,7 +14,44 @@ export type PostedLedgerTransaction = {
   requestHash: string;
   postedAt: string;
   postings: LedgerPosting[];
+  roundId?: string | null;
 };
+
+export type LedgerAccountView = {
+  id: string;
+  playerId: string | null;
+  kind: string;
+  currency: string;
+  balanceMinor: number;
+  version: number;
+};
+
+export type LedgerPostInput = {
+  idempotencyKey: string;
+  kind: PostedLedgerTransaction["kind"];
+  requestHash: string;
+  postings: LedgerPosting[];
+  roundId?: string | null;
+};
+
+/** Async ledger port used by MoneyService (Memory or D1). */
+export interface LedgerPort {
+  ensurePlayerAccounts(
+    playerId: string,
+    currency: string,
+  ): Promise<{ available: LedgerAccountView; clearing: LedgerAccountView }>;
+  getBalance(accountId: string): Promise<number>;
+  post(input: LedgerPostInput): Promise<PostedLedgerTransaction>;
+  reverse(
+    originalIdempotencyKey: string,
+    reversalIdempotencyKey: string,
+  ): Promise<PostedLedgerTransaction>;
+  forceCreditAvailableForTest(
+    playerId: string,
+    currency: string,
+    amountMinor: number,
+  ): Promise<void>;
+}
 
 export class LedgerFailClosedError extends Error {
   readonly failClosed = true as const;
@@ -100,12 +137,7 @@ export class MemoryLedger {
     });
   }
 
-  post(input: {
-    idempotencyKey: string;
-    kind: PostedLedgerTransaction["kind"];
-    requestHash: string;
-    postings: LedgerPosting[];
-  }): PostedLedgerTransaction {
+  post(input: LedgerPostInput): PostedLedgerTransaction {
     const existingId = this.byIdempotency.get(input.idempotencyKey);
     if (existingId) {
       const existing = this.transactions.get(existingId)!;
@@ -164,6 +196,7 @@ export class MemoryLedger {
       requestHash: input.requestHash,
       postedAt: new Date().toISOString(),
       postings: input.postings,
+      roundId: input.roundId ?? null,
     };
     this.transactions.set(tx.id, tx);
     this.byIdempotency.set(input.idempotencyKey, tx.id);
@@ -194,13 +227,33 @@ export class MemoryLedger {
 
 /** TEST-only balance seed (does not create a ledger posting). */
 export function seedTestAvailable(
-  ledger: MemoryLedger,
+  ledger: MemoryLedger | LedgerPort,
   playerId: string,
   currency: string,
   amountMinor: number,
-): void {
+): void | Promise<void> {
   if (!Number.isSafeInteger(amountMinor) || amountMinor <= 0) {
     throw new RangeError("seed amount must be a positive safe integer");
   }
-  ledger.forceCreditAvailableForTest(playerId, currency, amountMinor);
+  return ledger.forceCreditAvailableForTest(playerId, currency, amountMinor);
+}
+
+export function wrapMemoryLedger(ledger: MemoryLedger): LedgerPort {
+  return {
+    async ensurePlayerAccounts(playerId, currency) {
+      return ledger.ensurePlayerAccounts(playerId, currency);
+    },
+    async getBalance(accountId) {
+      return ledger.getBalance(accountId);
+    },
+    async post(input) {
+      return ledger.post(input);
+    },
+    async reverse(originalIdempotencyKey, reversalIdempotencyKey) {
+      return ledger.reverse(originalIdempotencyKey, reversalIdempotencyKey);
+    },
+    async forceCreditAvailableForTest(playerId, currency, amountMinor) {
+      ledger.forceCreditAvailableForTest(playerId, currency, amountMinor);
+    },
+  };
 }

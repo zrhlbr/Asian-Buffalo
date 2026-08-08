@@ -60,6 +60,8 @@ export interface WalletAdapter {
     betMinor: number;
     winMinor: number;
     isFreeGame: boolean;
+    /** Optional round link for durable ledger_transactions.round_id. */
+    roundId?: string;
   }): Promise<RoundSettlement>;
 }
 

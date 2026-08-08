@@ -17,6 +17,10 @@ import type { DrizzleD1Database } from "drizzle-orm/d1";
 import type * as schema from "../../db/schema.ts";
 import { generateSalt, hashAdminPassword } from "./admin-auth.ts";
 import { isDevTestIdentityEnabled } from "../runtime-identity.ts";
+import {
+  ensurePlayerCommerceReady,
+  resetPlayerCommerceBootstrapForTests,
+} from "../player-commerce-bootstrap.ts";
 
 export const ADMIN_BOOTSTRAP_USERNAME = "admin";
 export const ADMIN_DEV_PASSWORD = "admin123";
@@ -85,6 +89,7 @@ let applied = false;
 
 export function resetAdminBootstrapCacheForTests(): void {
   applied = false;
+  resetPlayerCommerceBootstrapForTests();
 }
 
 export async function ensureAdminSchema(
@@ -152,5 +157,7 @@ export async function ensureAdminBootstrap(
   db: DrizzleD1Database<typeof schema>,
 ): Promise<void> {
   await ensureAdminSchema(db);
+  // Profile/VIP sidecars — additive IF NOT EXISTS (screenshot-features Phase 2+)
+  await ensurePlayerCommerceReady(db);
   await seedInitialSuperAdmin(db);
 }

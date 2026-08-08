@@ -1,0 +1,73 @@
+{
+  "base": "http://127.0.0.1:5173",
+  "at": "2026-08-07T16:30:53.646Z",
+  "pass": 13,
+  "fail": 0,
+  "results": [
+    {
+      "id": "G1_lobby_no_back",
+      "ok": true,
+      "detail": "hubBack=0 playBack=0"
+    },
+    {
+      "id": "G2_lobby_to_hub",
+      "ok": true,
+      "detail": "http://127.0.0.1:5173/xi/bull-demon-king"
+    },
+    {
+      "id": "G3_hub_back_lobby",
+      "ok": true,
+      "detail": "visible=true text=← 返回大厅"
+    },
+    {
+      "id": "G4_hub_crumb_to_lobby",
+      "ok": true,
+      "detail": "http://127.0.0.1:5173/xi"
+    },
+    {
+      "id": "G5_hub_back_click",
+      "ok": true,
+      "detail": "http://127.0.0.1:5173/xi"
+    },
+    {
+      "id": "G6_play_gl_stack",
+      "ok": true,
+      "detail": "{\"ok\":true,\"glT\":\"matrix(1, 0, 0, 1, 0, 0)\",\"hudT\":\"none\",\"matrix3d\":false}"
+    },
+    {
+      "id": "G7_play_back_label",
+      "ok": true,
+      "detail": "← 返回牛魔王首页"
+    },
+    {
+      "id": "G7_play_back_hub",
+      "ok": true,
+      "detail": "http://127.0.0.1:5173/xi/bull-demon-king"
+    },
+    {
+      "id": "G8_play_home_chrome",
+      "ok": true,
+      "detail": "crumb=1 home=🏠 返回大厅"
+    },
+    {
+      "id": "G8_play_home_lobby",
+      "ok": true,
+      "detail": "http://127.0.0.1:5173/xi"
+    },
+    {
+      "id": "G9_play_crumb_hub",
+      "ok": true,
+      "detail": "http://127.0.0.1:5173/xi/bull-demon-king"
+    },
+    {
+      "id": "G10_i18n_back_labels",
+      "ok": true,
+      "detail": "zh=← 返回大厅 | en=← Back to lobby | my=← လော်ဘီသို့"
+    },
+    {
+      "id": "G11_esc_hub_to_lobby",
+      "ok": true,
+      "detail": "http://127.0.0.1:5173/xi"
+    }
+  ]
+}

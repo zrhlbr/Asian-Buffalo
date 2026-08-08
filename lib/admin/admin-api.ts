@@ -8,18 +8,17 @@
  * and writes an admin_audit_logs row with time / admin / IP / reason.
  *
  * Money-safety invariants enforced here:
- *   - no endpoint can modify wallet, ledger, math versions or balances;
- *   - the only game-table mutation is players.status (freeze/unfreeze).
+ *   - no endpoint can modify wallet, ledger, math versions or balances via raw UPDATE;
+ *   - deposit confirm / withdraw hold-release call MoneyService adapters only;
+ *   - math versions remain read-only;
+ *   - player freeze remains the only direct players.status mutation.
  */
 
 import { sql } from "drizzle-orm";
 import { ensureAdminBootstrap } from "./admin-bootstrap.ts";
 import {
-<<<<<<< Updated upstream
-=======
   ADMIN_PERMISSIONS,
   ADMIN_ROLES,
->>>>>>> Stashed changes
   ADMIN_SESSION_TTL_MS,
   extractClientIp,
   generateAdminToken,
@@ -27,24 +26,12 @@ import {
   generateSalt,
   isAdminRole,
   resolveAdminIdentity,
-<<<<<<< Updated upstream
-=======
   ROLE_PERMISSIONS,
->>>>>>> Stashed changes
   roleHasPermission,
   type AdminIdentity,
   type AdminPermission,
 } from "./admin-auth.ts";
 import {
-<<<<<<< Updated upstream
-  getDashboardMetrics,
-  getLedgerHealth,
-  getMathVersionDetail,
-  getPlayerDetail,
-  getRiskSignals,
-  getRoundDetail,
-  getSystemConfig,
-=======
   getAdminAuditFor,
   getAdminStats,
   getDashboardMetrics,
@@ -57,7 +44,6 @@ import {
   getSessionDetail,
   getSystemConfig,
   getSystemMonitor,
->>>>>>> Stashed changes
   listAdminAuditLogs,
   listAdmins,
   listAnnouncements,
@@ -69,19 +55,39 @@ import {
   listMathVersions,
   listPlayers,
   listRounds,
-<<<<<<< Updated upstream
-=======
   listSessions,
->>>>>>> Stashed changes
   listWalletIntents,
   listWalletProviderOps,
   normalizePage,
   type AdminDb,
 } from "./admin-queries.ts";
+import {
+  getPlayerVip,
+  listVipLevelConfig,
+  setPlayerVip,
+  upsertVipLevelConfig,
+  type VipStatus,
+} from "../vip-service.ts";
+import {
+  confirmDepositOrder,
+  getDepositConfig,
+  listAdminDeposits,
+  listPaymentChannels,
+  upsertDepositConfig,
+} from "../deposit-service.ts";
+import {
+  getWithdrawalConfig,
+  listAdminWithdrawals,
+  markWithdrawalPaid,
+  reviewWithdrawal,
+  upsertWithdrawalConfig,
+} from "../withdrawal-service.ts";
+import {
+  listAdminActivities,
+  upsertActivity,
+} from "../activity-service.ts";
+import { isDevTestIdentityEnabled } from "../runtime-identity.ts";
 
-<<<<<<< Updated upstream
-export const ADMIN_API_VERSION = "r1-m7-admin-1.0.0";
-=======
 export const ADMIN_API_VERSION = "r1-m9-admin-1.0.0";
 export const ADMIN_BASELINE_SHA = "9654d4194d2db801467af34cef1ddc5650fd310f";
 
@@ -90,8 +96,11 @@ const DANGEROUS_PERMISSIONS: AdminPermission[] = [
   "players:freeze",
   "system:manage",
   "admins:manage",
+  "deposit:manage",
+  "withdraw:review",
+  "withdraw:pay",
+  "activity:manage",
 ];
->>>>>>> Stashed changes
 
 function json(data: unknown, status = 200): Response {
   return Response.json(data, { status });
@@ -425,8 +434,57 @@ function defineRoutes(): RouteSpec[] {
   post("players/:id/unfreeze", "players:freeze", (ctx, parts) =>
     handlePlayerFreeze(ctx, decodeURIComponent(parts[1]), false));
 
-<<<<<<< Updated upstream
-=======
+  get("vip/levels", "vip:view", async (ctx) =>
+    json({ items: await listVipLevelConfig(ctx.db) }));
+  post("vip/levels", "vip:manage", async (ctx) => {
+    const payload = (await ctx.request.json().catch(() => null)) as Record<string, unknown> | null;
+    const reason = requireReason(payload);
+    if (!reason) return err("REASON_REQUIRED", "A reason is required for this operation");
+    const level = Number(payload?.level);
+    const code = typeof payload?.code === "string" ? payload.code.trim() : "";
+    const title = (payload?.title && typeof payload.title === "object"
+      ? payload.title
+      : {}) as Record<string, string>;
+    const conditions = (payload?.conditions && typeof payload.conditions === "object"
+      ? payload.conditions
+      : {}) as Record<string, unknown>;
+    const enabled = payload?.enabled !== false;
+    if (!Number.isInteger(level) || level < 1 || level > 6 || !code) {
+      return err("INVALID_REQUEST", "level 1–6 and code are required");
+    }
+    await upsertVipLevelConfig(ctx.db, { level, code, title, conditions, enabled });
+    await writeAuditLog(ctx, "vip.level.upsert", "vip_level", String(level), reason, {
+      code,
+      conditions,
+      enabled,
+    });
+    return json({ ok: true, level });
+  });
+  get("vip/players/:id", "vip:view", async (ctx, parts) =>
+    json({ vip: await getPlayerVip(ctx.db, decodeURIComponent(parts[2])) }));
+  post("vip/players/:id", "vip:manage", async (ctx, parts) => {
+    const payload = (await ctx.request.json().catch(() => null)) as Record<string, unknown> | null;
+    const reason = requireReason(payload);
+    if (!reason) return err("REASON_REQUIRED", "A reason is required for this operation");
+    const playerId = decodeURIComponent(parts[2]);
+    const level = Number(payload?.level);
+    const status = String(payload?.status ?? "ACTIVE") as VipStatus;
+    if (!Number.isInteger(level) || level < 0 || level > 6) {
+      return err("INVALID_REQUEST", "level must be 0–6");
+    }
+    if (!["ACTIVE", "EXPIRED", "PENDING", "SUSPENDED"].includes(status)) {
+      return err("INVALID_REQUEST", "invalid VIP status");
+    }
+    const vip = await setPlayerVip(ctx.db, playerId, {
+      level,
+      status,
+      vipStartedAt: typeof payload?.vipStartedAt === "string" ? payload.vipStartedAt : undefined,
+      vipExpiresAt: typeof payload?.vipExpiresAt === "string" ? payload.vipExpiresAt : undefined,
+    });
+    await writeAuditLog(ctx, "vip.player.set", "player", playerId, reason, { level, status });
+    return json({ ok: true, vip });
+  });
+
   get("sessions", "rounds:view", async (ctx) => {
     const params = new URL(ctx.request.url).searchParams;
     return json(await listSessions(ctx.db, {
@@ -440,7 +498,6 @@ function defineRoutes(): RouteSpec[] {
     return json(detail);
   });
 
->>>>>>> Stashed changes
   get("rounds", "rounds:view", async (ctx) => {
     const params = new URL(ctx.request.url).searchParams;
     const page = normalizePage(params);
@@ -456,8 +513,6 @@ function defineRoutes(): RouteSpec[] {
     return json(detail);
   });
 
-<<<<<<< Updated upstream
-=======
   // Spin is the product-facing name for a settled/pending game_round (read-only alias).
   get("spins", "rounds:view", async (ctx) => {
     const params = new URL(ctx.request.url).searchParams;
@@ -475,7 +530,6 @@ function defineRoutes(): RouteSpec[] {
 
   get("reports/ops", "dashboard:view", async (ctx) => json(await getOpsReport(ctx.db)));
 
->>>>>>> Stashed changes
   get("wallet/intents", "wallet:view", async (ctx) => {
     const params = new URL(ctx.request.url).searchParams;
     return json(await listWalletIntents(ctx.db, {
@@ -485,6 +539,160 @@ function defineRoutes(): RouteSpec[] {
   });
   get("wallet/provider-ops", "wallet:view", async (ctx) =>
     json(await listWalletProviderOps(ctx.db, normalizePage(new URL(ctx.request.url).searchParams))));
+
+  get("deposits", "deposit:view", async (ctx) => {
+    const params = new URL(ctx.request.url).searchParams;
+    const page = normalizePage(params);
+    return json(await listAdminDeposits(ctx.db, {
+      playerId: params.get("playerId") ?? undefined,
+      status: params.get("status") ?? undefined,
+      limit: page.pageSize,
+      offset: (page.page - 1) * page.pageSize,
+    }));
+  });
+  get("deposits/config", "deposit:view", async (ctx) =>
+    json({
+      config: await getDepositConfig(ctx.db),
+      channels: await listPaymentChannels(ctx.db),
+    }));
+  post("deposits/config", "deposit:manage", async (ctx) => {
+    const payload = (await ctx.request.json().catch(() => null)) as Record<string, unknown> | null;
+    const reason = requireReason(payload);
+    if (!reason) return err("REASON_REQUIRED", "A reason is required for this operation");
+    const config = await upsertDepositConfig(ctx.db, (payload?.config ?? {}) as Record<string, unknown>);
+    await writeAuditLog(ctx, "deposit.config.upsert", "wallet_commerce_config", "deposit", reason, config);
+    return json({ ok: true, config });
+  });
+  post("deposits/:id/confirm", "deposit:manage", async (ctx, parts) => {
+    if (!isDevTestIdentityEnabled()) {
+      return err(
+        "PROVIDER_NOT_CONFIGURED",
+        "Live provider confirm blocked (BR-007); enable test identity for harness",
+        503,
+      );
+    }
+    const payload = (await ctx.request.json().catch(() => null)) as Record<string, unknown> | null;
+    const reason = requireReason(payload);
+    if (!reason) return err("REASON_REQUIRED", "A reason is required for this operation");
+    const id = decodeURIComponent(parts[1]);
+    const result = await confirmDepositOrder(ctx.db, { orderId: id });
+    if (!result.ok) return err(result.code, result.message, result.code === "NOT_FOUND" ? 404 : 400);
+    await writeAuditLog(ctx, "deposit.confirm", "deposit_order", id, reason, {
+      status: result.order.status,
+      alreadyCredited: result.alreadyCredited ?? false,
+    });
+    return json({ ok: true, order: result.order, balanceAfterMinor: result.balanceAfterMinor });
+  });
+
+  get("withdrawals", "withdraw:view", async (ctx) => {
+    const params = new URL(ctx.request.url).searchParams;
+    const page = normalizePage(params);
+    return json(await listAdminWithdrawals(ctx.db, {
+      playerId: params.get("playerId") ?? undefined,
+      status: params.get("status") ?? undefined,
+      limit: page.pageSize,
+      offset: (page.page - 1) * page.pageSize,
+    }));
+  });
+  get("withdrawals/config", "withdraw:view", async (ctx) =>
+    json({ config: await getWithdrawalConfig(ctx.db) }));
+  post("withdrawals/config", "withdraw:review", async (ctx) => {
+    const payload = (await ctx.request.json().catch(() => null)) as Record<string, unknown> | null;
+    const reason = requireReason(payload);
+    if (!reason) return err("REASON_REQUIRED", "A reason is required for this operation");
+    const config = await upsertWithdrawalConfig(
+      ctx.db,
+      (payload?.config ?? {}) as Record<string, unknown>,
+    );
+    await writeAuditLog(ctx, "withdraw.config.upsert", "wallet_commerce_config", "withdrawal", reason, config);
+    return json({ ok: true, config });
+  });
+  post("withdrawals/:id/approve", "withdraw:review", async (ctx, parts) => {
+    const payload = (await ctx.request.json().catch(() => null)) as Record<string, unknown> | null;
+    const reason = requireReason(payload);
+    if (!reason) return err("REASON_REQUIRED", "A reason is required for this operation");
+    const id = decodeURIComponent(parts[1]);
+    const result = await reviewWithdrawal(ctx.db, {
+      id,
+      action: "APPROVE",
+      adminId: ctx.admin.adminId,
+      reason,
+    });
+    if (!result.ok) return err(result.code, result.message, result.code === "NOT_FOUND" ? 404 : 400);
+    await writeAuditLog(ctx, "withdraw.approve", "withdrawal_request", id, reason, {
+      status: result.request.status,
+    });
+    return json({ ok: true, request: result.request });
+  });
+  post("withdrawals/:id/reject", "withdraw:review", async (ctx, parts) => {
+    const payload = (await ctx.request.json().catch(() => null)) as Record<string, unknown> | null;
+    const reason = requireReason(payload);
+    if (!reason) return err("REASON_REQUIRED", "A reason is required for this operation");
+    const id = decodeURIComponent(parts[1]);
+    const result = await reviewWithdrawal(ctx.db, {
+      id,
+      action: "REJECT",
+      adminId: ctx.admin.adminId,
+      reason,
+    });
+    if (!result.ok) return err(result.code, result.message, result.code === "NOT_FOUND" ? 404 : 400);
+    await writeAuditLog(ctx, "withdraw.reject", "withdrawal_request", id, reason, {
+      status: result.request.status,
+    });
+    return json({ ok: true, request: result.request });
+  });
+  post("withdrawals/:id/pay", "withdraw:pay", async (ctx, parts) => {
+    const payload = (await ctx.request.json().catch(() => null)) as Record<string, unknown> | null;
+    const reason = requireReason(payload);
+    if (!reason) return err("REASON_REQUIRED", "A reason is required for this operation");
+    const id = decodeURIComponent(parts[1]);
+    const result = await markWithdrawalPaid(ctx.db, {
+      id,
+      adminId: ctx.admin.adminId,
+      reason,
+    });
+    if (!result.ok) return err(result.code, result.message, result.code === "NOT_FOUND" ? 404 : 400);
+    await writeAuditLog(ctx, "withdraw.pay", "withdrawal_request", id, reason, {
+      status: result.request.status,
+    });
+    return json({ ok: true, request: result.request });
+  });
+
+  get("activities", "activity:view", async (ctx) =>
+    json({ items: await listAdminActivities(ctx.db) }));
+  post("activities", "activity:manage", async (ctx) => {
+    const payload = (await ctx.request.json().catch(() => null)) as Record<string, unknown> | null;
+    const reason = requireReason(payload);
+    if (!reason) return err("REASON_REQUIRED", "A reason is required for this operation");
+    const code = typeof payload?.code === "string" ? payload.code.trim() : "";
+    const kind = typeof payload?.kind === "string" ? payload.kind.trim() : "EVENT";
+    const title = (payload?.title && typeof payload.title === "object"
+      ? payload.title
+      : {}) as Record<string, string>;
+    const rewardMinor = Number(payload?.rewardMinor ?? 0);
+    if (!code || !Number.isFinite(rewardMinor)) {
+      return err("INVALID_REQUEST", "code and rewardMinor required");
+    }
+    const saved = await upsertActivity(ctx.db, {
+      id: typeof payload?.id === "string" ? payload.id : undefined,
+      code,
+      kind,
+      title,
+      body: (payload?.body && typeof payload.body === "object"
+        ? payload.body
+        : {}) as Record<string, string>,
+      rewardMinor,
+      currency: typeof payload?.currency === "string" ? payload.currency : "MMK",
+      startsAt: typeof payload?.startsAt === "string" ? payload.startsAt : null,
+      endsAt: typeof payload?.endsAt === "string" ? payload.endsAt : null,
+      enabled: payload?.enabled !== false,
+    });
+    await writeAuditLog(ctx, "activity.upsert", "player_activity", saved.id, reason, {
+      code,
+      rewardMinor,
+    });
+    return json({ ok: true, id: saved.id });
+  });
 
   get("ledger/accounts", "ledger:view", async (ctx) =>
     json(await listLedgerAccounts(ctx.db, normalizePage(new URL(ctx.request.url).searchParams))));
@@ -534,19 +742,6 @@ function defineRoutes(): RouteSpec[] {
   post("system/announcements/:id/unpublish", "system:manage", (ctx, parts) =>
     handleAnnouncementStatus(ctx, decodeURIComponent(parts[2]), false));
   get("system/status", "system:view", async (ctx) => {
-<<<<<<< Updated upstream
-    const health = await getLedgerHealth(ctx.db);
-    return json({
-      version: {
-        adminApi: ADMIN_API_VERSION,
-        baseline: "9654d4194d2db801467af34cef1ddc5650fd310f",
-        module: "R1-M7",
-      },
-      api: { ok: true },
-      database: { ok: true },
-      ledger: { ok: health.ok },
-      checkedAt: new Date().toISOString(),
-=======
     const monitor = await getSystemMonitor(ctx.db);
     return json({
       version: {
@@ -555,7 +750,6 @@ function defineRoutes(): RouteSpec[] {
         module: "R1-M9",
       },
       ...monitor,
->>>>>>> Stashed changes
     });
   });
 
@@ -565,8 +759,6 @@ function defineRoutes(): RouteSpec[] {
     json(await listGameAuditEvents(ctx.db, normalizePage(new URL(ctx.request.url).searchParams))));
 
   get("admins", "admins:view", async (ctx) => json({ items: await listAdmins(ctx.db) }));
-<<<<<<< Updated upstream
-=======
   get("admins/stats", "admins:view", async (ctx) => json(await getAdminStats(ctx.db)));
   get("admins/matrix", "admins:view", async () =>
     json({
@@ -581,7 +773,6 @@ function defineRoutes(): RouteSpec[] {
     }));
   get("admins/:id/audit", "admins:view", async (ctx, parts) =>
     json({ items: await getAdminAuditFor(ctx.db, decodeURIComponent(parts[1])) }));
->>>>>>> Stashed changes
   post("admins", "admins:manage", (ctx) => handleAdminCreate(ctx));
   post("admins/:id", "admins:manage", (ctx, parts) => handleAdminUpdate(ctx, decodeURIComponent(parts[1])));
 
@@ -629,5 +820,10 @@ export async function handleAdminApi(
     admin,
     ip: extractClientIp(request),
   };
-  return route.handler(ctx, slug);
+  try {
+    return await route.handler(ctx, slug);
+  } catch (cause) {
+    const message = cause instanceof Error ? cause.message : String(cause);
+    return err("INTERNAL_ERROR", message, 500);
+  }
 }

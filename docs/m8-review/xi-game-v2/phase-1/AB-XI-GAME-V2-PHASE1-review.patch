@@ -1,0 +1,2052 @@
+﻿diff --git a/app/api/v1/lobby/catalog/route.ts b/app/api/v1/lobby/catalog/route.ts
+new file mode 100644
+index 0000000..5797ddb
+--- /dev/null
++++ b/app/api/v1/lobby/catalog/route.ts
+@@ -0,0 +1,13 @@
++/**
++ * Additive lobby catalog API 鈥?Phase 1 static seed.
++ * Fail-open for unauthenticated catalog read (no wallet secrets).
++ */
++import { getLobbyCatalog } from "../../../../../lib/lobby-catalog.ts";
++
++export async function GET() {
++  return Response.json(getLobbyCatalog(), {
++    headers: {
++      "Cache-Control": "public, max-age=30",
++    },
++  });
++}
+diff --git a/app/game/page.tsx b/app/game/page.tsx
+new file mode 100644
+index 0000000..5ebfd17
+--- /dev/null
++++ b/app/game/page.tsx
+@@ -0,0 +1,9 @@
++import GameClient from "../game-client.tsx";
++
++/**
++ * Additive alias for the playable slot (same GameClient as `/`).
++ * Preserves `/` as the original route; used by lobby /xi/bdk navigation.
++ */
++export default function GamePage() {
++  return <GameClient />;
++}
+diff --git a/app/xi/bdk/page.tsx b/app/xi/bdk/page.tsx
+new file mode 100644
+index 0000000..94befaf
+--- /dev/null
++++ b/app/xi/bdk/page.tsx
+@@ -0,0 +1,6 @@
++import BdkHub from "../../../client/xi-lobby/bdk-hub.tsx";
++
++/** Phase 1 stub 鈥?Bull Demon King hub; Phase 2 hero home NOT started. */
++export default function XiBdkHubPage() {
++  return <BdkHub />;
++}
+diff --git a/app/xi/layout.tsx b/app/xi/layout.tsx
+new file mode 100644
+index 0000000..c9434ea
+--- /dev/null
++++ b/app/xi/layout.tsx
+@@ -0,0 +1,10 @@
++import type { Metadata } from "next";
++
++export const metadata: Metadata = {
++  title: "瑗挎父鎴?路 XI GAME",
++  description: "瑗挎父鎴忓钩鍙板ぇ鍘?/ XI GAME lobby",
++};
++
++export default function XiLayout({ children }: { children: React.ReactNode }) {
++  return children;
++}
+diff --git a/app/xi/page.tsx b/app/xi/page.tsx
+new file mode 100644
+index 0000000..32918a8
+--- /dev/null
++++ b/app/xi/page.tsx
+@@ -0,0 +1,6 @@
++import LobbyApp from "../../client/xi-lobby/lobby-app.tsx";
++
++/** Phase 1 鈥?銆婅タ娓告垙銆媝latform lobby (additive; slot remains at `/`). */
++export default function XiLobbyPage() {
++  return <LobbyApp />;
++}
+diff --git a/client/xi-lobby/api.ts b/client/xi-lobby/api.ts
+new file mode 100644
+index 0000000..6e2e85f
+--- /dev/null
++++ b/client/xi-lobby/api.ts
+@@ -0,0 +1,136 @@
++/** Fail-closed fetch helpers for XI GAME lobby. */
++
++export type LoadState<T> =
++  | { status: "loading" }
++  | { status: "ok"; data: T }
++  | { status: "error"; code: string; message: string };
++
++async function readJson(res: Response): Promise<unknown> {
++  try {
++    return await res.json();
++  } catch {
++    return null;
++  }
++}
++
++export async function fetchLobbyCatalog(): Promise<LoadState<Record<string, unknown>>> {
++  try {
++    const res = await fetch("/api/v1/lobby/catalog", { credentials: "same-origin" });
++    const body = (await readJson(res)) as Record<string, unknown> | null;
++    if (!res.ok || !body) {
++      return {
++        status: "error",
++        code: "CATALOG_UNAVAILABLE",
++        message: "catalog unavailable",
++      };
++    }
++    return { status: "ok", data: body };
++  } catch {
++    return { status: "error", code: "NETWORK", message: "network error" };
++  }
++}
++
++export async function fetchProfile(): Promise<
++  LoadState<{ nickname: string; vipLevel: number | null; avatarUrl: string | null }>
++> {
++  try {
++    const res = await fetch("/api/v1/game/profile", { credentials: "same-origin" });
++    const body = (await readJson(res)) as {
++      profile?: { nickname?: string; vipLevel?: number; avatarUrl?: string | null };
++      error?: { code?: string; message?: string };
++    } | null;
++    if (!res.ok || !body?.profile) {
++      return {
++        status: "error",
++        code: body?.error?.code ?? "PROFILE_UNAVAILABLE",
++        message: body?.error?.message ?? "profile unavailable",
++      };
++    }
++    return {
++      status: "ok",
++      data: {
++        nickname: body.profile.nickname ?? "",
++        vipLevel:
++          typeof body.profile.vipLevel === "number" ? body.profile.vipLevel : null,
++        avatarUrl: body.profile.avatarUrl ?? null,
++      },
++    };
++  } catch {
++    return { status: "error", code: "NETWORK", message: "network error" };
++  }
++}
++
++export async function fetchBalance(): Promise<
++  LoadState<{ currency: string; balanceMinor: number }>
++> {
++  try {
++    const res = await fetch("/api/v1/game/wallet/balance", { credentials: "same-origin" });
++    const body = (await readJson(res)) as {
++      currency?: string;
++      balanceMinor?: number;
++      error?: { code?: string; message?: string };
++    } | null;
++    if (!res.ok || typeof body?.balanceMinor !== "number" || !body.currency) {
++      return {
++        status: "error",
++        code: body?.error?.code ?? "BALANCE_UNAVAILABLE",
++        message: body?.error?.message ?? "balance unavailable",
++      };
++    }
++    return {
++      status: "ok",
++      data: { currency: body.currency, balanceMinor: body.balanceMinor },
++    };
++  } catch {
++    return { status: "error", code: "NETWORK", message: "network error" };
++  }
++}
++
++export async function fetchAnnouncements(
++  lang: "zh-CN" | "en" | "my-MM" = "zh-CN",
++): Promise<LoadState<Array<{ id: string; title: string; body: string }>>> {
++  try {
++    const res = await fetch("/api/v1/game/announcements", { credentials: "same-origin" });
++    const body = (await readJson(res)) as {
++      items?: Array<{
++        id?: string;
++        title?: string;
++        locales?: { zh?: string; en?: string; my?: string };
++      }>;
++      error?: { code?: string; message?: string };
++    } | null;
++    if (!res.ok || !body?.items) {
++      return {
++        status: "error",
++        code: body?.error?.code ?? "ANNOUNCEMENTS_UNAVAILABLE",
++        message: body?.error?.message ?? "announcements unavailable",
++      };
++    }
++    const localeKey = lang === "my-MM" ? "my" : lang === "en" ? "en" : "zh";
++    return {
++      status: "ok",
++      data: body.items.map((item, index) => {
++        const localized = item.locales?.[localeKey] || item.locales?.zh || "";
++        return {
++          id: item.id ?? `ann-${index}`,
++          title: item.title ?? "",
++          body: localized,
++        };
++      }),
++    };
++  } catch {
++    return { status: "error", code: "NETWORK", message: "network error" };
++  }
++}
++
++/** Match slot HUD: display ledger minor units as integer meter (no /100). */
++export function formatMinor(balanceMinor: number, _currency: string): string {
++  void _currency;
++  try {
++    return new Intl.NumberFormat(undefined, {
++      maximumFractionDigits: 0,
++    }).format(balanceMinor);
++  } catch {
++    return String(balanceMinor);
++  }
++}
+diff --git a/client/xi-lobby/bdk-hub.tsx b/client/xi-lobby/bdk-hub.tsx
+new file mode 100644
+index 0000000..c336883
+--- /dev/null
++++ b/client/xi-lobby/bdk-hub.tsx
+@@ -0,0 +1,37 @@
++"use client";
++
++import Link from "next/link";
++import { useState } from "react";
++import {
++  loadLobbyLang,
++  tLobby,
++  type LobbyLang,
++} from "./i18n.ts";
++import "./lobby.css";
++
++/** Phase 1 stub hub 鈥?navigates to existing slot; does not mount reels. */
++export default function BdkHub() {
++  const [lang] = useState<LobbyLang>(() => loadLobbyLang());
++  const t = (key: string) => tLobby(lang, key);
++
++  return (
++    <div className="xi-lobby-root" data-testid="xi-bdk-hub" lang={lang}>
++      <div className="xi-bdk-hub">
++        <h1>{t("lobby.bdk.hubTitle")}</h1>
++        <p>{t("lobby.games.bdk.subtitle")}</p>
++        <p>{t("lobby.bdk.hubLead")}</p>
++        <div className="xi-bdk-actions">
++          <Link className="xi-primary" href="/game">
++            {t("lobby.bdk.openSlot")}
++          </Link>
++          <Link className="xi-secondary" href="/">
++            {t("lobby.play")} (/)
++          </Link>
++          <Link className="xi-secondary" href="/xi">
++            {t("lobby.bdk.backLobby")}
++          </Link>
++        </div>
++      </div>
++    </div>
++  );
++}
+diff --git a/client/xi-lobby/i18n.ts b/client/xi-lobby/i18n.ts
+new file mode 100644
+index 0000000..ad59007
+--- /dev/null
++++ b/client/xi-lobby/i18n.ts
+@@ -0,0 +1,284 @@
++/**
++ * XI GAME lobby i18n 鈥?zh-CN / en / my-MM (en keys match project 鈥渆n鈥?locale).
++ */
++
++export type LobbyLang = "zh-CN" | "en" | "my-MM";
++export const LOBBY_LANGS: LobbyLang[] = ["zh-CN", "en", "my-MM"];
++export const LOBBY_LANG_STORAGE = "xi-lobby-lang";
++
++const dict: Record<LobbyLang, Record<string, string>> = {
++  "zh-CN": {
++    "lobby.brand": "瑗挎父鎴?,
++    "lobby.brandEn": "XI GAME",
++    "lobby.tagline": "瑗挎父绁炶瘽 路 骞冲彴澶у巺",
++    "lobby.hero.placeholder": "瑗挎父璁颁富棰樹富瑙嗚寰呮彁渚?,
++    "lobby.loading": "鍔犺浇涓€?,
++    "lobby.error": "鏆傛椂鏃犳硶鍔犺浇锛岃绋嶅悗閲嶈瘯",
++    "lobby.retry": "閲嶈瘯",
++    "lobby.unavailable": "鏆備笉鍙敤",
++    "lobby.vip": "VIP",
++    "lobby.recharge": "鍏呭€?,
++    "lobby.balance.mmk": "MMK",
++    "lobby.balance.usdt": "USDT",
++    "lobby.messages": "娑堟伅",
++    "lobby.announcements": "鍏憡",
++    "lobby.settings": "璁剧疆",
++    "lobby.language": "璇█",
++    "lobby.nav.home": "棣栭〉",
++    "lobby.nav.games": "娓告垙",
++    "lobby.nav.wallet": "閽卞寘",
++    "lobby.nav.activity": "娲诲姩",
++    "lobby.nav.me": "鎴戠殑",
++    "lobby.cat.recommended": "鎺ㄨ崘",
++    "lobby.cat.hot": "鐑棬",
++    "lobby.cat.new": "涓婃柊",
++    "lobby.cat.jackpot": "濂栨睜",
++    "lobby.cat.slots": "鑰佽檸鏈?,
++    "lobby.section.recommended": "鎺ㄨ崘娓告垙",
++    "lobby.section.features": "鍔熻兘鍏ュ彛",
++    "lobby.section.catalog": "娓告垙澶у巺",
++    "lobby.badge.hot": "HOT",
++    "lobby.badge.new": "NEW",
++    "lobby.badge.jackpot": "JACKPOT",
++    "lobby.badge.recommended": "鎺ㄨ崘",
++    "lobby.players": "鍦ㄧ嚎",
++    "lobby.players.unknown": "鈥?,
++    "lobby.comingSoon": "鍗冲皢涓婄嚎",
++    "lobby.comingSoon.body": "鐜╂硶涓庢暟瀛﹂厤缃緟涓氬姟瑙勫垯纭锛屾暚璇锋湡寰呫€?,
++    "lobby.play": "杩涘叆娓告垙",
++    "lobby.close": "鍏抽棴",
++    "lobby.games.bdk.title": "鐗涢瓟鐜?,
++    "lobby.games.bdk.subtitle": "瑗挎父鎴忎箣鐗涢瓟鐜?,
++    "lobby.games.wukong.title": "瀛欐偀绌?,
++    "lobby.games.nezha.title": "鍝悞",
++    "lobby.games.dragonking.title": "榫欑帇",
++    "lobby.games.redboy.title": "绾㈠鍎?,
++    "lobby.games.bonespirit.title": "鐧介绮?,
++    "lobby.feat.recharge": "鍏呭€?,
++    "lobby.feat.withdraw": "鎻愮幇",
++    "lobby.feat.vip": "VIP",
++    "lobby.feat.activity": "娲诲姩",
++    "lobby.feat.announcements": "鍏憡",
++    "lobby.feat.rankings": "鎺掕姒?,
++    "lobby.feat.checkin": "绛惧埌",
++    "lobby.feat.cs": "瀹㈡湇",
++    "lobby.feat.invite": "閭€璇?,
++    "lobby.feat.tasks": "浠诲姟",
++    "lobby.feat.mail": "閭欢",
++    "lobby.feat.gifts": "绀煎寘",
++    "lobby.feat.redeem": "鍏戞崲鐮?,
++    "lobby.pending.title": "涓氬姟瑙勫垯寰呭畾",
++    "lobby.pending.body": "璇ュ姛鑳藉叆鍙ｅ凡寮€閫氾紝涓氬姟瑙勫垯涓庨€氶亾閰嶇疆瀹屾垚鍚庡紑鏀俱€?,
++    "lobby.announcements.empty": "鏆傛棤鍏憡",
++    "lobby.announcements.error": "鍏憡鍔犺浇澶辫触",
++    "lobby.profile.error": "璧勬枡鍔犺浇澶辫触",
++    "lobby.profile.guest": "娓稿",
++    "lobby.wallet.error": "浣欓鍔犺浇澶辫触",
++    "lobby.wallet.usdt.pending": "澶氬竵绉嶄綑棰濆緟鍚堢害",
++    "lobby.settings.body": "鐢昏川涓庨煶鏁堣鍦ㄦ父鎴忓唴璁剧疆锛涘ぇ鍘呰瑷€鍙湪姝ゅ垏鎹€?,
++    "lobby.messages.empty": "鏆傛棤绔欏唴淇?,
++    "lobby.bdk.hubTitle": "鐗涢瓟鐜?,
++    "lobby.bdk.hubLead": "姝ｅ紡鑰佽檸鏈哄叆鍙ｏ紙Session / Spin / Round 鏈嶅姟鍣ㄦ潈濞侊級銆?,
++    "lobby.bdk.openSlot": "寮€濮嬫父鎴?,
++    "lobby.bdk.backLobby": "杩斿洖澶у巺",
++    "lobby.panel.home": "棣栭〉",
++    "lobby.panel.games": "鍏ㄩ儴娓告垙",
++    "lobby.panel.wallet": "閽卞寘",
++    "lobby.panel.activity": "娲诲姩涓績",
++    "lobby.panel.me": "涓汉涓績",
++    "lobby.nickname": "鏄电О",
++  },
++  en: {
++    "lobby.brand": "XI GAME",
++    "lobby.brandEn": "XI GAME",
++    "lobby.tagline": "Mythic Journey 路 Game Lobby",
++    "lobby.hero.placeholder": "Journey to the West hero art pending",
++    "lobby.loading": "Loading鈥?,
++    "lobby.error": "Temporarily unavailable. Please try again.",
++    "lobby.retry": "Retry",
++    "lobby.unavailable": "Unavailable",
++    "lobby.vip": "VIP",
++    "lobby.recharge": "Top up",
++    "lobby.balance.mmk": "MMK",
++    "lobby.balance.usdt": "USDT",
++    "lobby.messages": "Messages",
++    "lobby.announcements": "Announcements",
++    "lobby.settings": "Settings",
++    "lobby.language": "Language",
++    "lobby.nav.home": "Home",
++    "lobby.nav.games": "Games",
++    "lobby.nav.wallet": "Wallet",
++    "lobby.nav.activity": "Activity",
++    "lobby.nav.me": "Me",
++    "lobby.cat.recommended": "Recommended",
++    "lobby.cat.hot": "Hot",
++    "lobby.cat.new": "New",
++    "lobby.cat.jackpot": "Jackpot",
++    "lobby.cat.slots": "Slots",
++    "lobby.section.recommended": "Recommended",
++    "lobby.section.features": "Features",
++    "lobby.section.catalog": "Game catalog",
++    "lobby.badge.hot": "HOT",
++    "lobby.badge.new": "NEW",
++    "lobby.badge.jackpot": "JACKPOT",
++    "lobby.badge.recommended": "PICK",
++    "lobby.players": "Online",
++    "lobby.players.unknown": "鈥?,
++    "lobby.comingSoon": "Coming soon",
++    "lobby.comingSoon.body": "Rules and math config are pending business approval.",
++    "lobby.play": "Play",
++    "lobby.close": "Close",
++    "lobby.games.bdk.title": "Bull Demon King",
++    "lobby.games.bdk.subtitle": "XI GAME 路 Bull Demon King",
++    "lobby.games.wukong.title": "Sun Wukong",
++    "lobby.games.nezha.title": "Nezha",
++    "lobby.games.dragonking.title": "Dragon King",
++    "lobby.games.redboy.title": "Red Boy",
++    "lobby.games.bonespirit.title": "White Bone Spirit",
++    "lobby.feat.recharge": "Deposit",
++    "lobby.feat.withdraw": "Withdraw",
++    "lobby.feat.vip": "VIP",
++    "lobby.feat.activity": "Events",
++    "lobby.feat.announcements": "News",
++    "lobby.feat.rankings": "Rankings",
++    "lobby.feat.checkin": "Check-in",
++    "lobby.feat.cs": "Support",
++    "lobby.feat.invite": "Invite",
++    "lobby.feat.tasks": "Tasks",
++    "lobby.feat.mail": "Mail",
++    "lobby.feat.gifts": "Gifts",
++    "lobby.feat.redeem": "Redeem",
++    "lobby.pending.title": "Business rules pending",
++    "lobby.pending.body": "This entry is live; channels open after business rules are configured.",
++    "lobby.announcements.empty": "No announcements",
++    "lobby.announcements.error": "Failed to load announcements",
++    "lobby.profile.error": "Failed to load profile",
++    "lobby.profile.guest": "Guest",
++    "lobby.wallet.error": "Failed to load balance",
++    "lobby.wallet.usdt.pending": "Multi-currency balance pending contract",
++    "lobby.settings.body": "Audio/quality live in-game; lobby language can be switched here.",
++    "lobby.messages.empty": "No messages",
++    "lobby.bdk.hubTitle": "Bull Demon King",
++    "lobby.bdk.hubLead": "Formal slot entry (server-authoritative Session / Spin / Round).",
++    "lobby.bdk.openSlot": "Play now",
++    "lobby.bdk.backLobby": "Back to lobby",
++    "lobby.panel.home": "Home",
++    "lobby.panel.games": "All games",
++    "lobby.panel.wallet": "Wallet",
++    "lobby.panel.activity": "Activity",
++    "lobby.panel.me": "Profile",
++    "lobby.nickname": "Nickname",
++  },
++  "my-MM": {
++    "lobby.brand": "XI GAME",
++    "lobby.brandEn": "XI GAME",
++    "lobby.tagline": "醼掅€忈€贯€嶀€€涐€€佱€涐€€?路 醼傖€€欋€横€羔€溼€贬€€横€樶€?,
++    "lobby.hero.placeholder": "Journey to the West 醼♂€撫€€€醼曖€€?醼嗎€€€勧€横€羔€勧€夺€丰€戓€€羔€炨€娽€?,
++    "lobby.loading": "醼栣€结€勧€丰€横€斸€贬€炨€娽€衡€?,
++    "lobby.error": "醼氠€€氠€€欋€涐€涐€踞€€斸€€€勧€横€曖€亱 醼曖€坚€斸€横€€醼坚€€€羔€呩€€羔€曖€亱",
++    "lobby.retry": "醼曖€坚€斸€横€€醼坚€€€羔€呩€€?,
++    "lobby.unavailable": "醼欋€涐€涐€踞€€斸€€€勧€?,
++    "lobby.vip": "VIP",
++    "lobby.recharge": "醼勧€结€贬€炨€结€勧€横€?,
++    "lobby.balance.mmk": "MMK",
++    "lobby.balance.usdt": "USDT",
++    "lobby.messages": "醼呩€€欋€会€€?,
++    "lobby.announcements": "醼€醼坚€贬€娽€€佱€会€€醼?,
++    "lobby.settings": "醼嗎€€醼横€愥€勧€?,
++    "lobby.language": "醼樶€€炨€€呩€€醼€?,
++    "lobby.nav.home": "醼曖€勧€横€?,
++    "lobby.nav.games": "醼傖€€欋€横€羔€欋€会€€?,
++    "lobby.nav.wallet": "醼曖€€€€醼横€嗎€夺€♂€€愥€?,
++    "lobby.nav.activity": "醼溼€踞€€曖€横€涐€踞€€羔€欋€踞€?,
++    "lobby.nav.me": "醼€醼会€结€斸€横€€曖€?,
++    "lobby.cat.recommended": "醼♂€€醼坚€夺€曖€坚€?,
++    "lobby.cat.hot": "醼溼€搬€€醼坚€€€€醼横€欋€会€€?,
++    "lobby.cat.new": "醼♂€炨€呩€?,
++    "lobby.cat.jackpot": "醼傖€会€€醼横€曖€贬€€?,
++    "lobby.cat.slots": "醼呩€溼€贬€€?,
++    "lobby.section.recommended": "醼♂€€醼坚€夺€曖€坚€€傖€€欋€横€羔€欋€会€€?,
++    "lobby.section.features": "醼濁€斸€横€嗎€贬€€勧€横€欋€踞€€欋€会€€?,
++    "lobby.section.catalog": "醼傖€€欋€横€羔€呩€€涐€勧€横€?,
++    "lobby.badge.hot": "HOT",
++    "lobby.badge.new": "NEW",
++    "lobby.badge.jackpot": "JACKPOT",
++    "lobby.badge.recommended": "PICK",
++    "lobby.players": "醼♂€结€斸€横€溼€€€勧€横€?,
++    "lobby.players.unknown": "鈥?,
++    "lobby.comingSoon": "醼欋€€醼坚€€欋€?,
++    "lobby.comingSoon.body": "醼呩€娽€横€羔€欋€会€夅€横€羔€斸€踞€勧€丰€?醼炨€勧€横€贯€佱€会€€曖€坚€勧€横€嗎€勧€横€欋€踞€?醼呩€€羔€曖€结€€羔€涐€贬€羔€♂€愥€娽€横€曖€坚€€佱€会€€醼?醼呩€贬€€勧€丰€横€嗎€€€勧€横€羔€斸€贬€炨€娽€横亱",
++    "lobby.play": "醼€醼呩€€羔€欋€娽€?,
++    "lobby.close": "醼曖€€愥€?,
++    "lobby.games.bdk.title": "醼斸€结€€羔€斸€愥€横€嗎€€€羔€樶€€涐€勧€?,
++    "lobby.games.bdk.subtitle": "XI GAME 路 醼斸€结€€羔€斸€愥€横€嗎€€€羔€樶€€涐€勧€?,
++    "lobby.games.wukong.title": "醼嗎€结€斸€横€濁€搬€佱€€斸€横€?,
++    "lobby.games.nezha.title": "醼斸€氠€横€囜€?,
++    "lobby.games.dragonking.title": "醼斸€傖€€羔€樶€€涐€勧€?,
++    "lobby.games.redboy.title": "醼炨€€羔€斸€?,
++    "lobby.games.bonespirit.title": "醼♂€涐€€€羔€栣€坚€搬€斸€愥€?,
++    "lobby.feat.recharge": "醼勧€结€贬€炨€结€勧€横€?,
++    "lobby.feat.withdraw": "醼勧€结€贬€戓€€愥€?,
++    "lobby.feat.vip": "VIP",
++    "lobby.feat.activity": "醼曖€结€册€欋€会€€?,
++    "lobby.feat.announcements": "醼炨€愥€勧€横€?,
++    "lobby.feat.rankings": "醼♂€嗎€勧€丰€横€囜€氠€€?,
++    "lobby.feat.checkin": "醼斸€贬€丰€呩€夅€横€溼€€醼横€欋€踞€愥€?,
++    "lobby.feat.cs": "醼濁€斸€横€嗎€贬€€勧€横€欋€踞€?,
++    "lobby.feat.invite": "醼栣€€愥€横€€醼坚€€?,
++    "lobby.feat.tasks": "醼愥€€濁€斸€横€欋€会€€?,
++    "lobby.feat.mail": "醼呩€€愥€€€€醼?,
++    "lobby.feat.gifts": "醼溼€€醼横€嗎€贬€€勧€?,
++    "lobby.feat.redeem": "醼€醼€掅€横€溼€?,
++    "lobby.pending.title": "醼呩€€羔€曖€结€€羔€涐€贬€羔€呩€娽€横€羔€欋€会€夅€横€?醼呩€贬€€勧€丰€横€嗎€€€勧€横€?,
++    "lobby.pending.body": "醼濁€勧€横€曖€贬€€€醼横€栣€结€勧€丰€横€曖€坚€€羔€栣€坚€呩€横€炨€娽€横亱 醼呩€娽€横€羔€欋€会€夅€横€羔€曖€坚€€羔€欋€?醼佱€会€斸€横€斸€氠€横€栣€结€勧€丰€横€欋€娽€横亱",
++    "lobby.announcements.empty": "醼€醼坚€贬€娽€€佱€会€€醼横€欋€涐€踞€?,
++    "lobby.announcements.error": "醼€醼坚€贬€娽€€佱€会€€醼?醼欋€栣€结€勧€丰€横€斸€€€勧€?,
++    "lobby.profile.error": "醼曖€涐€€€栣€€€勧€?醼欋€栣€结€勧€丰€横€斸€€€勧€?,
++    "lobby.profile.guest": "醼п€娽€丰€横€炨€娽€?,
++    "lobby.wallet.error": "醼溼€€醼横€€醼会€斸€?醼欋€栣€结€勧€丰€横€斸€€€勧€?,
++    "lobby.wallet.usdt.pending": "醼勧€结€贬€€醼坚€贬€羔€欋€会€€€羔€呩€€?醼呩€€佱€会€€曖€横€呩€贬€€勧€丰€横€嗎€€€勧€横€?,
++    "lobby.settings.body": "醼♂€炨€?醼♂€涐€娽€横€♂€炨€结€贬€羔€€醼€?醼傖€€欋€横€羔€戓€册€愥€结€勧€?醼曖€坚€勧€横€曖€亱 醼溼€贬€€横€樶€€樶€€炨€€€醼€?醼め€斸€贬€涐€€愥€结€勧€?醼曖€坚€贬€€勧€横€羔€斸€€€勧€横€炨€娽€横亱",
++    "lobby.messages.empty": "醼呩€€欋€涐€踞€?,
++    "lobby.bdk.hubTitle": "醼斸€结€€羔€斸€愥€横€嗎€€€羔€樶€€涐€勧€?,
++    "lobby.bdk.hubLead": "醼愥€涐€€羔€濁€勧€横€呩€溼€贬€€?醼濁€勧€横€曖€贬€€€醼?(Server Session / Spin / Round)醽?,
++    "lobby.bdk.openSlot": "醼€醼呩€€羔€欋€娽€?,
++    "lobby.bdk.backLobby": "醼溼€贬€€横€樶€€炨€€€?,
++    "lobby.panel.home": "醼曖€勧€横€?,
++    "lobby.panel.games": "醼傖€€欋€横€羔€♂€€羔€溼€€夺€?,
++    "lobby.panel.wallet": "醼曖€€€€醼横€嗎€夺€♂€€愥€?,
++    "lobby.panel.activity": "醼溼€踞€€曖€横€涐€踞€€羔€欋€踞€?,
++    "lobby.panel.me": "醼曖€涐€€€栣€€€勧€?,
++    "lobby.nickname": "醼♂€欋€娽€横€曖€坚€贬€€勧€?,
++  },
++};
++
++export function loadLobbyLang(): LobbyLang {
++  if (typeof window === "undefined") return "zh-CN";
++  const raw = window.localStorage.getItem(LOBBY_LANG_STORAGE);
++  if (raw === "zh-CN" || raw === "en" || raw === "my-MM") return raw;
++  return "zh-CN";
++}
++
++export function saveLobbyLang(lang: LobbyLang): void {
++  if (typeof window === "undefined") return;
++  window.localStorage.setItem(LOBBY_LANG_STORAGE, lang);
++}
++
++export function tLobby(lang: LobbyLang, key: string): string {
++  return dict[lang][key] ?? dict.en[key] ?? key;
++}
++
++export function lobbyKeys(): string[] {
++  return Object.keys(dict["zh-CN"]).sort();
++}
++
++export function assertLobbyI18nComplete(): { ok: boolean; missing: string[] } {
++  const base = Object.keys(dict["zh-CN"]);
++  const missing: string[] = [];
++  for (const lang of LOBBY_LANGS) {
++    for (const key of base) {
++      if (!dict[lang][key]) missing.push(`${lang}:${key}`);
++    }
++  }
++  return { ok: missing.length === 0, missing };
++}
+diff --git a/client/xi-lobby/lobby-app.tsx b/client/xi-lobby/lobby-app.tsx
+new file mode 100644
+index 0000000..2729d64
+--- /dev/null
++++ b/client/xi-lobby/lobby-app.tsx
+@@ -0,0 +1,616 @@
++"use client";
++
++import { useEffect, useMemo, useState } from "react";
++import type { LobbyCatalogResponse, LobbyGameCard } from "../../lib/lobby-catalog.ts";
++import {
++  fetchAnnouncements,
++  fetchBalance,
++  fetchLobbyCatalog,
++  fetchProfile,
++  formatMinor,
++  type LoadState,
++} from "./api.ts";
++import {
++  LOBBY_LANGS,
++  loadLobbyLang,
++  saveLobbyLang,
++  tLobby,
++  type LobbyLang,
++} from "./i18n.ts";
++import "./lobby.css";
++
++type NavId = "home" | "games" | "wallet" | "activity" | "me";
++type ModalKind =
++  | null
++  | "pending"
++  | "announcements"
++  | "messages"
++  | "settings"
++  | "coming_soon"
++  | "vip"
++  | "profile";
++
++type FeatureId =
++  | "recharge"
++  | "withdraw"
++  | "vip"
++  | "activity"
++  | "announcements"
++  | "rankings"
++  | "checkin"
++  | "cs"
++  | "invite"
++  | "tasks"
++  | "mail"
++  | "gifts"
++  | "redeem";
++
++const FEATURES: FeatureId[] = [
++  "recharge",
++  "withdraw",
++  "vip",
++  "activity",
++  "announcements",
++  "rankings",
++  "checkin",
++  "cs",
++  "invite",
++  "tasks",
++  "mail",
++  "gifts",
++  "redeem",
++];
++
++function filterGames(games: LobbyGameCard[], cat: string): LobbyGameCard[] {
++  if (cat === "recommended") {
++    return games.filter(
++      (g) => g.badges.includes("recommended") || g.category === "recommended",
++    );
++  }
++  if (cat === "hot") return games.filter((g) => g.badges.includes("hot"));
++  if (cat === "new") return games.filter((g) => g.badges.includes("new"));
++  if (cat === "jackpot") {
++    return games.filter(
++      (g) => g.badges.includes("jackpot") || g.category === "jackpot",
++    );
++  }
++  if (cat === "slots") {
++    return games.filter((g) => g.category === "slots" || g.id === "bdk");
++  }
++  return games;
++}
++
++export default function LobbyApp() {
++  const [lang, setLang] = useState<LobbyLang>(() => loadLobbyLang());
++  const [nav, setNav] = useState<NavId>("home");
++  const [cat, setCat] = useState("recommended");
++  const [modal, setModal] = useState<ModalKind>(null);
++  const [pendingKey, setPendingKey] = useState("lobby.pending.title");
++  const [comingTitleKey, setComingTitleKey] = useState("lobby.comingSoon");
++  const [catalog, setCatalog] = useState<LoadState<LobbyCatalogResponse>>({
++    status: "loading",
++  });
++  const [profile, setProfile] = useState<
++    LoadState<{ nickname: string; vipLevel: number | null; avatarUrl: string | null }>
++  >({ status: "loading" });
++  const [balance, setBalance] = useState<
++    LoadState<{ currency: string; balanceMinor: number }>
++  >({ status: "loading" });
++  const [announcements, setAnnouncements] = useState<
++    LoadState<Array<{ id: string; title: string; body: string }>>
++  >({ status: "loading" });
++  const [announceLang, setAnnounceLang] = useState<LobbyLang>(lang);
++
++  const t = (key: string) => tLobby(lang, key);
++  const announcementsView: LoadState<Array<{ id: string; title: string; body: string }>> =
++    announceLang !== lang ? { status: "loading" } : announcements;
++
++  useEffect(() => {
++    let cancelled = false;
++    void (async () => {
++      const [c, p, b] = await Promise.all([
++        fetchLobbyCatalog(),
++        fetchProfile(),
++        fetchBalance(),
++      ]);
++      if (cancelled) return;
++      if (c.status === "ok") {
++        setCatalog({ status: "ok", data: c.data as unknown as LobbyCatalogResponse });
++      } else {
++        setCatalog(c);
++      }
++      setProfile(p);
++      setBalance(b);
++    })();
++    return () => {
++      cancelled = true;
++    };
++  }, []);
++
++  useEffect(() => {
++    let cancelled = false;
++    const requested = lang;
++    void fetchAnnouncements(requested).then((a) => {
++      if (cancelled) return;
++      setAnnouncements(a);
++      setAnnounceLang(requested);
++    });
++    return () => {
++      cancelled = true;
++    };
++  }, [lang]);
++
++  const games = useMemo(() => {
++    if (catalog.status !== "ok") return [];
++    return filterGames(catalog.data.games, cat);
++  }, [catalog, cat]);
++
++  function openPending(feature: FeatureId) {
++    if (feature === "announcements") {
++      setModal("announcements");
++      return;
++    }
++    if (feature === "vip") {
++      setModal("vip");
++      return;
++    }
++    if (feature === "activity") {
++      setNav("activity");
++      setModal("pending");
++      setPendingKey("lobby.feat.activity");
++      return;
++    }
++    setPendingKey(`lobby.feat.${feature}`);
++    setModal("pending");
++  }
++
++  function onGameClick(game: LobbyGameCard) {
++    if (game.status === "live" && game.href) {
++      // Full navigation keeps slot/lobby shells isolated (no shared #gl dispose).
++      window.location.assign(game.href);
++      return;
++    }
++    setComingTitleKey(game.titleKey);
++    setModal("coming_soon");
++  }
++
++  function switchLang(next: LobbyLang) {
++    setLang(next);
++    saveLobbyLang(next);
++  }
++
++  const nickname =
++    profile.status === "ok" && profile.data.nickname
++      ? profile.data.nickname
++      : profile.status === "loading"
++        ? t("lobby.loading")
++        : t("lobby.profile.guest");
++
++  const vipLabel =
++    profile.status === "ok" && profile.data.vipLevel != null
++      ? `${t("lobby.vip")} ${profile.data.vipLevel}`
++      : t("lobby.vip");
++
++  const mmkText =
++    balance.status === "loading"
++      ? t("lobby.loading")
++      : balance.status === "error"
++        ? t("lobby.wallet.error")
++        : `${formatMinor(balance.data.balanceMinor, balance.data.currency)}`;
++
++  const mmkCurrency =
++    balance.status === "ok" ? balance.data.currency : t("lobby.balance.mmk");
++
++  return (
++    <div className="xi-lobby-root" data-testid="xi-lobby-root" lang={lang}>
++      <header className="xi-topbar">
++        <div className="xi-top-left">
++          <button
++            type="button"
++            className="xi-avatar"
++            aria-label={t("lobby.panel.me")}
++            onClick={() => setModal("profile")}
++            style={
++              profile.status === "ok" && profile.data.avatarUrl
++                ? {
++                    backgroundImage: `url(${profile.data.avatarUrl})`,
++                    backgroundSize: "cover",
++                  }
++                : undefined
++            }
++          />
++          <div className="xi-user-meta">
++            <span className="xi-nickname">{nickname}</span>
++            <span className="xi-vip-pill">{vipLabel}</span>
++          </div>
++        </div>
++
++        <div className="xi-top-center">
++          <div
++            className={`xi-balance-chip${balance.status !== "ok" ? (balance.status === "loading" ? " is-loading" : " is-error") : ""}`}
++          >
++            <span>{mmkCurrency}</span>
++            <strong>{mmkText}</strong>
++          </div>
++          <div className="xi-balance-chip is-loading" title={t("lobby.wallet.usdt.pending")}>
++            <span>{t("lobby.balance.usdt")}</span>
++            <strong>{t("lobby.unavailable")}</strong>
++          </div>
++          <button
++            type="button"
++            className="xi-recharge-btn"
++            onClick={() => openPending("recharge")}
++          >
++            {t("lobby.recharge")}+
++          </button>
++        </div>
++
++        <div className="xi-top-right">
++          <button
++            type="button"
++            className="xi-icon-btn"
++            onClick={() => setModal("messages")}
++          >
++            {t("lobby.messages")}
++          </button>
++          <button
++            type="button"
++            className="xi-icon-btn"
++            onClick={() => setModal("announcements")}
++          >
++            {t("lobby.announcements")}
++          </button>
++          <button
++            type="button"
++            className="xi-icon-btn"
++            onClick={() => setModal("settings")}
++          >
++            {t("lobby.settings")}
++          </button>
++          <button
++            type="button"
++            className="xi-icon-btn"
++            onClick={() => setModal("settings")}
++          >
++            {t("lobby.language")}
++          </button>
++        </div>
++      </header>
++
++      {(nav === "home" || nav === "games") && (
++        <section className="xi-hero" aria-label={t("lobby.brand")}>
++          <div className="xi-hero-bg" />
++          <div className="xi-hero-clouds" />
++          <div className="xi-hero-sun" />
++          <div className="xi-hero-particles" aria-hidden>
++            <span />
++            <span />
++            <span />
++            <span />
++            <span />
++            <span />
++          </div>
++          <div className="xi-hero-copy">
++            <div className="xi-hero-brand">{t("lobby.brand")}</div>
++            <div className="xi-hero-sub">{t("lobby.tagline")}</div>
++            <div className="xi-hero-gap">{t("lobby.hero.placeholder")}</div>
++          </div>
++        </section>
++      )}
++
++      <main className="xi-main">
++        {nav === "home" && (
++          <>
++            <section>
++              <h2 className="xi-section-title">{t("lobby.section.features")}</h2>
++              <div className="xi-feat-grid">
++                {FEATURES.map((id) => (
++                  <button
++                    key={id}
++                    type="button"
++                    className="xi-feat-btn"
++                    onClick={() => openPending(id)}
++                  >
++                    <span className="xi-feat-ico" aria-hidden />
++                    <span>{t(`lobby.feat.${id}`)}</span>
++                  </button>
++                ))}
++              </div>
++            </section>
++            <CatalogBlock
++              t={t}
++              catalog={catalog}
++              cat={cat}
++              setCat={setCat}
++              games={games}
++              onGameClick={onGameClick}
++            />
++          </>
++        )}
++
++        {nav === "games" && (
++          <CatalogBlock
++            t={t}
++            catalog={catalog}
++            cat={cat}
++            setCat={setCat}
++            games={games}
++            onGameClick={onGameClick}
++          />
++        )}
++
++        {nav === "wallet" && (
++          <section className="xi-panel-card">
++            <h2 className="xi-section-title">{t("lobby.panel.wallet")}</h2>
++            <p className="xi-status-line">
++              {mmkCurrency}: {mmkText}
++            </p>
++            <p className="xi-status-line">
++              {t("lobby.balance.usdt")}: {t("lobby.wallet.usdt.pending")}
++            </p>
++            <div className="xi-bdk-actions" style={{ marginTop: "0.85rem" }}>
++              <button
++                type="button"
++                className="xi-primary"
++                onClick={() => openPending("recharge")}
++              >
++                {t("lobby.feat.recharge")}
++              </button>
++              <button
++                type="button"
++                className="xi-secondary"
++                onClick={() => openPending("withdraw")}
++              >
++                {t("lobby.feat.withdraw")}
++              </button>
++            </div>
++          </section>
++        )}
++
++        {nav === "activity" && (
++          <section className="xi-panel-card">
++            <h2 className="xi-section-title">{t("lobby.panel.activity")}</h2>
++            <p>{t("lobby.pending.body")}</p>
++            <button
++              type="button"
++              className="xi-primary"
++              onClick={() => openPending("checkin")}
++            >
++              {t("lobby.feat.checkin")}
++            </button>
++          </section>
++        )}
++
++        {nav === "me" && (
++          <section className="xi-panel-card">
++            <h2 className="xi-section-title">{t("lobby.panel.me")}</h2>
++            <p className="xi-status-line">
++              {t("lobby.nickname")}: {nickname}
++            </p>
++            <p className="xi-status-line">{vipLabel}</p>
++            {profile.status === "error" && (
++              <p className="xi-status-line">{t("lobby.profile.error")}</p>
++            )}
++            <div className="xi-bdk-actions" style={{ marginTop: "0.85rem" }}>
++              <button
++                type="button"
++                className="xi-primary"
++                onClick={() => setModal("profile")}
++              >
++                {t("lobby.panel.me")}
++              </button>
++              <button
++                type="button"
++                className="xi-secondary"
++                onClick={() => setModal("vip")}
++              >
++                {t("lobby.feat.vip")}
++              </button>
++            </div>
++          </section>
++        )}
++      </main>
++
++      <nav className="xi-bottom-nav" aria-label="XI GAME">
++        {(
++          [
++            ["home", "lobby.nav.home"],
++            ["games", "lobby.nav.games"],
++            ["wallet", "lobby.nav.wallet"],
++            ["activity", "lobby.nav.activity"],
++            ["me", "lobby.nav.me"],
++          ] as const
++        ).map(([id, key]) => (
++          <button
++            key={id}
++            type="button"
++            className={`xi-nav-btn${nav === id ? " is-active" : ""}`}
++            onClick={() => setNav(id)}
++          >
++            <span className="xi-nav-dot" aria-hidden />
++            {t(key)}
++          </button>
++        ))}
++      </nav>
++
++      {modal && (
++        <div
++          className="xi-modal-backdrop"
++          role="presentation"
++          onClick={(e) => {
++            if (e.target === e.currentTarget) setModal(null);
++          }}
++        >
++          <div className="xi-modal" role="dialog" aria-modal="true">
++            {modal === "pending" && (
++              <>
++                <h2>{t(pendingKey)}</h2>
++                <p>{t("lobby.pending.title")}</p>
++                <p>{t("lobby.pending.body")}</p>
++              </>
++            )}
++            {modal === "coming_soon" && (
++              <>
++                <h2>{t(comingTitleKey)}</h2>
++                <p>{t("lobby.comingSoon")}</p>
++                <p>{t("lobby.comingSoon.body")}</p>
++              </>
++            )}
++            {modal === "vip" && (
++              <>
++                <h2>{t("lobby.feat.vip")}</h2>
++                <p>{vipLabel}</p>
++                <p>{t("lobby.pending.body")}</p>
++              </>
++            )}
++            {modal === "profile" && (
++              <>
++                <h2>{t("lobby.panel.me")}</h2>
++                <p>
++                  {t("lobby.nickname")}: {nickname}
++                </p>
++                {profile.status === "error" && <p>{t("lobby.profile.error")}</p>}
++                <p>{t("lobby.pending.body")}</p>
++              </>
++            )}
++            {modal === "messages" && (
++              <>
++                <h2>{t("lobby.messages")}</h2>
++                <p>{t("lobby.messages.empty")}</p>
++              </>
++            )}
++            {modal === "announcements" && (
++              <>
++                <h2>{t("lobby.announcements")}</h2>
++                {announcementsView.status === "loading" && <p>{t("lobby.loading")}</p>}
++                {announcementsView.status === "error" && (
++                  <p>{t("lobby.announcements.error")}</p>
++                )}
++                {announcementsView.status === "ok" &&
++                  announcementsView.data.length === 0 && (
++                  <p>{t("lobby.announcements.empty")}</p>
++                )}
++                {announcementsView.status === "ok" &&
++                  announcementsView.data.length > 0 && (
++                  <ul className="xi-announce-list">
++                    {announcementsView.data.map((item) => (
++                      <li key={item.id}>
++                        <strong>{item.title || t("lobby.announcements")}</strong>
++                        {item.body ? <div>{item.body}</div> : null}
++                      </li>
++                    ))}
++                  </ul>
++                )}
++              </>
++            )}
++            {modal === "settings" && (
++              <>
++                <h2>{t("lobby.settings")}</h2>
++                <p>{t("lobby.settings.body")}</p>
++                <div className="xi-lang-row">
++                  {LOBBY_LANGS.map((code) => (
++                    <button
++                      key={code}
++                      type="button"
++                      className={`xi-icon-btn${lang === code ? " is-active" : ""}`}
++                      onClick={() => switchLang(code)}
++                    >
++                      {code}
++                    </button>
++                  ))}
++                </div>
++              </>
++            )}
++            <div className="xi-modal-actions">
++              <button
++                type="button"
++                className="xi-secondary"
++                onClick={() => setModal(null)}
++              >
++                {t("lobby.close")}
++              </button>
++            </div>
++          </div>
++        </div>
++      )}
++    </div>
++  );
++}
++
++function CatalogBlock({
++  t,
++  catalog,
++  cat,
++  setCat,
++  games,
++  onGameClick,
++}: {
++  t: (key: string) => string;
++  catalog: LoadState<LobbyCatalogResponse>;
++  cat: string;
++  setCat: (id: string) => void;
++  games: LobbyGameCard[];
++  onGameClick: (game: LobbyGameCard) => void;
++}) {
++  return (
++    <section>
++      <h2 className="xi-section-title">{t("lobby.section.catalog")}</h2>
++      {catalog.status === "loading" && (
++        <p className="xi-status-line">{t("lobby.loading")}</p>
++      )}
++      {catalog.status === "error" && (
++        <p className="xi-status-line">{t("lobby.error")}</p>
++      )}
++      {catalog.status === "ok" && (
++        <>
++          <div className="xi-cats">
++            {catalog.data.categories.map((c) => (
++              <button
++                key={c.id}
++                type="button"
++                className={`xi-cat-chip${cat === c.id ? " is-active" : ""}`}
++                onClick={() => setCat(c.id)}
++              >
++                {t(c.labelKey)}
++              </button>
++            ))}
++          </div>
++          <div className="xi-game-grid" style={{ marginTop: "0.65rem" }}>
++            {games.map((game) => (
++              <button
++                key={game.id}
++                type="button"
++                className={`xi-game-card${game.status === "coming_soon" ? " is-soon" : ""}`}
++                data-id={game.id}
++                onClick={() => onGameClick(game)}
++              >
++                <span className="xi-game-art" aria-hidden />
++                <div className="xi-badges">
++                  {game.badges.map((b) => (
++                    <span key={b} className={`xi-badge ${b}`}>
++                      {t(`lobby.badge.${b}`)}
++                    </span>
++                  ))}
++                  {game.status === "coming_soon" && (
++                    <span className="xi-badge new">{t("lobby.comingSoon")}</span>
++                  )}
++                </div>
++                <div className="xi-game-title">{t(game.titleKey)}</div>
++                <div className="xi-game-meta">
++                  {game.id === "bdk" && <span>{t("lobby.games.bdk.subtitle")}</span>}
++                  {game.multiplierLabel && <span>{game.multiplierLabel}</span>}
++                  <span>
++                    {t("lobby.players")}:{" "}
++                    {game.playersOnline == null
++                      ? t("lobby.players.unknown")
++                      : game.playersOnline}
++                  </span>
++                </div>
++              </button>
++            ))}
++          </div>
++        </>
++      )}
++    </section>
++  );
++}
+diff --git a/client/xi-lobby/lobby.css b/client/xi-lobby/lobby.css
+new file mode 100644
+index 0000000..514ef8f
+--- /dev/null
++++ b/client/xi-lobby/lobby.css
+@@ -0,0 +1,686 @@
++/* XI GAME lobby 鈥?additive; does not touch #gl / #hud stacking */
++
++.xi-lobby-root {
++  --xi-ink: #0c1018;
++  --xi-dusk: #1a2233;
++  --xi-gold: #e8c56a;
++  --xi-gold-deep: #b8892d;
++  --xi-vermilion: #c43c2c;
++  --xi-jade: #3d8b7a;
++  --xi-mist: rgba(232, 220, 190, 0.88);
++  --xi-panel: rgba(14, 18, 28, 0.78);
++  --xi-line: rgba(232, 197, 106, 0.28);
++  --xi-font-display: "ZCOOL XiaoWei", "Noto Serif SC", "Source Han Serif SC", "Songti SC", Georgia, serif;
++  --xi-font-body: "Noto Sans SC", "Noto Sans Myanmar", "Source Sans 3", "Segoe UI", sans-serif;
++
++  position: fixed;
++  inset: 0;
++  z-index: 1;
++  overflow-x: hidden;
++  overflow-y: auto;
++  color: var(--xi-mist);
++  font-family: var(--xi-font-body);
++  background: radial-gradient(120% 80% at 50% -10%, #2a3348 0%, var(--xi-ink) 55%, #07090f 100%);
++  -webkit-overflow-scrolling: touch;
++}
++
++.xi-lobby-root * {
++  box-sizing: border-box;
++}
++
++.xi-topbar {
++  position: sticky;
++  top: 0;
++  z-index: 40;
++  display: grid;
++  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.4fr) auto;
++  gap: 0.4rem;
++  align-items: center;
++  padding: 0.5rem 0.65rem;
++  background: linear-gradient(180deg, rgba(8, 10, 16, 0.92), rgba(8, 10, 16, 0.72));
++  border-bottom: 1px solid var(--xi-line);
++  backdrop-filter: blur(10px);
++}
++
++@media (max-width: 520px) {
++  .xi-topbar {
++    grid-template-columns: minmax(0, 1fr) auto;
++    grid-template-areas:
++      "user actions"
++      "balances balances";
++    row-gap: 0.35rem;
++  }
++  .xi-top-left { grid-area: user; }
++  .xi-top-center {
++    grid-area: balances;
++    justify-content: flex-start;
++  }
++  .xi-top-right { grid-area: actions; }
++  .xi-icon-btn {
++    padding: 0.25rem 0.35rem;
++    font-size: 0.62rem;
++  }
++}
++
++.xi-top-left,
++.xi-top-center,
++.xi-top-right {
++  display: flex;
++  align-items: center;
++  gap: 0.45rem;
++  min-width: 0;
++}
++
++.xi-top-center {
++  justify-content: center;
++  flex-wrap: wrap;
++}
++
++.xi-top-right {
++  justify-content: flex-end;
++}
++
++.xi-avatar {
++  width: 2.25rem;
++  height: 2.25rem;
++  border-radius: 50%;
++  border: 1px solid var(--xi-gold);
++  background:
++    radial-gradient(circle at 35% 30%, #f0d78a, transparent 45%),
++    linear-gradient(145deg, #3a2a14, #1a1208);
++  flex-shrink: 0;
++}
++
++.xi-user-meta {
++  display: flex;
++  flex-direction: column;
++  min-width: 0;
++  line-height: 1.15;
++}
++
++.xi-nickname {
++  font-family: var(--xi-font-display);
++  font-size: 0.95rem;
++  color: #f4e7c2;
++  white-space:nowrap;
++  overflow: hidden;
++  text-overflow: ellipsis;
++  max-width: 7.5rem;
++}
++
++.xi-vip-pill {
++  font-size: 0.68rem;
++  letter-spacing: 0.04em;
++  color: #1a1208;
++  background: linear-gradient(90deg, var(--xi-gold), #f3e2a8);
++  border-radius: 999px;
++  padding: 0.1rem 0.45rem;
++  width: fit-content;
++  font-weight: 700;
++}
++
++.xi-balance-chip {
++  display: flex;
++  align-items: center;
++  gap: 0.35rem;
++  padding: 0.28rem 0.5rem;
++  border-radius: 999px;
++  border: 1px solid var(--xi-line);
++  background: rgba(255, 255, 255, 0.04);
++  font-size: 0.72rem;
++}
++
++.xi-balance-chip strong {
++  color: #fff6d8;
++  font-variant-numeric: tabular-nums;
++}
++
++.xi-balance-chip.is-error strong,
++.xi-balance-chip.is-loading strong {
++  color: rgba(244, 231, 194, 0.65);
++  font-weight: 500;
++}
++
++.xi-icon-btn,
++.xi-recharge-btn {
++  appearance: none;
++  border: 1px solid var(--xi-line);
++  background: linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.02));
++  color: var(--xi-mist);
++  border-radius: 0.55rem;
++  min-height: 2rem;
++  padding: 0.25rem 0.55rem;
++  font-size: 0.72rem;
++  cursor: pointer;
++}
++
++.xi-recharge-btn {
++  border-color: rgba(196, 60, 44, 0.55);
++  background: linear-gradient(180deg, #d4553f, #8f2418);
++  color: #fff8e8;
++  font-weight: 700;
++}
++
++.xi-icon-btn:active,
++.xi-recharge-btn:active,
++.xi-feat-btn:active,
++.xi-game-card:active,
++.xi-nav-btn:active {
++  transform: translateY(1px) scale(0.98);
++}
++
++.xi-hero {
++  position: relative;
++  margin: 0.65rem 0.75rem 0.4rem;
++  min-height: clamp(9.5rem, 28vw, 14rem);
++  border-radius: 1rem;
++  overflow: hidden;
++  border: 1px solid var(--xi-line);
++  isolation: isolate;
++  transform: translateZ(0);
++}
++
++.xi-hero-bg {
++  position: absolute;
++  inset: -8%;
++  background:
++    radial-gradient(40% 50% at 78% 22%, rgba(255, 210, 120, 0.35), transparent 60%),
++    radial-gradient(55% 60% at 20% 80%, rgba(196, 60, 44, 0.22), transparent 70%),
++    linear-gradient(125deg, #1b2740 0%, #2c1d18 45%, #0e1422 100%);
++  will-change: transform;
++  animation: xi-breath 9s ease-in-out infinite;
++}
++
++.xi-hero-clouds {
++  position: absolute;
++  inset: 0;
++  background:
++    radial-gradient(18% 22% at 15% 35%, rgba(255, 255, 255, 0.14), transparent 70%),
++    radial-gradient(22% 28% at 70% 25%, rgba(255, 255, 255, 0.1), transparent 72%),
++    radial-gradient(16% 20% at 45% 60%, rgba(255, 255, 255, 0.08), transparent 70%);
++  animation: xi-clouds 28s linear infinite;
++  opacity: 0.85;
++  pointer-events: none;
++}
++
++.xi-hero-sun {
++  position: absolute;
++  width: 7rem;
++  height: 7rem;
++  right: 12%;
++  top: 10%;
++  border-radius: 50%;
++  background: radial-gradient(circle, rgba(255, 224, 140, 0.55), rgba(255, 180, 60, 0.08) 55%, transparent 70%);
++  filter: blur(0.5px);
++  animation: xi-sun 6s ease-in-out infinite;
++  pointer-events: none;
++}
++
++.xi-hero-particles {
++  position: absolute;
++  inset: 0;
++  overflow: hidden;
++  pointer-events: none;
++}
++
++.xi-hero-particles span {
++  position: absolute;
++  width: 3px;
++  height: 3px;
++  border-radius: 50%;
++  background: rgba(255, 230, 160, 0.75);
++  animation: xi-particle 7s linear infinite;
++  opacity: 0;
++}
++
++.xi-hero-particles span:nth-child(1) { left: 12%; animation-delay: 0s; }
++.xi-hero-particles span:nth-child(2) { left: 28%; animation-delay: 1.2s; }
++.xi-hero-particles span:nth-child(3) { left: 46%; animation-delay: 2.1s; }
++.xi-hero-particles span:nth-child(4) { left: 63%; animation-delay: 0.7s; }
++.xi-hero-particles span:nth-child(5) { left: 81%; animation-delay: 3s; }
++.xi-hero-particles span:nth-child(6) { left: 55%; animation-delay: 4.2s; }
++
++.xi-hero-copy {
++  position: relative;
++  z-index: 2;
++  padding: 1.15rem 1.1rem 1rem;
++  display: flex;
++  flex-direction: column;
++  gap: 0.25rem;
++  min-height: inherit;
++  justify-content: flex-end;
++}
++
++.xi-hero-brand {
++  font-family: var(--xi-font-display);
++  font-size: clamp(1.8rem, 6vw, 2.6rem);
++  color: #fff2c8;
++  text-shadow: 0 2px 18px rgba(0, 0, 0, 0.45);
++  letter-spacing: 0.04em;
++}
++
++.xi-hero-sub {
++  font-size: 0.85rem;
++  color: rgba(255, 240, 210, 0.82);
++}
++
++.xi-hero-gap {
++  margin-top: 0.35rem;
++  font-size: 0.7rem;
++  color: rgba(255, 220, 160, 0.7);
++  border: 1px dashed rgba(232, 197, 106, 0.35);
++  border-radius: 999px;
++  padding: 0.2rem 0.55rem;
++  width: fit-content;
++}
++
++@keyframes xi-breath {
++  0%, 100% { transform: scale(1) translate3d(0, 0, 0); }
++  50% { transform: scale(1.03) translate3d(0, -1.2%, 0); }
++}
++
++@keyframes xi-clouds {
++  0% { transform: translate3d(0, 0, 0); }
++  100% { transform: translate3d(-8%, 0, 0); }
++}
++
++@keyframes xi-sun {
++  0%, 100% { opacity: 0.75; transform: scale(1); }
++  50% { opacity: 1; transform: scale(1.06); }
++}
++
++@keyframes xi-particle {
++  0% { transform: translate3d(0, 110%, 0); opacity: 0; }
++  15% { opacity: 0.9; }
++  100% { transform: translate3d(12px, -20%, 0); opacity: 0; }
++}
++
++@media (prefers-reduced-motion: reduce) {
++  .xi-hero-bg,
++  .xi-hero-clouds,
++  .xi-hero-sun,
++  .xi-hero-particles span {
++    animation: none;
++  }
++}
++
++.xi-main {
++  padding: 0.35rem 0.75rem 5.5rem;
++  display: flex;
++  flex-direction: column;
++  gap: 0.85rem;
++}
++
++.xi-section-title {
++  font-family: var(--xi-font-display);
++  font-size: 1.05rem;
++  color: #f3e2a8;
++  margin: 0 0 0.45rem;
++}
++
++.xi-cats {
++  display: flex;
++  gap: 0.4rem;
++  overflow-x: auto;
++  padding-bottom: 0.15rem;
++  scrollbar-width: none;
++}
++
++.xi-cats::-webkit-scrollbar { display: none; }
++
++.xi-cat-chip {
++  flex: 0 0 auto;
++  border: 1px solid var(--xi-line);
++  background: rgba(255, 255, 255, 0.03);
++  color: var(--xi-mist);
++  border-radius: 999px;
++  padding: 0.35rem 0.75rem;
++  font-size: 0.75rem;
++  cursor: pointer;
++}
++
++.xi-cat-chip.is-active {
++  background: linear-gradient(90deg, rgba(232, 197, 106, 0.28), rgba(196, 60, 44, 0.2));
++  border-color: rgba(232, 197, 106, 0.55);
++  color: #fff4d2;
++}
++
++.xi-game-grid {
++  display: grid;
++  grid-template-columns: repeat(2, minmax(0, 1fr));
++  gap: 0.65rem;
++}
++
++@media (min-width: 720px) {
++  .xi-game-grid {
++    grid-template-columns: repeat(3, minmax(0, 1fr));
++  }
++  .xi-topbar {
++    padding-inline: 1.1rem;
++  }
++  .xi-main,
++  .xi-hero {
++    margin-inline: auto;
++    max-width: 960px;
++  }
++  .xi-main {
++    padding-inline: 1.1rem;
++    width: 100%;
++  }
++  .xi-hero {
++    width: calc(100% - 2.2rem);
++  }
++}
++
++.xi-game-card {
++  position: relative;
++  display: flex;
++  flex-direction: column;
++  min-height: 9.5rem;
++  border-radius: 0.85rem;
++  border: 1px solid var(--xi-line);
++  background:
++    linear-gradient(160deg, rgba(255, 255, 255, 0.06), transparent 40%),
++    linear-gradient(180deg, #243049, #151b28);
++  color: inherit;
++  text-align: left;
++  padding: 0.7rem;
++  cursor: pointer;
++  overflow: hidden;
++}
++
++.xi-game-card.is-soon {
++  opacity: 0.82;
++}
++
++.xi-game-card.is-soon::after {
++  content: "";
++  position: absolute;
++  inset: 0;
++  background: linear-gradient(180deg, transparent 40%, rgba(0, 0, 0, 0.35));
++  pointer-events: none;
++}
++
++.xi-game-art {
++  position: absolute;
++  inset: auto -10% -20% auto;
++  width: 55%;
++  aspect-ratio: 1;
++  border-radius: 50%;
++  background: radial-gradient(circle at 40% 35%, rgba(232, 197, 106, 0.35), transparent 65%);
++  opacity: 0.9;
++}
++
++.xi-game-card[data-id="bdk"] {
++  background:
++    linear-gradient(160deg, rgba(196, 60, 44, 0.28), transparent 45%),
++    linear-gradient(180deg, #3a2418, #151018);
++}
++
++.xi-badges {
++  display: flex;
++  flex-wrap: wrap;
++  gap: 0.25rem;
++  position: relative;
++  z-index: 1;
++}
++
++.xi-badge {
++  font-size: 0.62rem;
++  font-weight: 700;
++  letter-spacing: 0.03em;
++  padding: 0.12rem 0.35rem;
++  border-radius: 0.3rem;
++  background: rgba(0, 0, 0, 0.35);
++  border: 1px solid rgba(255, 255, 255, 0.12);
++}
++
++.xi-badge.hot { color: #ffb4a8; border-color: rgba(255, 120, 90, 0.45); }
++.xi-badge.new { color: #a8e7ff; border-color: rgba(120, 200, 255, 0.4); }
++.xi-badge.jackpot { color: #ffe08a; border-color: rgba(232, 197, 106, 0.55); }
++.xi-badge.recommended { color: #c8f0df; border-color: rgba(61, 139, 122, 0.5); }
++
++.xi-game-title {
++  position: relative;
++  z-index: 1;
++  margin-top: auto;
++  font-family: var(--xi-font-display);
++  font-size: 1.05rem;
++  color: #fff1c8;
++}
++
++.xi-game-meta {
++  position: relative;
++  z-index: 1;
++  margin-top: 0.2rem;
++  font-size: 0.68rem;
++  color: rgba(255, 240, 210, 0.7);
++  display: flex;
++  gap: 0.45rem;
++  flex-wrap: wrap;
++}
++
++.xi-feat-grid {
++  display: grid;
++  grid-template-columns: repeat(4, minmax(0, 1fr));
++  gap: 0.45rem;
++}
++
++@media (min-width: 720px) {
++  .xi-feat-grid {
++    grid-template-columns: repeat(7, minmax(0, 1fr));
++  }
++}
++
++.xi-feat-btn {
++  display: flex;
++  flex-direction: column;
++  align-items: center;
++  justify-content: center;
++  gap: 0.28rem;
++  min-height: 4.2rem;
++  border-radius: 0.75rem;
++  border: 1px solid var(--xi-line);
++  background: var(--xi-panel);
++  color: var(--xi-mist);
++  font-size: 0.68rem;
++  cursor: pointer;
++  padding: 0.35rem;
++}
++
++.xi-feat-ico {
++  width: 1.55rem;
++  height: 1.55rem;
++  border-radius: 0.45rem;
++  background: linear-gradient(145deg, rgba(232, 197, 106, 0.35), rgba(196, 60, 44, 0.25));
++  border: 1px solid rgba(232, 197, 106, 0.35);
++}
++
++.xi-bottom-nav {
++  position: fixed;
++  left: 0;
++  right: 0;
++  bottom: 0;
++  z-index: 45;
++  display: grid;
++  grid-template-columns: repeat(5, 1fr);
++  gap: 0.15rem;
++  padding: 0.45rem 0.4rem calc(0.45rem + env(safe-area-inset-bottom, 0px));
++  background: linear-gradient(180deg, rgba(8, 10, 16, 0.72), rgba(8, 10, 16, 0.96));
++  border-top: 1px solid var(--xi-line);
++  backdrop-filter: blur(12px);
++}
++
++.xi-nav-btn {
++  appearance: none;
++  border: 0;
++  background: transparent;
++  color: rgba(244, 231, 194, 0.62);
++  font-size: 0.68rem;
++  display: flex;
++  flex-direction: column;
++  align-items: center;
++  gap: 0.15rem;
++  padding: 0.25rem;
++  cursor: pointer;
++}
++
++.xi-nav-btn.is-active {
++  color: #ffe7a4;
++}
++
++.xi-nav-dot {
++  width: 0.4rem;
++  height: 0.4rem;
++  border-radius: 50%;
++  background: currentColor;
++  opacity: 0.85;
++}
++
++.xi-modal-backdrop {
++  position: fixed;
++  inset: 0;
++  z-index: 60;
++  background: rgba(4, 6, 10, 0.62);
++  display: flex;
++  align-items: flex-end;
++  justify-content: center;
++  padding: 1rem;
++}
++
++@media (min-width: 720px) {
++  .xi-modal-backdrop {
++    align-items: center;
++  }
++}
++
++.xi-modal {
++  width: min(420px, 100%);
++  max-height: min(78vh, 640px);
++  overflow: auto;
++  border-radius: 1rem 1rem 0.75rem 0.75rem;
++  border: 1px solid var(--xi-line);
++  background: linear-gradient(180deg, #1c2435, #10151f);
++  padding: 1rem 1rem 1.1rem;
++  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
++}
++
++.xi-modal h2 {
++  margin: 0 0 0.55rem;
++  font-family: var(--xi-font-display);
++  font-size: 1.2rem;
++  color: #ffe7a4;
++}
++
++.xi-modal p {
++  margin: 0 0 0.75rem;
++  font-size: 0.88rem;
++  line-height: 1.45;
++  color: rgba(244, 231, 194, 0.82);
++}
++
++.xi-modal-actions {
++  display: flex;
++  justify-content: flex-end;
++  gap: 0.45rem;
++}
++
++.xi-lang-row {
++  display: flex;
++  gap: 0.4rem;
++  flex-wrap: wrap;
++  margin-bottom: 0.85rem;
++}
++
++.xi-lang-row button.is-active {
++  border-color: rgba(232, 197, 106, 0.7);
++  color: #fff2c8;
++}
++
++.xi-announce-list {
++  list-style: none;
++  margin: 0 0 0.85rem;
++  padding: 0;
++  display: flex;
++  flex-direction: column;
++  gap: 0.45rem;
++}
++
++.xi-announce-list li {
++  border: 1px solid rgba(255, 255, 255, 0.08);
++  border-radius: 0.55rem;
++  padding: 0.55rem 0.65rem;
++  font-size: 0.8rem;
++  background: rgba(255, 255, 255, 0.03);
++}
++
++.xi-bdk-hub {
++  min-height: 100%;
++  display: flex;
++  flex-direction: column;
++  align-items: center;
++  justify-content: center;
++  padding: 2rem 1.1rem 5rem;
++  text-align: center;
++  gap: 0.75rem;
++}
++
++.xi-bdk-hub h1 {
++  margin: 0;
++  font-family: var(--xi-font-display);
++  font-size: clamp(1.8rem, 6vw, 2.4rem);
++  color: #ffe7a4;
++}
++
++.xi-bdk-hub p {
++  margin: 0;
++  max-width: 28rem;
++  color: rgba(244, 231, 194, 0.8);
++}
++
++.xi-bdk-actions {
++  display: flex;
++  flex-wrap: wrap;
++  gap: 0.55rem;
++  justify-content: center;
++  margin-top: 0.6rem;
++}
++
++.xi-primary,
++.xi-secondary {
++  appearance: none;
++  border-radius: 0.7rem;
++  min-height: 2.6rem;
++  padding: 0.45rem 1.1rem;
++  font-size: 0.9rem;
++  cursor: pointer;
++  text-decoration: none;
++  display: inline-flex;
++  align-items: center;
++  justify-content: center;
++}
++
++.xi-primary {
++  border: 1px solid rgba(232, 197, 106, 0.55);
++  background: linear-gradient(180deg, #d9b056, #8f6418);
++  color: #1a1208;
++  font-weight: 700;
++}
++
++.xi-secondary {
++  border: 1px solid var(--xi-line);
++  background: rgba(255, 255, 255, 0.04);
++  color: var(--xi-mist);
++}
++
++.xi-panel-card {
++  border: 1px solid var(--xi-line);
++  border-radius: 0.85rem;
++  background: var(--xi-panel);
++  padding: 0.9rem;
++}
++
++.xi-status-line {
++  font-size: 0.78rem;
++  color: rgba(244, 231, 194, 0.65);
++}
+diff --git a/lib/lobby-catalog.ts b/lib/lobby-catalog.ts
+new file mode 100644
+index 0000000..cf23b06
+--- /dev/null
++++ b/lib/lobby-catalog.ts
+@@ -0,0 +1,99 @@
++/**
++ * XI GAME lobby catalog 鈥?static seed for Phase 1.
++ * Admin authoring (M9) deferred; schema stable for future PATCH.
++ */
++
++export type LobbyGameStatus = "live" | "coming_soon";
++
++export type LobbyBadge = "hot" | "new" | "jackpot" | "recommended";
++
++export interface LobbyGameCard {
++  id: string;
++  /** i18n key under lobby.games.<id>.* */
++  titleKey: string;
++  status: LobbyGameStatus;
++  badges: LobbyBadge[];
++  /** Shown only when status === live; otherwise ignored */
++  href?: string;
++  multiplierLabel?: string;
++  playersOnline?: number | null;
++  jackpotMinor?: number | null;
++  category: "recommended" | "slots" | "myth" | "jackpot";
++}
++
++export interface LobbyCatalogResponse {
++  version: string;
++  platform: {
++    brandKey: string;
++    heroAsset: "placeholder" | "provided";
++  };
++  categories: Array<{ id: string; labelKey: string }>;
++  games: LobbyGameCard[];
++}
++
++export const LOBBY_CATALOG_VERSION = "xi-lobby-v1";
++
++export function getLobbyCatalog(): LobbyCatalogResponse {
++  return {
++    version: LOBBY_CATALOG_VERSION,
++    platform: {
++      brandKey: "lobby.brand",
++      heroAsset: "placeholder",
++    },
++    categories: [
++      { id: "recommended", labelKey: "lobby.cat.recommended" },
++      { id: "hot", labelKey: "lobby.cat.hot" },
++      { id: "new", labelKey: "lobby.cat.new" },
++      { id: "jackpot", labelKey: "lobby.cat.jackpot" },
++      { id: "slots", labelKey: "lobby.cat.slots" },
++    ],
++    games: [
++      {
++        id: "bdk",
++        titleKey: "lobby.games.bdk.title",
++        status: "live",
++        badges: ["hot", "recommended", "jackpot"],
++        href: "/xi/bdk",
++        multiplierLabel: "x5000",
++        playersOnline: null,
++        jackpotMinor: null,
++        category: "recommended",
++      },
++      {
++        id: "wukong",
++        titleKey: "lobby.games.wukong.title",
++        status: "coming_soon",
++        badges: ["new"],
++        category: "myth",
++      },
++      {
++        id: "nezha",
++        titleKey: "lobby.games.nezha.title",
++        status: "coming_soon",
++        badges: ["new"],
++        category: "myth",
++      },
++      {
++        id: "dragonking",
++        titleKey: "lobby.games.dragonking.title",
++        status: "coming_soon",
++        badges: ["recommended"],
++        category: "myth",
++      },
++      {
++        id: "redboy",
++        titleKey: "lobby.games.redboy.title",
++        status: "coming_soon",
++        badges: ["hot"],
++        category: "myth",
++      },
++      {
++        id: "bonespirit",
++        titleKey: "lobby.games.bonespirit.title",
++        status: "coming_soon",
++        badges: ["new"],
++        category: "myth",
++      },
++    ],
++  };
++}
+diff --git a/tests/xi-lobby-phase1.test.mjs b/tests/xi-lobby-phase1.test.mjs
+new file mode 100644
+index 0000000..ae49e14
+--- /dev/null
++++ b/tests/xi-lobby-phase1.test.mjs
+@@ -0,0 +1,78 @@
++/**
++ * Phase 1 鈥?XI GAME lobby smoke (catalog + i18n + route files present).
++ * Playwright is not configured in package.json; this is the unit gate.
++ */
++import assert from "node:assert/strict";
++import { existsSync } from "node:fs";
++import { join } from "node:path";
++import test from "node:test";
++import { getLobbyCatalog, LOBBY_CATALOG_VERSION } from "../lib/lobby-catalog.ts";
++import {
++  assertLobbyI18nComplete,
++  lobbyKeys,
++  tLobby,
++} from "../client/xi-lobby/i18n.ts";
++import { GET as getLobbyCatalogRoute } from "../app/api/v1/lobby/catalog/route.ts";
++
++const root = process.cwd();
++
++test("lobby catalog seed includes live BDK and coming-soon myth cards", () => {
++  const catalog = getLobbyCatalog();
++  assert.equal(catalog.version, LOBBY_CATALOG_VERSION);
++  assert.equal(catalog.platform.heroAsset, "placeholder");
++  const bdk = catalog.games.find((g) => g.id === "bdk");
++  assert.ok(bdk);
++  assert.equal(bdk.status, "live");
++  assert.equal(bdk.href, "/xi/bdk");
++  for (const id of ["wukong", "nezha", "dragonking", "redboy", "bonespirit"]) {
++    const card = catalog.games.find((g) => g.id === id);
++    assert.ok(card, `missing ${id}`);
++    assert.equal(card.status, "coming_soon");
++  }
++});
++
++test("lobby catalog GET handler returns JSON", async () => {
++  const res = await getLobbyCatalogRoute();
++  assert.equal(res.status, 200);
++  const body = await res.json();
++  assert.equal(body.version, LOBBY_CATALOG_VERSION);
++  assert.ok(Array.isArray(body.games));
++});
++
++test("lobby i18n keys are complete across zh-CN / en / my-MM", () => {
++  const check = assertLobbyI18nComplete();
++  assert.deepEqual(check.missing, []);
++  assert.equal(check.ok, true);
++  assert.ok(lobbyKeys().length >= 40);
++  assert.equal(tLobby("zh-CN", "lobby.brand"), "瑗挎父鎴?);
++  assert.equal(tLobby("en", "lobby.brand"), "XI GAME");
++  assert.ok(tLobby("my-MM", "lobby.games.bdk.title").length > 0);
++});
++
++test("Phase 1 route entry files exist (additive; slot page preserved)", () => {
++  const required = [
++    "app/page.tsx",
++    "app/game/page.tsx",
++    "app/xi/page.tsx",
++    "app/xi/bdk/page.tsx",
++    "app/api/v1/lobby/catalog/route.ts",
++    "client/xi-lobby/lobby-app.tsx",
++    "client/xi-lobby/bdk-hub.tsx",
++    "docs/m8-review/xi-game-v2/phase-1/MODULE_IMPACT_ANALYSIS.md",
++    "docs/m8-review/xi-game-v2/phase-1/ASSET_GAP.md",
++  ];
++  for (const rel of required) {
++    assert.equal(existsSync(join(root, rel)), true, `missing ${rel}`);
++  }
++});
++
++test("P0 canvas stacking rule still present in m5 styles (untouched)", async () => {
++  const { readFileSync } = await import("node:fs");
++  const css = readFileSync(join(root, "client/m5/styles.css"), "utf8");
++  assert.match(css, /#gl\s*\{[\s\S]*?transform:\s*translateZ\(0\)/);
++  assert.doesNotMatch(
++    css,
++    /#hud\s*\{[^}]*transform:\s*translateZ\(0\)/,
++    "shell #hud must not use translateZ(0)",
++  );
++});

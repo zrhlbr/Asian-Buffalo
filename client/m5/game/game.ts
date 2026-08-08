@@ -9,7 +9,6 @@ import {
   type BetPreset,
   type GameProvider,
   type PresentationSpinResult,
-  winTier,
   type WinTier,
   ROWS,
 } from "../adapter.ts";
@@ -18,6 +17,18 @@ import type { Buffalo } from "../scene/buffalo.ts";
 import type { Particles } from "../scene/particles.ts";
 import type { World } from "../scene/world.ts";
 import { audio } from "../audio.ts";
+import {
+  choreographyFor,
+  FREE_SPIN_ENTER_CHOREO,
+  NEAR_MISS_CHOREO,
+  PSEUDO_WIN_CHOREO,
+  presentationFxScale,
+  resolvePresentationOutcome,
+  scaleChoreographyFx,
+  type BuffaloAction,
+  type PresentationTier,
+  type TierChoreography,
+} from "../win-presentation.ts";
 
 export interface HudHooks {
   setBalance(v: number, animate?: boolean): void;
@@ -25,12 +36,17 @@ export interface HudHooks {
   showWin(amount: number): void;
   setFreeSpins(n: number): void;
   toastKey(key: string): void;
+  toastMessage?(message: string): void;
   celebrate(tier: WinTier, amount: number): Promise<void>;
+  flashMeters?(level: 0 | 1 | 2 | 3): void;
   setSpinBusy(busy: boolean): void;
   setAutoActive(on: boolean): void;
   setTurboActive(on: boolean): void;
   refreshStatic(): void;
   setStatus?(message: string): void;
+  setSessionOnline?(online: boolean): void;
+  /** Clear stuck celebration / modal / loading pointer traps (HUD only). */
+  releasePointerTraps?(): void;
 }
 
 export class Game {
@@ -131,6 +147,25 @@ export class Game {
         recovered.isFreeGame || recovered.freeGamesRemaining > 0,
       );
     }
+    try {
+      const notes = await this.provider.fetchAnnouncements();
+      if (notes.length > 0) {
+        this.hud.toastMessage?.(notes[0]!.title);
+      }
+    } catch {
+      /* announcements are non-blocking */
+    }
+  }
+
+  /** Page resume / recovery — re-sync formal wallet balance into HUD. */
+  async refreshBalanceFromWallet(): Promise<void> {
+    try {
+      const bal = await this.provider.refreshBalance();
+      this.hud.setBalance(bal);
+      this.hud.setSessionOnline?.(true);
+    } catch {
+      this.hud.setSessionOnline?.(false);
+    }
   }
 
   async spin(): Promise<void> {
@@ -148,99 +183,104 @@ export class Game {
     this.hud.setSpinBusy(true);
     this.hud.showWin(0);
     this.rig.clearHighlights();
+    this.rig.setFrameGlow(0);
+    this.rig.setWinAmp(1);
     this.buffalo.interrupt();
+    this.world.clearCelebrationMood();
 
     audio.unlock();
     audio.spinStart();
     if (Math.random() < 0.18) this.buffalo.roar();
 
-    let result: PresentationSpinResult;
     try {
-      result = await this.provider.spin({
-        roomBase: preset.roomBase,
-        betLevel: preset.betLevel,
-        betMultiplier: preset.betMultiplier,
-      });
+      let result: PresentationSpinResult;
+      try {
+        result = await this.provider.spin({
+          roomBase: preset.roomBase,
+          betLevel: preset.betLevel,
+          betMultiplier: preset.betMultiplier,
+        });
+      } catch (error) {
+        audio.stopSpinLoop();
+        const code = (error as Error & { code?: string }).code ?? "";
+        if (code === "INSUFFICIENT_BALANCE" || String(error).includes("INSUFFICIENT")) {
+          this.hud.toastKey("insufficient");
+        } else {
+          this.hud.toastKey("errorGeneric");
+        }
+        return;
+      }
+
+      this.freeSpins = result.freeGamesRemaining;
+      const inFs =
+        result.isFreeGame || result.freeGamesRemaining > 0 || result.awardedFreeGames > 0;
+      this.world.setFreeSpinMood(inFs);
+      await this.rig.spinAll(result.grid, this.turbo);
+      audio.stopSpinLoop();
+      this.hud.setBalance(result.balanceAfterMinor, true);
+      this.hud.setFreeSpins(this.freeSpins);
+
+      // UI-only presentation — must not affect balance / money path / math / settlement
+      const outcome = resolvePresentationOutcome(result);
+      const fxScale = readPresentationFxScale();
+      if (result.winMinor > 0) {
+        // HUD Win meter always shows server truth (including LDW / pseudoWin)
+        this.hud.showWin(result.winMinor);
+        await this.presentPaylines(result);
+        if (result.isFreeGame) this.fsTotalWin += result.winMinor;
+      }
+
+      if (result.awardedFreeGames > 0) {
+        await this.presentFreeSpinEnter(result);
+      }
+      if (result.scatterCount >= 3) audio.scatterLand();
+
+      if (outcome.pseudoWin) {
+        await this.presentPseudoWin(result, fxScale);
+      } else if (outcome.tier !== "none") {
+        await this.presentWinTier(outcome.tier, result.winMinor);
+      } else if (outcome.nearMiss) {
+        await this.presentNearMiss(result, outcome.nearMissCells, fxScale);
+      } else if (result.winMinor > 0) {
+        audio.winSmall();
+        await sleep(this.turbo ? 250 : 700);
+      } else {
+        await sleep(this.turbo ? 120 : 350);
+      }
+
+      if (result.isFreeGame && this.freeSpins === 0) {
+        this.particles.setPillars(false);
+        this.world.setBloom(0.2);
+        this.world.setFreeSpinMood(false);
+        this.world.clearCelebrationMood();
+        if (this.fsTotalWin > 0) {
+          this.hud.showWin(this.fsTotalWin);
+          audio.bigWin();
+          await sleep(900);
+        }
+        this.fsTotalWin = 0;
+      } else if (!inFs && this.freeSpins === 0) {
+        this.world.setFreeSpinMood(false);
+      }
+
+      if (this.autoMode && (this.freeSpins > 0 || this.provider.canBet(this.bet.totalBetMinor))) {
+        this.autoTimer = window.setTimeout(() => {
+          this.autoTimer = null;
+          void this.spin();
+        }, this.turbo ? 250 : 600);
+      } else if (this.autoMode) {
+        this.autoMode = false;
+        this.hud.setAutoActive(false);
+      }
     } catch (error) {
+      audio.stopSpinLoop();
+      console.error("[m5] spin presentation failed", error);
+      this.hud.toastKey("errorGeneric");
+      // Never leave celebration chrome covering the HUD after a throw
+      this.hud.releasePointerTraps?.();
+    } finally {
       this.busy = false;
       this.hud.setSpinBusy(false);
-      audio.stopSpinLoop();
-      const code = (error as Error & { code?: string }).code ?? "";
-      if (code === "INSUFFICIENT_BALANCE" || String(error).includes("INSUFFICIENT")) {
-        this.hud.toastKey("insufficient");
-      } else {
-        this.hud.toastKey("errorGeneric");
-      }
-      return;
-    }
-
-    this.freeSpins = result.freeGamesRemaining;
-    const inFs =
-      result.isFreeGame || result.freeGamesRemaining > 0 || result.awardedFreeGames > 0;
-    this.world.setFreeSpinMood(inFs);
-    await this.rig.spinAll(result.grid, this.turbo);
-    audio.stopSpinLoop();
-    this.hud.setBalance(result.balanceAfterMinor, true);
-    this.hud.setFreeSpins(this.freeSpins);
-
-    // UI-only tier — must not affect balance/ledger/math
-    const tier = winTier(result.winMinor, result.totalBetMinor);
-    if (result.winMinor > 0) {
-      this.hud.showWin(result.winMinor);
-      await this.presentPaylines(result);
-      if (result.isFreeGame) this.fsTotalWin += result.winMinor;
-    }
-
-    if (result.awardedFreeGames > 0) {
-      audio.freeSpinTrigger();
-      this.buffalo.roar();
-      this.hud.toastKey("freeSpinsWon");
-      this.particles.setPillars(true);
-      this.world.setBloom(0.6);
-      this.world.setFreeSpinMood(true);
-    }
-    if (result.scatterCount >= 3) audio.scatterLand();
-
-    if (tier !== "none") {
-      this.fireTierEffects(tier);
-      await this.hud.celebrate(tier, result.winMinor);
-      this.particles.coinRainActive = false;
-      if (this.freeSpins === 0) {
-        this.particles.setPillars(false);
-        this.world.setBloom(0.38);
-      }
-    } else if (result.winMinor > 0) {
-      audio.winSmall();
-      await sleep(this.turbo ? 250 : 700);
-    } else {
-      await sleep(this.turbo ? 120 : 350);
-    }
-
-    if (result.isFreeGame && this.freeSpins === 0) {
-      this.particles.setPillars(false);
-      this.world.setBloom(0.38);
-      this.world.setFreeSpinMood(false);
-      if (this.fsTotalWin > 0) {
-        this.hud.showWin(this.fsTotalWin);
-        audio.bigWin();
-        await sleep(900);
-      }
-      this.fsTotalWin = 0;
-    } else if (!inFs && this.freeSpins === 0) {
-      this.world.setFreeSpinMood(false);
-    }
-
-    this.busy = false;
-    this.hud.setSpinBusy(false);
-
-    if (this.autoMode && (this.freeSpins > 0 || this.provider.canBet(this.bet.totalBetMinor))) {
-      this.autoTimer = window.setTimeout(() => {
-        this.autoTimer = null;
-        void this.spin();
-      }, this.turbo ? 250 : 600);
-    } else if (this.autoMode) {
-      this.autoMode = false;
-      this.hud.setAutoActive(false);
     }
   }
 
@@ -278,8 +318,9 @@ export class Game {
     return cells;
   }
 
-  private highlightWins(result: PresentationSpinResult): void {
+  private highlightWins(result: PresentationSpinResult, winAmp = 1): void {
     const cells = this.collectWinCells(result);
+    this.rig.setWinAmp(winAmp);
     if (cells.length) this.rig.highlightCells(cells, result.grid);
     this.playWinSymbolCues(result, cells);
   }
@@ -328,52 +369,200 @@ export class Game {
     this.highlightWins(result);
   }
 
-  private fireTierEffects(tier: WinTier): void {
+  private async presentFreeSpinEnter(result: PresentationSpinResult): Promise<void> {
+    const choreo = FREE_SPIN_ENTER_CHOREO;
+    this.applyChoreography(choreo, result);
+    this.hud.toastKey("freeSpinsWon");
+    this.world.setFreeSpinMood(true);
+    await sleep(this.turbo ? 700 : choreo.durationMs);
+    // Keep free-spin mood; clear one-shot FX
+    this.particles.coinRainActive = false;
+    this.rig.setFrameGlow(0.25);
+  }
+
+  private async presentWinTier(tier: PresentationTier, amount: number): Promise<void> {
+    const choreo = choreographyFor(tier);
+    this.applyChoreography(choreo);
+    this.hud.flashMeters?.(choreo.hudFlash);
+
+    const overlayTier = toOverlayWinTier(tier);
+    if (choreo.hudOverlay && overlayTier) {
+      await this.hud.celebrate(overlayTier, amount);
+    } else {
+      await sleep(this.turbo ? Math.min(400, choreo.durationMs) : choreo.durationMs);
+    }
+
+    this.particles.coinRainActive = false;
+    this.particles.setCoinRainRate(1);
+    this.rig.setFrameGlow(0);
+    if (this.freeSpins === 0) {
+      this.particles.setPillars(false);
+      this.world.setBloom(0.2);
+      this.world.clearCelebrationMood();
+    }
+  }
+
+  /** LDW — light celebration; amount on HUD remains server winMinor (already set). */
+  private async presentPseudoWin(
+    result: PresentationSpinResult,
+    fxScale: number,
+  ): Promise<void> {
+    const choreo = scaleChoreographyFx(PSEUDO_WIN_CHOREO, fxScale);
+    this.applyChoreography(choreo, result);
+    this.hud.flashMeters?.(choreo.hudFlash);
+    await sleep(this.turbo ? Math.min(350, choreo.durationMs) : choreo.durationMs);
+    this.particles.coinRainActive = false;
+    this.particles.setCoinRainRate(1);
+    this.rig.setFrameGlow(0);
+    if (this.freeSpins === 0) {
+      this.particles.setPillars(false);
+      this.world.setBloom(0.2);
+      this.world.clearCelebrationMood();
+    }
+  }
+
+  /**
+   * Near-miss edge accent after a true miss — FX only.
+   * Does not show win meters, invent grids, or change spin timing.
+   */
+  private async presentNearMiss(
+    result: PresentationSpinResult,
+    cells: Array<[number, number]>,
+    fxScale: number,
+  ): Promise<void> {
+    const choreo = scaleChoreographyFx(NEAR_MISS_CHOREO, fxScale);
+    for (const cue of choreo.audio) audio.playCue(cue);
+    this.rig.pulseNearMissAccent(cells, result.grid, fxScale);
+    this.rig.setFrameGlow(choreo.reelFrameGlow);
+    if (choreo.shake > 0) this.world.shake(choreo.shake, choreo.shakeDecay);
+    if (choreo.punchZoom > 0) this.world.punchZoom(choreo.punchZoom);
+    this.world.setBloom(choreo.bloom);
+    if (choreo.sparkBurst > 0) {
+      this.particles.burstSparks(new THREE.Vector3(0, 2.4, 1.5), choreo.sparkBurst, choreo.sparkSpeed);
+    }
+    await sleep(this.turbo ? Math.min(220, choreo.durationMs) : choreo.durationMs);
+    this.rig.clearHighlights();
+    this.rig.setFrameGlow(0);
+    this.world.setBloom(0.2);
+    this.world.clearCelebrationMood();
+  }
+
+  private applyChoreography(
+    choreo: TierChoreography | typeof FREE_SPIN_ENTER_CHOREO,
+    result?: PresentationSpinResult,
+  ): void {
     const center = new THREE.Vector3(0, 2.4, 1.5);
-    switch (tier) {
-      case "big":
-        audio.bigWin();
+    for (const cue of choreo.audio) audio.playCue(cue);
+
+    this.fireBuffalo(choreo.buffalo);
+    this.rig.setWinAmp(choreo.symbolWin);
+    this.rig.setFrameGlow(choreo.reelFrameGlow);
+    if (result) this.highlightWins(result, choreo.symbolWin);
+
+    if (choreo.shake > 0) this.world.shake(choreo.shake, choreo.shakeDecay);
+    if (choreo.punchZoom > 0) this.world.punchZoom(choreo.punchZoom);
+    this.world.setBloom(choreo.bloom);
+    this.world.setCelebrationMood({
+      colorWash: choreo.colorWash,
+      darkenBg: choreo.darkenBg,
+      lightning: choreo.lightning,
+      wind: choreo.wind,
+      slowMo: choreo.slowMo,
+    });
+    if (choreo.wind > 0) this.world.setWind(0.75 + choreo.wind);
+
+    this.particles.setPillarStyle(choreo.particleStyle);
+    this.particles.setPillars(choreo.pillars);
+    if (choreo.sparkBurst > 0) {
+      this.particles.burstSparks(center, choreo.sparkBurst, choreo.sparkSpeed);
+    }
+    if (choreo.coinBurst > 0) {
+      this.particles.coinBurst(center, choreo.coinBurst);
+    }
+    this.particles.coinRainActive = choreo.coinRain;
+    const rainRate =
+      choreo.tier === "jackpot" || choreo.tier === "fullscreen_buffalo"
+        ? 2.2
+        : choreo.tier === "epic" || choreo.tier === "super"
+          ? 1.8
+          : choreo.tier === "ultra" || choreo.tier === "mega"
+            ? 1.45
+            : choreo.coinRain
+              ? 1.15
+              : 1;
+    this.particles.setCoinRainRate(rainRate);
+
+    if (choreo.speciesCall && result) {
+      const cells = this.collectWinCells(result);
+      this.playWinSymbolCues(result, cells);
+    }
+  }
+
+  private fireBuffalo(action: BuffaloAction): void {
+    switch (action) {
+      case "roar":
+        this.buffalo.roar();
+        break;
+      case "lowRoar":
+        this.buffalo.lowRoar();
+        break;
+      case "headUp":
+        this.buffalo.headUp();
+        break;
+      case "lookAtWin":
+        this.buffalo.lookAtWin();
+        break;
+      case "bigWin":
         this.buffalo.bigWin();
-        this.world.shake(0.18, 5.2);
-        this.world.punchZoom(0.32);
-        this.particles.burstSparks(center, 140);
-        this.particles.coinBurst(center, 110);
-        this.particles.setPillars(true);
         break;
-      case "mega":
-        audio.megaWin();
+      case "run":
         this.buffalo.run();
-        this.world.shake(0.28, 4.4);
-        this.world.punchZoom(0.48);
-        this.particles.burstSparks(center, 210, 7);
-        this.particles.coinBurst(center, 170);
-        this.particles.coinRainActive = true;
-        this.particles.setPillars(true);
         break;
-      case "ultra":
-        audio.ultraWin();
+      case "victory":
         this.buffalo.victory();
-        this.world.shake(0.4, 3.5);
-        this.world.punchZoom(0.62);
-        this.particles.burstSparks(center, 300, 9);
-        this.particles.coinRainActive = true;
-        this.particles.setPillars(true);
-        this.world.setBloom(0.78);
         break;
+      case "charge":
+        this.buffalo.charge();
+        break;
+      case "jumpOut":
+        this.buffalo.jumpOut();
+        break;
+      case "slowWalk":
+        this.buffalo.slowWalk();
+        break;
+      case "standRoar":
+        this.buffalo.standRoar();
+        break;
+      case "breakReel":
       case "jackpot":
-        audio.jackpot();
-        this.buffalo.jackpot();
-        this.world.shake(0.52, 2.9);
-        this.world.punchZoom(0.78);
-        this.particles.burstSparks(center, 380, 12);
-        this.particles.coinRainActive = true;
-        this.particles.setPillars(true);
-        this.world.setBloom(0.9);
+        this.buffalo.breakReel();
         break;
       default:
         break;
     }
   }
+}
+
+function toOverlayWinTier(tier: PresentationTier): WinTier | null {
+  switch (tier) {
+    case "big":
+    case "mega":
+    case "ultra":
+    case "super":
+    case "epic":
+    case "jackpot":
+      return tier;
+    case "fullscreen_buffalo":
+      return "big"; // long overlay uses big chrome + buffalo charge FX
+    default:
+      return null;
+  }
+}
+
+/** Read quality tier attr set by boot — presentation FX scale only. */
+function readPresentationFxScale(): number {
+  if (typeof document === "undefined") return 1;
+  return presentationFxScale(document.documentElement.getAttribute("data-xi-tier"));
 }
 
 function sleep(ms: number): Promise<void> {

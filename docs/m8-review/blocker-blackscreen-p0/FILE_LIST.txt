@@ -1,0 +1,21 @@
+﻿# FILE_LIST.txt
+
+client/m5/styles.css
+client/m5/scene/world.ts
+docs/m8-review/blocker-blackscreen-p0/MODULE_IMPACT_ANALYSIS.md
+docs/m8-review/blocker-blackscreen-p0/ROOT_CAUSE_REPORT.md
+docs/m8-review/blocker-blackscreen-p0/ALLOWED_FILES.md
+docs/m8-review/blocker-blackscreen-p0/BUTTON_REGRESSION.md
+docs/m8-review/blocker-blackscreen-p0/REGRESSION_REPORT.md
+docs/m8-review/blocker-blackscreen-p0/REVIEW_PATCH.md
+docs/m8-review/blocker-blackscreen-p0/SHA256.txt
+docs/m8-review/blocker-blackscreen-p0/GIT_STATUS_NOTE.md
+docs/m8-review/blocker-blackscreen-p0/BLOCKED_CAPTURE.md
+docs/m8-review/blocker-blackscreen-p0/STEP5_ANIMAL_AMP.md
+docs/m8-review/blocker-blackscreen-p0/before-idle.png
+docs/m8-review/blocker-blackscreen-p0/after-idle.png
+docs/m8-review/blocker-blackscreen-p0/after-spin.png
+docs/m8-review/blocker-blackscreen-p0/after-phone-land.png
+docs/m8-review/blocker-blackscreen-p0/repro-canvas-hidden.png
+docs/m8-review/blocker-blackscreen-p0/repro-context-lost.png
+docs/m8-review/blocker-blackscreen-p0/verify.json

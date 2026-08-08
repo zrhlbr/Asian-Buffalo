@@ -1,0 +1,14 @@
+# Clarity V2 — SHA-256 of changed presentation / test files
+# Algorithm: SHA256 (PowerShell Get-FileHash). Paths relative to repo root.
+
+10fea205b9edfcbc82c534e51106abeb42430f402cb7c0a6ecb6fc1dd94edd09  client/m5/quality.ts
+2659f246526fb687a848d8e28c6c55a2f358103e8279a0de6cec9bb3acdb8090  client/m5/scene/world.ts
+8c818ef1512128ef1b03dd98707bc9d586bf0f252a7180c646c4ca9ba9378808  client/m5/game/symbols.ts
+3223f3bf9b76cb0a141ef5a50282d9939fd62b5f542d91d441d1540988fb58c4  client/m5/game/reels.ts
+75ad58c02395d84b62acb88d618b5a8b0a350f3806de0a6c25f1e69c37dd46a1  client/m5/game/symbol-life.ts
+cc66b7a0e7c007de15e1e484e41239cbe0c430afc91af3e9f96dde2e70da5f75  client/m5/game/game.ts
+168736284c009a82fa890a91ab4d3810f2a5c1efbf5c9a6ca3d5cb5956987d5b  client/m5/boot.ts
+64a0d4b2127d784fa19758da794ca69aa1b1d31e98aab95c0306f5726dea719a  client/m5/styles.css
+3cc55d97422e310b24db69a23855be7f106fae68430b04a8f6f1283f7eb6365a  client/m5/scene/buffalo.ts
+d0308eaf62f465688825f257f305ff201b7d17017ebe8892599c013eee738cf0  tests/r1-m8-clarity-v2.test.mjs
+89034bcdf58f20d9e710f1c55dddb7fd1f58240237259b0ff5d92e32b0366fc4  tests/r1-m8-clarity.test.mjs

@@ -1,0 +1,6 @@
+# SHA-256 — blocker symbols missing + 6s timing (2026-08-07)
+
+494606ce0576523f5f96aa165d825927f525be74587b3dfbd24df34c281bb163  client/m5/game/symbol-life.ts
+da3dc38023f302f11ad36f8d7b44be74f82ce7bf4ff4ff2440873b67e7015b6a  client/m5/game/reels.ts
+3909c47e61049215c8e48c15a80204de3ca4889ecbac7a9535a8330754a461e4  client/m5/game/reel-timing.ts
+b6ebe2cf89e94079ccb80f53b57a306530dc6d1ddb6d75a26f9d8f18d1dcf465  tests/r1-m8-reel-timing.test.mjs

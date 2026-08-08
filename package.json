@@ -12,8 +12,11 @@
     "start": "vinext start",
     "test": "npm run build && node --experimental-strip-types --test tests/*.test.mjs",
     "test:unit": "node --experimental-strip-types --test tests/*.test.mjs",
+    "test:win": "node --experimental-strip-types --test tests/*.test.mjs",
     "validate:artifact": "bash scripts/validate-artifact.sh",
     "lint": "bash scripts/sites-env.sh -- eslint . --ignore-pattern dist --ignore-pattern .next",
+    "lint:win": "eslint . --ignore-pattern dist --ignore-pattern .next",
+    "build:win": "vinext build",
     "db:generate": "bash scripts/sites-env.sh -- drizzle-kit generate"
   },
   "dependencies": {
@@ -43,5 +46,5 @@
     "wrangler": "4.92.0"
   },
   "type": "module",
-  "displayName": "Asian Buffalo Web Game"
+  "displayName": "Bull Demon King"
 }

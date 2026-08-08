@@ -1,0 +1,16 @@
+29f25cc3805a870896fe325fa95c64f0e5a810cb41a4ac5fb96abf18d6f3423e  client/xi-lobby/player-center.tsx
+3369ff4b07c032414218198bba1729c2b57690ee103afd339ac19d10a0b3c325  client/xi-lobby/i18n.ts
+3bbe546d042d8de30b7c0641f8810e5cba48930353736d0876fbf08a8a47d4c7  client/xi-lobby/lobby-app.tsx
+43ed3253bd3098fca785c19f97d43b57723cb1cdbc2663b06de6a52d8065962d  docs/m8-review/xi-game-v2/player-center/MODULE_IMPACT.md
+46a3c43d384ac95165b39458a271c06b9bea0ae89d49310d44201dd5f96cf552  client/xi-lobby/player-center.css
+47b1de19a0f1114553f460b5ab1dbff12873bd233f2fc266bbf8ad09e4243d4f  docs/m8-review/xi-game-v2/player-center/GIT_STATUS_NOTE.txt
+4f53a5a8d16edf83e3804a2400ccd26a5ebd5dc40d806abd70284920024fcf3e  docs/m8-review/xi-game-v2/player-center/RESPONSIVE_REPORT.md
+80afe09bec3e6b00a00b383c0740c5c531dad3e964eaa5f8f7d6b5674db12910  docs/m8-review/xi-game-v2/player-center/FILE_LIST.md
+884178590132107018bfc5e2d447873957e20fdfe927e20b16685d46b1c95ca6  docs/m8-review/xi-game-v2/player-center/MODULE_IMPACT_ANALYSIS.md
+8a39dcf263d154dc0dbf6652212eab6db189f07ab28115afbb78ad5a2f396af6  docs/m8-review/xi-game-v2/player-center/REGRESSION_REPORT.md
+9927415170687f1ae0958ecbc4fa0f610ec827a136eac094558f99415e961112  docs/m8-review/xi-game-v2/player-center/PLAYER_CENTER_UI_REPORT.md
+9c9a1984cc20825a23d95b30d6f400132dfb00d9c0aedf98a6f57feaca47d082  docs/m8-review/xi-game-v2/player-center/BLOCKED_CAPTURE.md
+bdcc0781c1481bf58cf00548779caccb6dc514821d647cfd5df5b0d4ab257ccb  docs/m8-review/xi-game-v2/player-center/REVIEW_PATCH.md
+d33bf7d74b179dc34dbed6a13a801019106104ccea6f36f422cac5ee96dc5b57  docs/m8-review/xi-game-v2/player-center/AB-XI-PLAYER-CENTER-review.patch
+fa0975c9e5eb60b43e6c12708504b6253434f7be65d93ebad34feb3400a9c923  docs/m8-review/xi-game-v2/player-center/I18N_REPORT.md
+fbbd59148d1883cef9d430b7a4a0fb81b81a54ab19ec74bf6ae2514d956576da  docs/m8-review/xi-game-v2/player-center/PLAYER_CENTER_DELIVERY.md

@@ -1,0 +1,56 @@
+{
+  "base": "http://127.0.0.1:5173",
+  "results": [
+    {
+      "id": "lobby_phone",
+      "ok": true,
+      "detail": "status=200 feats=13 nav=5"
+    },
+    {
+      "id": "card_to_stub",
+      "ok": true,
+      "detail": "href=/xi/bull-demon-king path=/xi/bull-demon-king noteLen=32"
+    },
+    {
+      "id": "stub_back_lobby",
+      "ok": true,
+      "detail": "http://127.0.0.1:5173/xi"
+    },
+    {
+      "id": "step2_not_started",
+      "ok": true,
+      "detail": "playStatus=404 playShell=false"
+    },
+    {
+      "id": "lobby_tablet",
+      "ok": true,
+      "detail": "768x1024"
+    },
+    {
+      "id": "lobby_pc",
+      "ok": true,
+      "detail": "1280x800"
+    },
+    {
+      "id": "i18n_zh-CN",
+      "ok": true,
+      "detail": "brand=\"西游戏\" home=\"首页\""
+    },
+    {
+      "id": "i18n_en",
+      "ok": true,
+      "detail": "brand=\"XI GAME\" home=\"Home\""
+    },
+    {
+      "id": "i18n_my-MM",
+      "ok": true,
+      "detail": "brand=\"XI GAME\" home=\"ပင်မ\""
+    },
+    {
+      "id": "slot_root_ok",
+      "ok": true,
+      "detail": "status=200 hudTransform=none"
+    }
+  ],
+  "failed": []
+}

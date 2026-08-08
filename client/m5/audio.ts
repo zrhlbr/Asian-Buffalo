@@ -17,6 +17,9 @@ export class AudioEngine {
   private volume = 0.8;
   private backgroundDimmed = false;
   private spinNoise: { src: AudioBufferSourceNode; gain: GainNode } | null = null;
+  private activeSfx = 0;
+  private maxConcurrentSfx = 8;
+  private bgmWasRunning = false;
 
   constructor() {
     try {
@@ -60,6 +63,22 @@ export class AudioEngine {
     if (ctx && ctx.state === "suspended") void ctx.resume();
   }
 
+  /**
+   * Lightweight warmup from a user gesture — creates AudioContext once if needed,
+   * then immediately suspends. Never tears down / recreates.
+   */
+  warmupFromGesture(): void {
+    const ctx = this.ensure();
+    if (!ctx) return;
+    if (ctx.state === "running") {
+      void ctx.suspend();
+    }
+    if (typeof window !== "undefined") {
+      const w = window as unknown as { __xiAudioContextCount?: number };
+      w.__xiAudioContextCount = 1;
+    }
+  }
+
   setMuted(m: boolean): void {
     this.muted = m;
     this.applyMaster();
@@ -83,6 +102,34 @@ export class AudioEngine {
   setBackgroundDimmed(dim: boolean): void {
     this.backgroundDimmed = dim;
     this.applyMaster();
+  }
+
+  /** Cap overlapping one-shot SFX voices (presentation LOD). */
+  setMaxConcurrentSfx(n: number): void {
+    this.maxConcurrentSfx = Math.max(2, Math.min(16, Math.floor(n)));
+  }
+
+  /**
+   * Background tab: suspend context + pause BGM timers.
+   * Keeps single AudioContext — never recreate.
+   */
+  pauseForBackground(): void {
+    this.bgmWasRunning = this.bgmTimer !== null;
+    this.stopBgm();
+    this.stopSpinLoop();
+    if (this.ctx && this.ctx.state === "running") {
+      void this.ctx.suspend();
+    }
+  }
+
+  resumeFromBackground(): void {
+    if (this.ctx && this.ctx.state === "suspended") {
+      void this.ctx.resume();
+    }
+    if (this.bgmWasRunning) {
+      this.startBgm();
+      this.bgmWasRunning = false;
+    }
   }
 
   private applyMaster(): void {
@@ -190,16 +237,27 @@ export class AudioEngine {
   }
 
   // ---------------- SFX helpers ----------------
-  private sfxGain(vol: number): GainNode | null {
+  private sfxGain(vol: number, holdMs = 400): GainNode | null {
     if (!this.ensure() || !this.master) return null;
+    if (this.activeSfx >= this.maxConcurrentSfx) return null;
     const g = this.ctx!.createGain();
     g.gain.value = vol;
     g.connect(this.master);
+    this.activeSfx++;
+    window.setTimeout(() => {
+      this.activeSfx = Math.max(0, this.activeSfx - 1);
+      try {
+        g.disconnect();
+      } catch {
+        /* ignore */
+      }
+    }, holdMs);
     return g;
   }
 
   private blip(freqs: number[], stepDur: number, vol: number, type: OscillatorType = "triangle"): void {
-    const out = this.sfxGain(vol);
+    const hold = Math.ceil((freqs.length * stepDur + 0.25) * 1000);
+    const out = this.sfxGain(vol, hold);
     if (!out || !this.ctx) return;
     const t0 = this.ctx.currentTime;
     freqs.forEach((f, i) => {
@@ -273,8 +331,70 @@ export class AudioEngine {
     this.noiseBurst(0.08, 0.12, 2400, "highpass");
   }
 
-  winSmall(): void { this.blip([523, 659, 784, 1047], 0.09, 0.3); }
+  winSmall(): void { this.winNormal(); }
   scatterLand(): void { this.blip([1568, 2093], 0.08, 0.3, "sine"); }
+
+  /** LDW — upbeat small-tier celebration; meters still show real server payout. */
+  pseudoWin(): void {
+    this.blip([523, 659, 784, 988], 0.08, 0.3, "triangle");
+    setTimeout(() => this.blip([784, 988, 1175], 0.06, 0.22, "sine"), 220);
+    this.coinDrop();
+  }
+
+  /** Near-miss teaser — must not sound like a paid win fanfare. */
+  nearMiss(): void {
+    this.blip([740, 880, 660], 0.07, 0.2, "sine");
+    this.noiseBurst(0.1, 0.08, 1600, "bandpass");
+  }
+
+  /** Distinct per-tier cues — never share one win sound across all tiers. */
+  coinDrop(): void {
+    this.blip([880, 660, 440], 0.05, 0.22, "triangle");
+    this.noiseBurst(0.12, 0.08, 1800, "bandpass");
+  }
+  winNormal(): void {
+    this.blip([523, 659, 784, 1047], 0.08, 0.28);
+    this.coinDrop();
+  }
+  winMedium(): void {
+    this.blip([392, 523, 659, 784, 988], 0.09, 0.32);
+    setTimeout(() => this.blip([784, 988], 0.07, 0.2), 280);
+  }
+  winStrong(): void {
+    this.blip([330, 392, 523, 659, 784, 1047], 0.09, 0.36, "triangle");
+    setTimeout(() => this.thunder(), 200);
+  }
+  fullscreenCommon(): void {
+    this.blip([440, 554, 659, 880], 0.1, 0.34, "sine");
+    setTimeout(() => this.blip([659, 880, 1108], 0.08, 0.28), 350);
+  }
+  fullscreenHigh(): void {
+    this.blip([294, 370, 440, 554, 740], 0.1, 0.38, "sawtooth");
+    setTimeout(() => this.noiseBurst(0.35, 0.14, 600, "lowpass"), 180);
+    setTimeout(() => this.blip([554, 740, 880, 1175], 0.09, 0.3), 500);
+  }
+  fullscreenBuffalo(): void {
+    this.roar();
+    setTimeout(() => this.blip([196, 247, 330, 392, 523], 0.12, 0.4, "sawtooth"), 200);
+    setTimeout(() => this.thunder(), 400);
+    setTimeout(() => this.blip([523, 659, 784, 1047, 1319], 0.1, 0.35), 900);
+  }
+  thunder(): void {
+    this.noiseBurst(0.55, 0.22, 180, "lowpass");
+    setTimeout(() => this.noiseBurst(0.25, 0.12, 900, "bandpass"), 120);
+  }
+  superWin(): void {
+    this.blip([392, 523, 659, 784, 988, 1319], 0.11, 0.42);
+    setTimeout(() => this.blip([659, 831, 1047, 1319, 1661], 0.1, 0.38), 600);
+    setTimeout(() => this.blip([1047, 1319, 1661, 2093], 0.09, 0.35, "sine"), 1400);
+    setTimeout(() => this.noiseBurst(0.8, 0.14, 3200, "highpass"), 900);
+  }
+  epicWin(): void {
+    this.superWin();
+    setTimeout(() => this.thunder(), 500);
+    setTimeout(() => this.roar(), 800);
+    setTimeout(() => this.blip([523, 784, 1047, 1568, 2093, 2637], 0.1, 0.4), 1600);
+  }
 
   /** Soft animal / special SFX — presentation only, never blocks gameplay. */
   animalCue(kind: "buffalo" | "lion" | "elephant" | "zebra" | "antelope" | "wild" | "scatter"): void {
@@ -311,25 +431,102 @@ export class AudioEngine {
   bigWin(): void {
     this.blip([523, 659, 784, 1047, 1319, 1568], 0.11, 0.4);
     setTimeout(() => this.blip([784, 988, 1175, 1568, 2093], 0.11, 0.35), 500);
+    setTimeout(() => this.coinDrop(), 200);
   }
   megaWin(): void {
-    this.bigWin();
-    setTimeout(() => this.blip([659, 831, 988, 1319, 1661, 2093, 2637], 0.1, 0.4), 900);
+    // Distinct from big — wider chord + delayed fanfare (not a bigWin() call).
+    this.blip([392, 523, 659, 831, 1047, 1319], 0.1, 0.42);
+    setTimeout(() => this.blip([659, 831, 988, 1319, 1661, 2093, 2637], 0.1, 0.4), 700);
+    setTimeout(() => this.noiseBurst(0.6, 0.14, 2400, "bandpass"), 400);
   }
   ultraWin(): void {
-    this.megaWin();
-    setTimeout(() => this.noiseBurst(1.2, 0.2, 5000, "highpass"), 800);
-    setTimeout(() => this.blip([1047, 1319, 1568, 2093, 2637, 3136], 0.09, 0.42), 1400);
+    // Distinct from mega — brighter stack + thunder wash.
+    this.blip([330, 440, 554, 740, 988, 1319], 0.1, 0.44, "triangle");
+    setTimeout(() => this.noiseBurst(1.2, 0.2, 5000, "highpass"), 600);
+    setTimeout(() => this.blip([1047, 1319, 1568, 2093, 2637, 3136], 0.09, 0.42), 1100);
+    setTimeout(() => this.thunder(), 300);
   }
   jackpot(): void {
-    this.ultraWin();
-    for (let i = 0; i < 4; i++) {
-      setTimeout(() => this.blip([523, 784, 1047, 1568], 0.08, 0.35), 400 + i * 350);
+    // Ultimate — longest layered fanfare; never delegates to ultra/mega/big.
+    this.blip([196, 247, 330, 392, 523, 659], 0.12, 0.48, "sawtooth");
+    setTimeout(() => this.roar(), 250);
+    setTimeout(() => this.thunder(), 400);
+    setTimeout(() => this.blip([523, 659, 784, 1047, 1319, 1661], 0.1, 0.42), 800);
+    for (let i = 0; i < 5; i++) {
+      setTimeout(() => this.blip([523, 784, 1047, 1568, 2093], 0.08, 0.36), 1200 + i * 380);
     }
+    setTimeout(() => this.noiseBurst(1.4, 0.22, 4000, "highpass"), 1000);
   }
 
   freeSpinTrigger(): void {
-    this.blip([392, 523, 659, 784, 1047, 1319, 1568, 2093], 0.12, 0.4, "sine");
+    this.freeSpinEnter();
+  }
+
+  /** Scatter free-spin enter — temple open / beam / roar stack. */
+  freeSpinEnter(): void {
+    this.roar();
+    this.blip([392, 523, 659, 784, 1047, 1319, 1568, 2093], 0.11, 0.42, "sine");
+    setTimeout(() => this.blip([784, 1047, 1319, 1661], 0.1, 0.35), 500);
+    setTimeout(() => this.noiseBurst(0.7, 0.16, 2800, "bandpass"), 280);
+  }
+
+  /** Play a named presentation cue (choreography-driven). */
+  playCue(cue: string): void {
+    switch (cue) {
+      case "winNormal":
+        this.winNormal();
+        break;
+      case "winMedium":
+        this.winMedium();
+        break;
+      case "winStrong":
+        this.winStrong();
+        break;
+      case "fullscreenCommon":
+        this.fullscreenCommon();
+        break;
+      case "fullscreenHigh":
+        this.fullscreenHigh();
+        break;
+      case "fullscreenBuffalo":
+        this.fullscreenBuffalo();
+        break;
+      case "bigWin":
+        this.bigWin();
+        break;
+      case "megaWin":
+        this.megaWin();
+        break;
+      case "ultraWin":
+        this.ultraWin();
+        break;
+      case "superWin":
+        this.superWin();
+        break;
+      case "epicWin":
+        this.epicWin();
+        break;
+      case "jackpot":
+        this.jackpot();
+        break;
+      case "freeSpinEnter":
+        this.freeSpinEnter();
+        break;
+      case "coinDrop":
+        this.coinDrop();
+        break;
+      case "thunder":
+        this.thunder();
+        break;
+      case "pseudoWin":
+        this.pseudoWin();
+        break;
+      case "nearMiss":
+        this.nearMiss();
+        break;
+      default:
+        break;
+    }
   }
 
   /** buffalo roar: low sawtooth + growl noise, pitch envelope */

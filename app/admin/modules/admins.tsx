@@ -9,10 +9,7 @@ import {
   DataTable,
   ErrorBox,
   Loading,
-<<<<<<< Updated upstream
-=======
   StatCard,
->>>>>>> Stashed changes
   fmtTime,
   useAdmin,
   type ColumnDef,
@@ -25,11 +22,6 @@ type AdminRow = {
   status: string;
   last_login_at: string | null;
   created_at: string;
-<<<<<<< Updated upstream
-  [key: string]: unknown;
-};
-
-=======
   op_count?: number;
   risk_op_count?: number;
   last_login_ip?: string | null;
@@ -51,7 +43,6 @@ type MatrixPayload = {
   roles: { role: string; grants: string[] }[];
 };
 
->>>>>>> Stashed changes
 const ROLES = [
   "SUPER_ADMIN",
   "OPS",
@@ -66,12 +57,9 @@ const ROLES = [
 export default function AdminsModule() {
   const { t, api, toast, me } = useAdmin();
   const [items, setItems] = useState<AdminRow[] | null>(null);
-<<<<<<< Updated upstream
-=======
   const [stats, setStats] = useState<AdminStats | null>(null);
   const [matrix, setMatrix] = useState<MatrixPayload | null>(null);
   const [auditFor, setAuditFor] = useState<{ id: string; items: Record<string, unknown>[] } | null>(null);
->>>>>>> Stashed changes
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [confirm, setConfirm] = useState<
@@ -90,10 +78,6 @@ export default function AdminsModule() {
 
   const load = useCallback(async () => {
     try {
-<<<<<<< Updated upstream
-      const result = await api<{ items: AdminRow[] }>("admins");
-      setItems(result.items);
-=======
       const [result, statsResult, matrixResult] = await Promise.all([
         api<{ items: AdminRow[] }>("admins"),
         api<AdminStats>("admins/stats"),
@@ -102,7 +86,6 @@ export default function AdminsModule() {
       setItems(result.items);
       setStats(statsResult);
       setMatrix(matrixResult);
->>>>>>> Stashed changes
       setError(null);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
@@ -164,8 +147,6 @@ export default function AdminsModule() {
       ),
     },
     {
-<<<<<<< Updated upstream
-=======
       key: "op_count",
       title: t("admins.opCount"),
       render: (row) => String(row.op_count ?? 0),
@@ -176,7 +157,6 @@ export default function AdminsModule() {
       render: (row) => String(row.risk_op_count ?? 0),
     },
     {
->>>>>>> Stashed changes
       key: "last_login_at",
       title: t("admins.lastLoginAt"),
       render: (row) => (row.last_login_at ? fmtTime(row.last_login_at) : "-"),
@@ -191,8 +171,6 @@ export default function AdminsModule() {
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
             <button
               className="ab-btn"
-<<<<<<< Updated upstream
-=======
               onClick={() =>
                 void api<{ items: Record<string, unknown>[] }>(`admins/${encodeURIComponent(row.id)}/audit`)
                   .then((res) => setAuditFor({ id: row.id, items: res.items }))
@@ -203,7 +181,6 @@ export default function AdminsModule() {
             </button>
             <button
               className="ab-btn"
->>>>>>> Stashed changes
               disabled={self}
               onClick={() => setConfirm({ kind: row.status === "ACTIVE" ? "disable" : "enable", id: row.id })}
             >
@@ -243,8 +220,6 @@ export default function AdminsModule() {
         {t("admins.auditHint")}
       </div>
 
-<<<<<<< Updated upstream
-=======
       {stats ? (
         <div className="ab-stat-grid" style={{ marginBottom: 16 }}>
           <StatCard label={t("admins.stats")} value={String(stats.total)} />
@@ -302,7 +277,6 @@ export default function AdminsModule() {
         </div>
       ) : null}
 
->>>>>>> Stashed changes
       <div className="ab-card" style={{ marginBottom: 16, display: "grid", gap: 8 }}>
         <b>{t("admins.add")}</b>
         <input

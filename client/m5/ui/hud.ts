@@ -8,7 +8,13 @@ import { PAYTABLE, type RegularSymbol } from "../../../lib/game-config.ts";
 import { symbolCanvas } from "../game/symbols.ts";
 import { audio } from "../audio.ts";
 import { t, setLang, getLang, onLangChange, applyDom, type Lang } from "../i18n.ts";
-import type { QualityMode } from "../quality.ts";
+import type {
+  AnimalAnimMode,
+  FpsTarget,
+  QualityMode,
+  QualitySettings,
+} from "../quality.ts";
+import { CommerceOverlays } from "./overlays.ts";
 
 const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
 
@@ -33,6 +39,8 @@ const PAYTABLE_ORDER: RegularSymbol[] = [
 export type HudQualityHooks = {
   getQualityMode: () => QualityMode;
   setQualityMode: (mode: QualityMode) => void;
+  getQualitySettings?: () => QualitySettings;
+  setQualitySettings?: (partial: Partial<QualitySettings>) => void;
 };
 
 export class Hud implements HudHooks {
@@ -40,6 +48,7 @@ export class Hud implements HudHooks {
   private toastTimer: number | null = null;
   private balanceShown = 0;
   private qualityHooks: HudQualityHooks | null = null;
+  private commerce: CommerceOverlays | null = null;
   setQualityMode: ((mode: QualityMode) => void) | undefined;
 
   constructor(game: Game, qualityHooks?: HudQualityHooks) {
@@ -47,6 +56,14 @@ export class Hud implements HudHooks {
     this.qualityHooks = qualityHooks ?? null;
     this.setQualityMode = qualityHooks?.setQualityMode;
     game.attachHud(this);
+
+    // Clear leftover full-screen traps from prior HMR / interrupted win FX
+    this.releasePointerTraps();
+
+    // Profile / VIP / Wallet / Help — DOM modals only (never dispose GL)
+    this.commerce = new CommerceOverlays(game, () => {
+      void this.game.refreshBalanceFromWallet();
+    });
 
     $("btn-spin").addEventListener("click", () => {
       audio.unlock();
@@ -57,6 +74,24 @@ export class Hud implements HudHooks {
     $("btn-turbo").addEventListener("click", () => this.game.toggleTurbo());
     $("bet-plus").addEventListener("click", () => this.game.betUp());
     $("bet-minus").addEventListener("click", () => this.game.betDown());
+
+    const backBtn = document.getElementById("btn-back");
+    if (backBtn) {
+      backBtn.addEventListener("click", () => {
+        audio.uiClick();
+        // Presentation-only leave — never mutates wallet / session settlement.
+        // Play shell may set data-xi-play-leave=/xi/bull-demon-king and intercept via capture.
+        const leaveHref =
+          document.documentElement.getAttribute("data-xi-play-leave") ||
+          document.querySelector<HTMLElement>(".xi-play-shell")?.getAttribute("data-xi-play-leave");
+        if (leaveHref) {
+          window.location.assign(leaveHref);
+          return;
+        }
+        if (window.history.length > 1) window.history.back();
+        else window.location.href = "/";
+      });
+    }
 
     const soundBtn = $("btn-sound");
     soundBtn.addEventListener("click", () => {
@@ -122,6 +157,40 @@ export class Hud implements HudHooks {
       });
     });
 
+    document.querySelectorAll<HTMLButtonElement>("[data-fx]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        if (!this.qualityHooks?.setQualitySettings) return;
+        audio.uiClick();
+        this.qualityHooks.setQualitySettings({
+          fxEnabled: btn.dataset.fx === "on",
+        });
+        this.syncSettingsUi();
+      });
+    });
+
+    document.querySelectorAll<HTMLButtonElement>("[data-animal]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        if (!this.qualityHooks?.setQualitySettings) return;
+        const mode = btn.dataset.animal as AnimalAnimMode;
+        if (mode !== "full" && mode !== "simple") return;
+        audio.uiClick();
+        this.qualityHooks.setQualitySettings({ animalMode: mode });
+        this.syncSettingsUi();
+      });
+    });
+
+    document.querySelectorAll<HTMLButtonElement>("[data-fps]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        if (!this.qualityHooks?.setQualitySettings) return;
+        const raw = btn.dataset.fps;
+        const fpsTarget: FpsTarget =
+          raw === "30" ? 30 : raw === "60" ? 60 : "auto";
+        audio.uiClick();
+        this.qualityHooks.setQualitySettings({ fpsTarget });
+        this.syncSettingsUi();
+      });
+    });
+
     const vol = document.getElementById("volume-slider") as HTMLInputElement | null;
     if (vol) {
       vol.value = String(Math.round(audio.getVolume() * 100));
@@ -161,6 +230,27 @@ export class Hud implements HudHooks {
     const mode = this.qualityHooks?.getQualityMode() ?? "auto";
     document.querySelectorAll<HTMLButtonElement>(".quality-btn").forEach((btn) => {
       btn.classList.toggle("active", btn.dataset.quality === mode);
+    });
+    const settings = this.qualityHooks?.getQualitySettings?.();
+    const fxOn = settings?.fxEnabled !== false;
+    document.querySelectorAll<HTMLButtonElement>("[data-fx]").forEach((btn) => {
+      btn.classList.toggle(
+        "active",
+        (btn.dataset.fx === "on") === fxOn,
+      );
+    });
+    const animal = settings?.animalMode ?? "full";
+    document.querySelectorAll<HTMLButtonElement>("[data-animal]").forEach((btn) => {
+      btn.classList.toggle("active", btn.dataset.animal === animal);
+    });
+    const fps = settings?.fpsTarget ?? "auto";
+    document.querySelectorAll<HTMLButtonElement>("[data-fps]").forEach((btn) => {
+      const raw = btn.dataset.fps;
+      const match =
+        (raw === "auto" && fps === "auto") ||
+        (raw === "30" && fps === 30) ||
+        (raw === "60" && fps === 60);
+      btn.classList.toggle("active", match);
     });
     const vol = document.getElementById("volume-slider") as HTMLInputElement | null;
     if (vol) vol.value = String(Math.round(audio.getVolume() * 100));
@@ -214,6 +304,20 @@ export class Hud implements HudHooks {
     }
   }
 
+  flashMeters(level: 0 | 1 | 2 | 3): void {
+    if (level <= 0) return;
+    const ids = ["balance", "win", "bet", "console"];
+    for (const id of ids) {
+      const el = document.getElementById(id);
+      if (!el) continue;
+      el.classList.remove("hud-flash", "hud-flash-gold", "hud-flash-max");
+      void el.offsetWidth;
+      if (level >= 3) el.classList.add("hud-flash-max");
+      else if (level >= 2) el.classList.add("hud-flash-gold");
+      else el.classList.add("hud-flash");
+    }
+  }
+
   setFreeSpins(n: number): void {
     const badge = $("fs-badge");
     badge.classList.toggle("hidden", n <= 0);
@@ -221,11 +325,19 @@ export class Hud implements HudHooks {
   }
 
   toastKey(key: string): void {
+    this.toastMessage(t(key));
+  }
+
+  toastMessage(message: string): void {
     const el = $("toast");
-    el.textContent = t(key);
+    el.textContent = message;
     el.classList.remove("hidden");
     if (this.toastTimer !== null) clearTimeout(this.toastTimer);
     this.toastTimer = window.setTimeout(() => el.classList.add("hidden"), 2200);
+  }
+
+  setSessionOnline(online: boolean): void {
+    this.syncSessionPill(online);
   }
 
   setSpinBusy(busy: boolean): void {
@@ -236,6 +348,24 @@ export class Hud implements HudHooks {
     ($("bet-minus") as HTMLButtonElement).disabled = busy;
     const spinLabel = document.getElementById("spin-label");
     if (spinLabel) spinLabel.textContent = busy ? t("spinning") : t("spin");
+  }
+
+  /** Hide inert overlays that can swallow the entire HUD hit target. */
+  releasePointerTraps(): void {
+    for (const id of [
+      "celebration",
+      "jackpot-banner",
+      "paytable-modal",
+      "settings-modal",
+      "profile-modal",
+      "vip-modal",
+      "wallet-modal",
+      "help-modal",
+    ]) {
+      document.getElementById(id)?.classList.add("hidden");
+    }
+    document.getElementById("loading")?.classList.add("done");
+    this.commerce?.hideAll();
   }
 
   setAutoActive(on: boolean): void {
@@ -266,41 +396,84 @@ export class Hud implements HudHooks {
     const overlay = $("celebration");
     const tierEl = $("celebration-tier");
     const amountEl = $("celebration-amount");
-    const key = tier === "big" ? "bigWin" : tier === "mega" ? "megaWin" : "ultraWin";
-    tierEl.textContent = t(key);
-    overlay.classList.remove("hidden", "tier-big", "tier-mega", "tier-ultra", "tier-jackpot");
-    overlay.classList.add(`tier-${tier}`);
-    tierEl.style.animation = "none";
-    void tierEl.offsetWidth;
-    tierEl.style.animation = "";
-    const dur = tier === "big" ? 2600 : tier === "mega" ? 3400 : 4200;
-    this.animateNumber(amountEl, 0, amount, Math.min(dur - 400, 2000));
-    // Tap-to-skip after short minimum (does not alter win amount)
-    const minHold = 900;
-    await new Promise<void>((resolve) => {
-      let done = false;
-      const finish = () => {
-        if (done) return;
-        done = true;
-        overlay.removeEventListener("click", onTap);
-        window.clearTimeout(timer);
-        resolve();
-      };
-      const onTap = () => finish();
-      const timer = window.setTimeout(finish, dur);
-      window.setTimeout(() => overlay.addEventListener("click", onTap), minHold);
-    });
-    overlay.classList.add("hidden");
-    overlay.classList.remove("tier-big", "tier-mega", "tier-ultra", "tier-jackpot");
+    const tierClasses = [
+      "tier-big",
+      "tier-mega",
+      "tier-ultra",
+      "tier-super",
+      "tier-epic",
+      "tier-jackpot",
+    ];
+    try {
+      const key =
+        tier === "big"
+          ? "bigWin"
+          : tier === "mega"
+            ? "megaWin"
+            : tier === "ultra"
+              ? "ultraWin"
+              : tier === "super"
+                ? "superWin"
+                : tier === "epic"
+                  ? "epicWin"
+                  : "ultraWin";
+      tierEl.textContent = t(key);
+      overlay.classList.remove("hidden", ...tierClasses);
+      overlay.classList.add(`tier-${tier}`);
+      if (tier === "super" || tier === "epic") {
+        overlay.classList.add("hud-all-gold");
+      } else {
+        overlay.classList.remove("hud-all-gold");
+      }
+      tierEl.style.animation = "none";
+      void tierEl.offsetWidth;
+      tierEl.style.animation = "";
+      const dur =
+        tier === "big"
+          ? 2800
+          : tier === "mega"
+            ? 3600
+            : tier === "ultra"
+              ? 4400
+              : tier === "super"
+                ? 5200
+                : 6200;
+      this.animateNumber(amountEl, 0, amount, Math.min(dur - 400, 3200));
+      this.flashMeters(tier === "epic" || tier === "super" ? 3 : 2);
+      // Tap-to-skip after short minimum (does not alter win amount)
+      const minHold = 900;
+      await new Promise<void>((resolve) => {
+        let done = false;
+        const finish = () => {
+          if (done) return;
+          done = true;
+          overlay.removeEventListener("click", onTap);
+          window.clearTimeout(timer);
+          resolve();
+        };
+        const onTap = () => finish();
+        const timer = window.setTimeout(finish, dur);
+        window.setTimeout(() => overlay.addEventListener("click", onTap), minHold);
+      });
+    } finally {
+      overlay.classList.add("hidden");
+      overlay.classList.remove(...tierClasses, "hud-all-gold");
+    }
   }
 
   private async celebrateJackpot(amount: number): Promise<void> {
     const banner = $("jackpot-banner");
-    $("jackpot-amount").textContent = "0";
-    banner.classList.remove("hidden");
-    this.animateNumber($("jackpot-amount"), 0, amount, 2400);
-    await new Promise((r) => setTimeout(r, 5500));
-    banner.classList.add("hidden");
+    try {
+      $("jackpot-amount").textContent = "0";
+      banner.classList.remove("hidden");
+      banner.classList.add("hud-all-gold", "jackpot-ultimate");
+      this.animateNumber($("jackpot-amount"), 0, amount, 3600);
+      this.flashMeters(3);
+      await new Promise((r) => setTimeout(r, 7200));
+    } finally {
+      banner.classList.add("hidden");
+      banner.classList.remove("hud-all-gold", "jackpot-ultimate");
+    }
   }
 
   private animateNumber(el: HTMLElement, from: number, to: number, dur: number): void {

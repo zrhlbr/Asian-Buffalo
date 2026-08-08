@@ -160,6 +160,8 @@ export class Particles {
   private coinTimer = 0;
   private coinBudget = 220;
   private particleBudget = 400;
+  private pillarStyle: "gold" | "goldPurple" | "temple" | "divine" = "gold";
+  private rainRate = 1;
   coinRainActive = false;
 
   constructor(scene: THREE.Scene) {
@@ -199,13 +201,35 @@ export class Particles {
   /** continuous coin rain over the reel area */
   private emitCoins(dt: number): void {
     this.coinTimer += dt;
-    const interval = this.coinBudget >= 200 ? 0.03 : this.coinBudget >= 120 ? 0.05 : 0.08;
+    const base = this.coinBudget >= 200 ? 0.03 : this.coinBudget >= 120 ? 0.05 : 0.08;
+    const interval = base / Math.max(0.35, this.rainRate);
     while (this.coinTimer > interval) {
       this.coinTimer -= interval;
       if (this.coins.activeCount >= this.coinBudget) break;
+      const giant = this.rainRate > 1.4 && Math.random() < 0.18;
       const origin = new THREE.Vector3((Math.random() - 0.5) * 10, 8.5 + Math.random() * 2, -1 + Math.random() * 2);
       const vel = new THREE.Vector3((Math.random() - 0.5) * 0.8, -1 - Math.random() * 1.5, (Math.random() - 0.5) * 0.4);
-      this.coins.spawn(origin, vel, 3.2, 0.55 + Math.random() * 0.5);
+      this.coins.spawn(origin, vel, 3.2, (giant ? 0.95 : 0.55) + Math.random() * 0.5);
+    }
+  }
+
+  /** Coin waterfall intensity multiplier (presentation). */
+  setCoinRainRate(rate: number): void {
+    this.rainRate = Math.max(0.4, Math.min(2.5, rate));
+  }
+
+  setPillarStyle(style: "gold" | "goldPurple" | "temple" | "divine"): void {
+    this.pillarStyle = style;
+    const colors: Record<typeof style, number> = {
+      gold: 0xffe2a0,
+      goldPurple: 0xe8b0ff,
+      temple: 0xffd060,
+      divine: 0xfff0c8,
+    };
+    const c = new THREE.Color(colors[style]);
+    for (const p of this.pillars) {
+      const mat = p.material as THREE.MeshBasicMaterial;
+      mat.color.copy(c);
     }
   }
 
@@ -243,11 +267,15 @@ export class Particles {
     this.coins.update(dt);
     this.sparks.update(dt);
     this.smoke.update(dt);
+    const styleBoost =
+      this.pillarStyle === "divine" ? 1.35 :
+      this.pillarStyle === "temple" ? 1.2 :
+      this.pillarStyle === "goldPurple" ? 1.1 : 1;
     for (let i = 0; i < this.pillars.length; i++) {
       const p = this.pillars[i];
       if (!p.visible) continue;
       const mat = p.material as THREE.MeshBasicMaterial;
-      mat.opacity = 0.16 + 0.1 * Math.sin(time * 1.8 + i * 1.3);
+      mat.opacity = (0.16 + 0.1 * Math.sin(time * 1.8 + i * 1.3)) * styleBoost;
       p.rotation.y = time * 0.1 + i;
     }
   }

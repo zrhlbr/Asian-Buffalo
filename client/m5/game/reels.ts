@@ -9,11 +9,15 @@ import { REELS, ROWS, type SymbolId } from "../adapter.ts";
 import { symbolTexture, ALL_SYMBOLS } from "./symbols.ts";
 import {
   createSymbolMaterial,
+  lifeSpeciesOf,
   setSymbolMap,
   symbolAnimKind,
   symbolPhase,
+  symbolSeed,
+  triggerSymbolWinAccent,
   updateSymbolLife,
   type SymbolAnimIntensity,
+  type SymbolTileMaterial,
 } from "./symbol-life.ts";
 import {
   spinMotionProgress,
@@ -41,9 +45,29 @@ const OUTER_RAIL = 0.14;
 /** Visual spin axis — always downward for normal / turbo / auto / free spin. */
 export const REEL_SPIN_DIRECTION = "down" as const;
 
+/** Soft-restore window after bounce — full sharpness within ~0.15s. */
+export const SHARP_RESTORE_SEC = 0.15;
+
 /** Unscaled half-width of the commercial metal frame (world units). */
 export function reelFrameHalfWidth(): number {
   return (REELS * (CELL + GAP) + FRAME_PAD) / 2 + OUTER_RAIL;
+}
+
+/**
+ * Snap world Y so projected pixels land on integer rows when possible.
+ * Used after bounce settle to avoid chronic half-pixel softness.
+ */
+export function pixelAlignWorldY(
+  worldY: number,
+  pixelsPerWorldUnit: number,
+): number {
+  if (!(pixelsPerWorldUnit > 0) || !Number.isFinite(worldY)) return worldY;
+  return Math.round(worldY * pixelsPerWorldUnit) / pixelsPerWorldUnit;
+}
+
+/** Rest frac must be exact 0 — collapses float dust after bounce. */
+export function settleSpinFrac(frac: number): number {
+  return Math.abs(frac) < 1e-4 ? 0 : frac;
 }
 
 /**
@@ -89,11 +113,16 @@ class Reel {
   private bounceDuration = 0.3;
   private spinning = false;
   private bounceT = -1;
+  /** Counts down after bounce — keeps tiles sharp while life fades back in. */
+  private sharpRestore = 0;
   private lastTex: THREE.Texture[] = [];
   private winMask: boolean[] = [];
+  private winAmp = 1;
   private lifeTime = 0;
   private animIntensity: SymbolAnimIntensity = 2;
   private resolver: (() => void) | null = null;
+  /** Optional screen px per world unit for final pixel snap (set by ReelRig). */
+  pixelsPerWorld = 0;
   onStop: ((index: number) => void) | null = null;
 
   constructor(index: number) {
@@ -101,7 +130,13 @@ class Reel {
     const geo = new THREE.PlaneGeometry(CELL, CELL);
     for (let k = 0; k < ROWS + 2; k++) {
       const tex = symbolTexture("buffalo");
-      const mat = createSymbolMaterial(tex, "animal", symbolPhase(index, k));
+      const mat = createSymbolMaterial(
+        tex,
+        "animal",
+        symbolPhase(index, k),
+        "buffalo",
+        symbolSeed(index, k),
+      );
       const m = new THREE.Mesh(geo, mat);
       this.cells.push(m);
       this.lastTex.push(tex);
@@ -117,6 +152,10 @@ class Reel {
     this.animIntensity = intensity;
   }
 
+  setWinAmp(amp: number): void {
+    this.winAmp = Math.min(2, Math.max(0, amp));
+  }
+
   setGrid(col: SymbolId[]): void {
     this.spinning = false;
     // Same strip encoding as spin stop — row0 (top) stays server order
@@ -125,6 +164,7 @@ class Reel {
     this.distance = 0;
     this.t = 0;
     this.bounceT = -1;
+    this.sharpRestore = 0;
     this.layout();
   }
 
@@ -153,6 +193,7 @@ class Reel {
     this.bounceDuration = Math.max(0.05, bounceSec);
     this.spinning = true;
     this.bounceT = -1;
+    this.sharpRestore = 0;
     return new Promise((res) => {
       this.resolver = res;
     });
@@ -187,6 +228,7 @@ class Reel {
       const p = this.bounceT / this.bounceDuration;
       if (p >= 1) {
         this.bounceT = -1;
+        this.sharpRestore = SHARP_RESTORE_SEC;
         this.layout(0);
         const r = this.resolver;
         this.resolver = null;
@@ -197,55 +239,83 @@ class Reel {
         this.layout(0.22 * elastic);
       }
     } else {
-      // Idle life — refresh shader uniforms without changing strip positions
+      if (this.sharpRestore > 0) {
+        this.sharpRestore = Math.max(0, this.sharpRestore - dt);
+      }
+      // Idle life — refresh shader uniforms; positions stay pixel-stable
       this.layout();
     }
   }
 
   private layout(extraFrac = 0): void {
     const base = Math.floor(this.pos);
-    const frac = this.pos - base + extraFrac;
-      // Stronger Y stretch while cruising — impact without tearing tiles apart
-      const cruise = this.spinning && this.t > 0.06 && this.t < 0.78;
-      const speedStretch = this.spinning
-        ? 1 + (cruise ? 0.34 : Math.sin(Math.min(this.t * 3, Math.PI)) * 0.18)
-        : 1;
+    const frac = settleSpinFrac(this.pos - base + extraFrac);
+    // Motion feel while spinning; recognizable tiles (stretch capped for clarity)
+    const cruise = this.spinning && this.t > 0.06 && this.t < 0.78;
+    const speedStretch = this.spinning
+      ? 1 + (cruise ? 0.26 : Math.sin(Math.min(this.t * 3, Math.PI)) * 0.14)
+      : 1;
     const halfWindow = (ROWS * (CELL + GAP)) / 2;
     const maxIdx = Math.max(0, this.seq.length - 1);
+    const atRest = !this.spinning && this.bounceT < 0;
+    const spinAmt = this.spinning
+      ? 1
+      : this.bounceT >= 0
+        ? 0.55
+        : this.sharpRestore > 0
+          ? this.sharpRestore / SHARP_RESTORE_SEC
+          : 0;
     for (let k = 0; k < ROWS + 2; k++) {
       const r = k - 1;
       const idx = Math.min(Math.max(stripIndex(base, r), 0), maxIdx);
       const sym = this.seq[idx]!;
       const mesh = this.cells[k]!;
       // Positive frac → lower Y → top-to-bottom scroll
-      mesh.position.y = cellY(r, frac);
+      let y = cellY(r, frac);
+      if (atRest && frac === 0 && this.pixelsPerWorld > 0) {
+        y = pixelAlignWorldY(y, this.pixelsPerWorld);
+      }
       const win = this.winMask[k] === true;
-      const pop = win && !this.spinning ? 1.08 : 1;
-      mesh.scale.set(pop, speedStretch * pop, 1);
-      mesh.position.z = win && !this.spinning ? 0.045 : 0;
-      const fade = Math.min(Math.max((halfWindow + 0.42 - Math.abs(mesh.position.y)) / 0.6, 0), 1);
+      const winLevel = win ? this.winAmp : 0;
+      const pop = win && atRest ? 1.06 + 0.04 * this.winAmp : 1;
+      mesh.position.z = win && atRest ? 0.045 : 0;
+      // Life owns scale / x / rotZ; reset x/rot before measuring fade from base Y
+      mesh.position.x = 0;
+      mesh.rotation.z = 0;
+      const fade = Math.min(Math.max((halfWindow + 0.42 - Math.abs(y)) / 0.6, 0), 1);
       mesh.visible = fade > 0.02;
       const tex = symbolTexture(sym);
-      const mat = mesh.material as THREE.ShaderMaterial;
+      const mat = mesh.material as SymbolTileMaterial;
+      const kind = symbolAnimKind(sym);
       if (this.lastTex[k] !== tex) {
-        setSymbolMap(mat, tex, symbolAnimKind(sym));
+        setSymbolMap(mat, tex, kind, lifeSpeciesOf(sym));
         this.lastTex[k] = tex;
       }
       updateSymbolLife(mat, {
         time: this.lifeTime,
         opacity: fade,
-        win,
+        win: winLevel,
         intensity: this.animIntensity,
-        spinning: this.spinning,
-        tint: win ? 1.55 : 1,
+        spinning: spinAmt,
+        tint: win ? 1.4 + 0.2 * this.winAmp : 1,
+        symbolId: sym,
+        mesh,
+        baseScaleX: pop,
+        baseScaleY: speedStretch * pop,
+        basePosY: y,
       });
     }
   }
 
-  setCellHighlight(r: number, on: boolean): void {
+  setCellHighlight(r: number, on: boolean, winAmp = this.winAmp): void {
     const k = r + 1;
     if (k < 0 || k >= this.winMask.length) return;
+    const was = this.winMask[k] === true;
     this.winMask[k] = on;
+    if (on && !was) {
+      const mat = this.cells[k]!.material as SymbolTileMaterial;
+      triggerSymbolWinAccent(mat, winAmp);
+    }
     // Apply immediately so sequential payline presentation feels snappy
     this.layout();
   }
@@ -256,16 +326,29 @@ export class ReelRig {
   private reels: Reel[] = [];
   private highlights: THREE.Mesh[] = [];
   private glowPlane: THREE.Mesh | null = null;
+  private frameGlowBoost = 0;
   private frameHalfW = reelFrameHalfWidth();
   private animIntensity: SymbolAnimIntensity = 2;
+  private winAmp = 1;
   /** Current commercial scale (full-bleed). */
   scaleFactor = 1;
   onReelStop: ((index: number) => void) | null = null;
 
-  /** Quality LOD for symbol life shaders (presentation only). */
+  /** Quality LOD for symbol life (presentation only; MeshBasic path). */
   setSymbolAnimIntensity(intensity: SymbolAnimIntensity): void {
     this.animIntensity = intensity;
     for (const reel of this.reels) reel.setAnimIntensity(intensity);
+  }
+
+  /** Win symbol amplify 0–2 from presentation choreography. */
+  setWinAmp(amp: number): void {
+    this.winAmp = Math.min(2, Math.max(0, amp));
+    for (const reel of this.reels) reel.setWinAmp(this.winAmp);
+  }
+
+  /** Reel frame glow boost 0–1 during celebrations. */
+  setFrameGlow(boost: number): void {
+    this.frameGlowBoost = Math.min(1, Math.max(0, boost));
   }
 
   constructor() {
@@ -474,6 +557,13 @@ export class ReelRig {
     this.group.position.x = 0;
     // Phone landscape: lift slightly so bottom console does not bury the last row
     this.group.position.y = aspect < 1.05 ? 2.55 : phoneLandscape ? 2.42 : 2.32;
+
+    // Approx CSS px per world unit at reel depth — for post-bounce pixel align
+    const visibleHalfH = cameraZ * Math.tan(halfFov);
+    const pxPerWorld = viewportH / Math.max(visibleHalfH * 2, 1e-6);
+    for (const reel of this.reels) {
+      reel.pixelsPerWorld = pxPerWorld * scale;
+    }
   }
 
   /** World-space half-width after commercial scale (for camera fit). */
@@ -506,7 +596,8 @@ export class ReelRig {
 
   /**
    * Choreographed spin using centralized timing (reel-timing.ts).
-   * Normal / Auto / Free Spin → ~10s total; Turbo → ~2.5s.
+   * Normal / Auto / Free Spin → NORMAL_SPIN_TOTAL_MS (6000); Turbo → ~2.5s.
+   * Server may return early; visual timeline still plays fully here.
    * Grid must be the server result — never recomputed here.
    */
   spinAll(grid: SymbolId[][], turbo: boolean): Promise<void> {
@@ -528,7 +619,9 @@ export class ReelRig {
   highlightCells(cells: Array<[number, number]>, grid?: SymbolId[][]): void {
     this.clearHighlights();
     for (const [reel, row] of cells) {
-      if (this.reels[reel]) this.reels[reel]!.setCellHighlight(row, true);
+      if (this.reels[reel]) {
+        this.reels[reel]!.setCellHighlight(row, true, this.winAmp);
+      }
       const sym = grid?.[reel]?.[row];
       const kind = sym ? symbolAnimKind(sym) : "letter";
       const color =
@@ -569,6 +662,66 @@ export class ReelRig {
     }
   }
 
+  /**
+   * Near-miss stop accent — presentation only.
+   * Highlights existing server-grid cells; never rewrites symbols or stop timing.
+   * @param intensity 0–1 (LOW quality should pass a reduced value)
+   */
+  pulseNearMissAccent(
+    cells: Array<[number, number]>,
+    grid: SymbolId[][] | undefined,
+    intensity = 1,
+  ): void {
+    const amp = Math.min(1, Math.max(0.15, intensity));
+    this.clearHighlights();
+    this.setFrameGlow(0.35 * amp + 0.1);
+    for (const [reel, row] of cells) {
+      if (this.reels[reel]) {
+        this.reels[reel]!.setCellHighlight(row, true, Math.min(1, amp));
+      }
+      const sym = grid?.[reel]?.[row];
+      const kind = sym ? symbolAnimKind(sym) : "letter";
+      // Cool amber edge cue — distinct from paid gold win highlights
+      const color =
+        kind === "scatter" ? 0xffc060 : kind === "wild" ? 0x7ec8ff : 0xe8c878;
+      const glow = new THREE.Mesh(
+        new THREE.PlaneGeometry(CELL * 1.08, CELL * 1.08),
+        new THREE.MeshBasicMaterial({
+          color,
+          transparent: true,
+          opacity: 0.0,
+          blending: THREE.AdditiveBlending,
+          depthWrite: false,
+        }),
+      );
+      glow.position.set((reel - (REELS - 1) / 2) * (CELL + GAP), cellY(row, 0), 0.025);
+      glow.userData.pulse = true;
+      glow.userData.nearMiss = true;
+      glow.userData.nearMissAmp = amp;
+      this.highlights.push(glow);
+      this.group.add(glow);
+
+      const ring = new THREE.Mesh(
+        new THREE.RingGeometry(CELL * 0.4, CELL * 0.5, 28),
+        new THREE.MeshBasicMaterial({
+          color,
+          transparent: true,
+          opacity: 0.0,
+          blending: THREE.AdditiveBlending,
+          depthWrite: false,
+          side: THREE.DoubleSide,
+        }),
+      );
+      ring.position.copy(glow.position);
+      ring.position.z = 0.03;
+      ring.userData.ring = true;
+      ring.userData.nearMiss = true;
+      ring.userData.nearMissAmp = amp;
+      this.highlights.push(ring);
+      this.group.add(ring);
+    }
+  }
+
   clearHighlights(): void {
     for (const reel of this.reels) {
       for (let r = 0; r < ROWS; r++) reel.setCellHighlight(r, false);
@@ -585,18 +738,20 @@ export class ReelRig {
     for (const reel of this.reels) reel.update(dt, time);
     for (const h of this.highlights) {
       const mat = h.material as THREE.MeshBasicMaterial;
+      const nmAmp = typeof h.userData.nearMissAmp === "number" ? h.userData.nearMissAmp : 1;
       if (h.userData.ring) {
         const pulse = 0.55 + 0.45 * Math.sin(time * 7);
-        mat.opacity = 0.22 * pulse;
-        const s = 1 + 0.12 * Math.sin(time * 6);
+        mat.opacity = 0.22 * pulse * nmAmp;
+        const s = 1 + 0.12 * Math.sin(time * 6) * nmAmp;
         h.scale.set(s, s, 1);
       } else {
-        mat.opacity = 0.3 + 0.24 * Math.sin(time * 8);
+        mat.opacity = (0.3 + 0.24 * Math.sin(time * 8)) * nmAmp;
       }
     }
     if (this.glowPlane) {
       const mat = this.glowPlane.material as THREE.MeshBasicMaterial;
-      mat.opacity = 0.12 + 0.06 * Math.sin(time * 1.8);
+      const pulse = 0.12 + 0.06 * Math.sin(time * 1.8);
+      mat.opacity = pulse + this.frameGlowBoost * (0.28 + 0.18 * Math.sin(time * 5.5));
     }
   }
 }

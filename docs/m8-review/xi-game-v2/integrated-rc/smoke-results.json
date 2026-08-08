@@ -1,0 +1,160 @@
+{
+  "base": "http://127.0.0.1:5173",
+  "at": "2026-08-07T15:39:31.107Z",
+  "playerId": "dev-test-player",
+  "summary": {
+    "pass": 28,
+    "fail": 0,
+    "total": 28
+  },
+  "headed": {
+    "status": "OK",
+    "shots": [
+      "01-lobby.png",
+      "02-hub.png",
+      "03-play.png"
+    ]
+  },
+  "results": [
+    {
+      "id": "route.xi",
+      "ok": true,
+      "detail": "status=200"
+    },
+    {
+      "id": "route.hub",
+      "ok": true,
+      "detail": "status=200"
+    },
+    {
+      "id": "route.play",
+      "ok": true,
+      "detail": "status=200"
+    },
+    {
+      "id": "route.admin",
+      "ok": true,
+      "detail": "status=200"
+    },
+    {
+      "id": "route.admin.login",
+      "ok": true,
+      "detail": "status=200"
+    },
+    {
+      "id": "compat.root",
+      "ok": true,
+      "detail": "status=308 location=/xi/bull-demon-king/play"
+    },
+    {
+      "id": "compat.game",
+      "ok": true,
+      "detail": "status=308 location=/xi/bull-demon-king/play"
+    },
+    {
+      "id": "compat.bdk",
+      "ok": true,
+      "detail": "status=308 location=/xi/bull-demon-king"
+    },
+    {
+      "id": "lobby.brand",
+      "ok": true,
+      "detail": "<!DOCTYPE html><html lang=\"zh-CN\"><head><meta charSet=\"utf-8\"/><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"/><link rel=\"stylesheet\" href=\"/app/globals.css\" data-rsc-css-href=\"/a"
+    },
+    {
+      "id": "wallet.balance",
+      "ok": true,
+      "detail": "{\"playerId\":\"dev-test-player\",\"balanceMinor\":78375,\"currency\":\"MMK\"}"
+    },
+    {
+      "id": "identity.profile",
+      "ok": true,
+      "detail": "{\"profile\":{\"playerId\":\"dev-test-player\",\"nickname\":\"Player_player\",\"avatarId\":\"ab-avatar-01\",\"avatarUrl\":\"/avatars/ab-avatar-01.svg\",\"phoneMasked\":null,\"phoneE164\":null,\"phoneVerified\":false,\"currency\":\"MMK\",\"supportedCurrencies\":[\"MMK\",\"T"
+    },
+    {
+      "id": "game.session",
+      "ok": true,
+      "detail": "{\"sessionId\":\"sess_682f517e0ca7e4cf99f547b7\",\"mathVersionId\":\"ab-math-1.0.0\",\"expiresAt\":\"2026-08-07T16:39:17.901Z\"}"
+    },
+    {
+      "id": "game.spin",
+      "ok": true,
+      "detail": "{\"status\":200,\"roundId\":\"round_f9a0c0c2a995d4136bea00f6\",\"balanceAfter\":78325}"
+    },
+    {
+      "id": "game.round",
+      "ok": true,
+      "detail": "{\"roundId\":\"round_f9a0c0c2a995d4136bea00f6\",\"sessionId\":\"sess_682f517e0ca7e4cf99f547b7\",\"playerId\":\"dev-test-player\",\"mathVersion\":\"ab-math-1.0.0\",\"idempotencyKey\":\"rc_spin_1786117157907\",\"currency\":\"MMK\",\"totalBetMinor\":50,\"totalWinMinor\":"
+    },
+    {
+      "id": "wallet.balance.afterSpin",
+      "ok": true,
+      "detail": "{\"playerId\":\"dev-test-player\",\"before\":78375,\"after\":78325}"
+    },
+    {
+      "id": "hub.wins",
+      "ok": true,
+      "detail": "{\"total\":348,\"items\":[{\"roundId\":\"round_f9a0c0c2a995d4136bea00f6\",\"sessionId\":\"sess_682f517e0ca7e4cf99f547b7\",\"status\":\"SETTLED\",\"betMinor\":50,\"winMinor\":0,\"currency\":\"MMK\",\"createdAt\":\"2026-08-07 15:"
+    },
+    {
+      "id": "vip.status",
+      "ok": true,
+      "detail": "{\"vip\":{\"playerId\":\"dev-test-player\",\"level\":0,\"status\":\"PENDING\",\"vipStartedAt\":null,\"vipExpiresAt\":null,\"levels\":[{\"level\":1,\"code\":\"VIP1\",\"title\":{\"zh-CN\":\"青铜水牛\",\"en\":\"Bronze Buffalo\",\"my-MM\":\"ကြေး"
+    },
+    {
+      "id": "deposit.channels",
+      "ok": true,
+      "detail": "readiness=NOT_PRODUCTION_READY"
+    },
+    {
+      "id": "deposit.create",
+      "ok": true,
+      "detail": "{\"order\":{\"id\":\"f056d88b-e7ba-4319-be9f-4860181ba289\",\"playerId\":\"dev-test-player\",\"currency\":\"MMK\",\"channelCode\":\"KBZ\",\"amountMinor\":1000,\"status\":\"PENDING\",\"providerRef\":\"dep_f056d88be7ba4319be9f4860\",\"expiresAt\":\"2026-08-07 16:09:18\",\"cr"
+    },
+    {
+      "id": "deposit.confirm",
+      "ok": true,
+      "detail": "{\"order\":{\"id\":\"f056d88b-e7ba-4319-be9f-4860181ba289\",\"playerId\":\"dev-test-player\",\"currency\":\"MMK\",\"channelCode\":\"KBZ\",\"amountMinor\":1000,\"status\":\"SUCCESS\",\"providerRef\":\"dep_f056d88be7ba4319be9f4860\",\"expiresAt\":\"2026-08-07 16:09:18\",\"cr"
+    },
+    {
+      "id": "withdraw.readiness",
+      "ok": true,
+      "detail": "{\"status\":\"NOT_PRODUCTION_READY\",\"productionReady\":false,\"code\":\"NOT_PRODUCTION_READY\",\"reason\":\"BR-005/006/007 placeholders or live provider secrets unset — fail closed\",\"testHarnessAllowed\":true,\"br"
+    },
+    {
+      "id": "withdraw.create",
+      "ok": true,
+      "detail": "{\"request\":{\"id\":\"a0a97aae-658c-4ad8-9f8e-b73286aa067e\",\"playerId\":\"dev-test-player\",\"currency\":\"MMK\",\"channelCode\":\"KBZ\",\"accountMasked\":\"RC-****TEST\",\"amountMinor\":5000,\"feeMinor\":0,\"expectedMinor\":5000,\"status\":\"UNDER_REVIEW\",\"riskFlag\":"
+    },
+    {
+      "id": "admin.login",
+      "ok": true,
+      "detail": "status=200 body={\"token\":\"5c9c4bcebdad6d26b2a648030dc3a0e0b2857b76bed6fad1cc4522527001c593\",\"admin\":{\"id\":\"9b4638a8-441f-4521-ac35-f48e0481dcdc\",\"username\":\"admin\",\"role\":\"SUPE"
+    },
+    {
+      "id": "admin.players.query",
+      "ok": true,
+      "detail": "{\"detailStatus\":200,\"listStatus\":200,\"detailJson\":{\"player\":{\"id\":\"dev-test-player\",\"walletAdapterRef\":\"wallet_dev-test-player\",\"currency\":\"MMK\",\"status\":\"ACTIVE\",\"createdAt\":\"2026-08-06 16:18:10\",\"updatedAt\":\"2026-08-06 16:18:10\",\"nickname\":\"Player_player\",\"avatar\":\"ab-avatar-01\",\"avatarId\":\"ab-ava"
+    },
+    {
+      "id": "admin.deposits",
+      "ok": true,
+      "detail": "status=200"
+    },
+    {
+      "id": "admin.withdrawals",
+      "ok": true,
+      "detail": "status=200"
+    },
+    {
+      "id": "admin.audit",
+      "ok": true,
+      "detail": "status=200"
+    },
+    {
+      "id": "headed.capture",
+      "ok": true,
+      "detail": "{\"status\":\"OK\",\"shots\":[\"01-lobby.png\",\"02-hub.png\",\"03-play.png\"]}"
+    }
+  ]
+}

@@ -1,0 +1,2 @@
+2c070684fc751b6451d3b28007d8ce3ae1c4ec580afde57fa00d1a5977c09d11  client/m5/game/symbol-life.ts
+55f8918aa2a257bd3619fec3b3eeaaf2a023a6f1146ecb16a70974ffa55bee16  client/m5/scene/buffalo.ts

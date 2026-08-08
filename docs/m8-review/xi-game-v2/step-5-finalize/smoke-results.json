@@ -1,0 +1,25 @@
+{
+  "base": "http://127.0.0.1:5173",
+  "results": [
+    {
+      "id": "lobby.navigate",
+      "ok": true,
+      "detail": "status=200"
+    },
+    {
+      "id": "lobby.brand",
+      "ok": true,
+      "detail": "加载中…\nVIP\nMMK\n加载中…\nUSDT\n暂不可用\n充值+\n消息\n公告\n设置\n语言\n西游戏\n西游神话 · 平台大厅\n西天取经 · 仙气长存\n西游记主题主视觉"
+    },
+    {
+      "id": "deposit.not_prod_banner",
+      "ok": true,
+      "detail": "NOT_PRODUCTION_READY — 充值/提现生产通道与限额未由业务签核；当前为可配置占位与测试入账（Fail Closed）。"
+    },
+    {
+      "id": "hub.navigate",
+      "ok": true,
+      "detail": "status=200"
+    }
+  ]
+}

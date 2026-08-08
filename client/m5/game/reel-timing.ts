@@ -6,18 +6,18 @@
  */
 
 /** Ordinary / Auto / Free Spin reel choreography total (includes bounce). */
-export const NORMAL_SPIN_TOTAL_MS = 10_000;
+export const NORMAL_SPIN_TOTAL_MS = 6_000;
 
 /**
  * Per-reel hard stop times (ms from animation start), before bounce.
- * Stagger: 8.0 → 9.7s; bounce finishes ~10.0s.
+ * Stagger: 4.2 → 5.8s; bounce finishes ~6.0s (±150ms).
  */
-export const NORMAL_REEL_STOP_MS = [8000, 8400, 8800, 9200, 9700] as const;
+export const NORMAL_REEL_STOP_MS = [4200, 4600, 5000, 5400, 5800] as const;
 
-/** Overshoot + settle after each reel reaches its stop (last reel → total ≈ 10s). */
-export const NORMAL_BOUNCE_MS = 300;
+/** Overshoot + settle after each reel reaches its stop (last reel → total ≈ 6.0s). */
+export const NORMAL_BOUNCE_MS = 200;
 
-/** Turbo keeps a fast independent cadence (not forced to 10s). */
+/** Turbo keeps a fast independent cadence (not forced to 6s). */
 export const TURBO_SPIN_TOTAL_MS = 2500;
 export const TURBO_REEL_STOP_MS = [1400, 1650, 1900, 2150, 2350] as const;
 export const TURBO_BOUNCE_MS = 150;
@@ -25,7 +25,7 @@ export const TURBO_BOUNCE_MS = 150;
 /**
  * Visual scroll intensity vs legacy short spins.
  * Higher → more strip cells traversed → faster perceived motion.
- * Tuned ~1.35× feel with long cruise window.
+ * Kept at 1.35; may tune 1.35–1.5 against headed phone if still slow.
  */
 export const SPIN_SPEED_MULT = 1.35;
 
@@ -69,10 +69,12 @@ export function spinStripDistance(reelIndex: number, speedMult: number): number 
 /**
  * Progress 0→1 along the strip with: quick accel → long fast cruise → late ease-out stop.
  * Position is always non-decreasing (downward scroll only).
+ *
+ * Tuned for ~6s normal: ~0.4s accel on first stop (4.2s), cruise, then late decel.
  */
 export function spinMotionProgress(tNorm: number): number {
   const t = Math.min(Math.max(tNorm, 0), 1);
-  const accelEnd = 0.075; // ~0.6s of an 8s stop
+  const accelEnd = 0.095; // ~0.4s of a 4.2s stop
   const decelStart = 0.78; // last ~22% of reel time decelerates
   if (t <= accelEnd) {
     const u = t / accelEnd;

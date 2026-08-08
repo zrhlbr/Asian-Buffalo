@@ -1,0 +1,17 @@
+﻿02593eec7e71527cc63e2800b6e49e4ecc196910c684729a6f13f971ec80907b  client/xi-lobby/play-shell.tsx
+9350c99a5d66f7c8d0f766f0f7c33a03028fa49cc215f2dd2bdb9b57e60da3af  app/xi/bull-demon-king/play/page.tsx
+49cdfc1599b01ccb245bac574a7bedb0d43a34b038ec282630e1f3f5b7651a95  app/xi/bull-demon-king/play/layout.tsx
+9f3b8757d8b40a02bd3ddb604ebf06286a5f7112ec8f1a2a8f1443e4cbdcf988  client/xi-lobby/i18n.ts
+2b260187320a6003ec7e890871580e70b3106f56241c89c74124061264413be7  client/xi-lobby/lobby.css
+858a27ccaa424bb5dca845b514c042649d450f1eed547c84346e3bbed446ec88  client/m5/i18n.ts
+902b5116b9f1ab99f32bda1b507f389490ae9c4497781a0ae03932dae4024d86  client/m5/ui/hud.ts
+1c20d84e5676d8bf648be635f268ee76fb40c759544f9a3994a1ad39c512a291  client/m5/game/symbol-life.ts
+bdca52419fcc0d9e976fb752651395d63434eefe5674553e35afdb503c7a2e12  client/m5/win-presentation.ts
+b8a6098b4e4a32aca14432796d9170c91b3a6f747a3296713d0e575cd5500d17  docs/m8-review/xi-game-v2/step-3-play/MODULE_IMPACT_ANALYSIS.md
+5e1ab1c24fcdfd84bd934831b6da474a378462ac4d40231d738f4e9317f145e2  docs/m8-review/xi-game-v2/step-3-play/STEP3_E2E_REPORT.md
+d1ba4c4ebe98149f1d4023f1221d02e6cb78def204b8a9e798f780f14f7ebe97  docs/m8-review/xi-game-v2/step-3-play/I18N.md
+5159694c60d6b80a514c319dccce3f4dbac8d52371a556f21a2bbcb37a5aebb4  docs/m8-review/xi-game-v2/step-3-play/PERFORMANCE.md
+9c70abdfaa6da6bc59c0c27470c7e5e169adc40ec5207f4eee9af226d432053e  docs/m8-review/xi-game-v2/step-3-play/FILE_LIST.md
+51e1a101b0366cc9d2671cb5ce95d16f8645b13ebf8fb9a6b8a5ee9b1b9a1a64  docs/m8-review/xi-game-v2/step-3-play/REVIEW_PATCH.md
+77715a70c0cea06ea16e1767c9b9dde84ef9d8c274c0128e635e2a9d433e7fff  docs/m8-review/xi-game-v2/step-3-play/ACCEPTANCE_NOTE.md
+14fe811ccd0d3a6e9ac2fa22290fbca664a61678ca775eab70b29ce825b34524  docs/m8-review/xi-game-v2/step-3-play/smoke-results.json

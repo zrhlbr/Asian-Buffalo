@@ -1,0 +1,2887 @@
+diff --git a/client/xi-lobby/player-center.tsx b/client/xi-lobby/player-center.tsx
+new file mode 100644
+--- /dev/null
++++ b/client/xi-lobby/player-center.tsx
+@@ -0,0 +1,479 @@
++"use client";
++
++/**
++ * 《西游戏》Player Center（我的）— commercial Me tab.
++ * Presentation only; reuses profile/wallet/VIP/commerce/auth helpers.
++ * Never invents balances, jackpots, or security logs.
++ */
++
++import { useEffect, useState } from "react";
++import {
++  fetchWalletSnapshot,
++  formatMinor,
++  type LoadState,
++  type LobbyBalanceView,
++  type LobbyProfileView,
++} from "./api.ts";
++import { RecordsPanel, WalletPanel } from "./commerce-panels.tsx";
++import type { LobbyLang } from "./i18n.ts";
++import { LOBBY_LANGS, saveLobbyLang } from "./i18n.ts";
++import { navigateXi, XI_ROUTES } from "./nav.ts";
++import "./player-center.css";
++
++type TFn = (key: string) => string;
++
++type ProfileState = LoadState<LobbyProfileView>;
++type BalanceState = LoadState<LobbyBalanceView>;
++
++type LocalSheet =
++  | null
++  | "ledger"
++  | "records"
++  | "security"
++  | "help"
++  | "about"
++  | "cs";
++
++const LANG_LABEL: Record<LobbyLang, string> = {
++  "zh-CN": "中文",
++  "my-MM": "မြန်မာ",
++  en: "EN",
++};
++
++function shortPlayerId(raw: string | null | undefined): string {
++  if (!raw) return "————";
++  const digits = raw.replace(/\D/g, "");
++  if (digits.length >= 6) return digits.slice(-6);
++  if (raw.length >= 6) return raw.slice(-6);
++  return raw;
++}
++
++export type PlayerCenterProps = {
++  t: TFn;
++  lang: LobbyLang;
++  profile: ProfileState;
++  balance: BalanceState;
++  hasAuthSession: boolean;
++  onOpenProfile: () => void;
++  onOpenVip: () => void;
++  onOpenDeposit: () => void;
++  onOpenWithdraw: () => void;
++  onOpenActivity: () => void;
++  onOpenCheckin: () => void;
++  onOpenRankings: () => void;
++  onOpenComingSoon: (titleKey: string) => void;
++  onLogout: () => void;
++};
++
++export function PlayerCenter({
++  t,
++  lang,
++  profile,
++  balance,
++  hasAuthSession,
++  onOpenProfile,
++  onOpenVip,
++  onOpenDeposit,
++  onOpenWithdraw,
++  onOpenActivity,
++  onOpenCheckin,
++  onOpenRankings,
++  onOpenComingSoon,
++  onLogout,
++}: PlayerCenterProps) {
++  const [sheet, setSheet] = useState<LocalSheet>(null);
++  const [walletSnap, setWalletSnap] = useState<
++    Awaited<ReturnType<typeof fetchWalletSnapshot>>
++  >({ status: "loading" });
++
++  const balanceTick =
++    balance.status === "ok" ? balance.data.balanceMinor : balance.status;
++
++  useEffect(() => {
++    let alive = true;
++    void fetchWalletSnapshot().then((r) => {
++      if (alive) setWalletSnap(r);
++    });
++    return () => {
++      alive = false;
++    };
++  }, [balanceTick]);
++
++  const nickname =
++    profile.status === "ok" && profile.data.nickname
++      ? profile.data.nickname
++      : profile.status === "loading"
++        ? t("lobby.loading")
++        : t("lobby.profile.guest");
++
++  const playerIdLabel =
++    profile.status === "ok"
++      ? shortPlayerId(profile.data.playerId)
++      : profile.status === "loading"
++        ? "······"
++        : "————";
++
++  const vipLabel =
++    profile.status === "ok" && profile.data.vipLevel != null
++      ? `${t("lobby.vip")} ${profile.data.vipLevel}`
++      : t("lobby.vip");
++
++  const mmkCurrency =
++    balance.status === "ok" ? balance.data.currency : t("lobby.balance.mmk");
++  const mmkText =
++    balance.status === "loading"
++      ? t("lobby.loading")
++      : balance.status === "error"
++        ? t("lobby.wallet.error")
++        : formatMinor(balance.data.balanceMinor, balance.data.currency);
++
++  const usdtSupported =
++    walletSnap.status === "ok" ? walletSnap.data.usdtSupported : false;
++  const usdtText =
++    walletSnap.status === "loading"
++      ? t("lobby.loading")
++      : usdtSupported
++        ? t("lobby.commerce.usdtLive")
++        : t("lobby.unavailable");
++
++  /** Total: only real MMK amounts — never invent USDT into a fake sum. */
++  const totalText =
++    balance.status === "loading"
++      ? t("lobby.loading")
++      : balance.status === "error"
++        ? t("lobby.wallet.error")
++        : `${formatMinor(balance.data.balanceMinor, balance.data.currency)} ${balance.data.currency}`;
++
++  const avatarStyle =
++    profile.status === "ok" && profile.data.avatarUrl
++      ? {
++          backgroundImage: `url(${profile.data.avatarUrl})`,
++          backgroundSize: "cover" as const,
++        }
++      : undefined;
++
++  function openSheet(next: LocalSheet) {
++    setSheet(next);
++  }
++
++  function closeSheet() {
++    setSheet(null);
++  }
++
++  function onChangePassword() {
++    if (!hasAuthSession) {
++      navigateXi({ href: XI_ROUTES.login, from: "lobby", to: "lobby" });
++      return;
++    }
++    navigateXi({ href: XI_ROUTES.forgot, from: "lobby", to: "lobby" });
++  }
++
++  return (
++    <section
++      className="xi-pc"
++      data-testid="xi-player-center"
++      data-xi-player-center="1"
++      aria-label={t("lobby.me.title")}
++    >
++      {/* Top: identity */}
++      <header className="xi-pc-hero" data-testid="xi-pc-hero">
++        <button
++          type="button"
++          className="xi-pc-avatar"
++          data-testid="xi-pc-avatar"
++          aria-label={t("lobby.panel.me")}
++          onClick={onOpenProfile}
++          style={avatarStyle}
++        />
++        <div className="xi-pc-id-block">
++          <button
++            type="button"
++            className="xi-pc-nick"
++            data-testid="xi-pc-nick"
++            onClick={onOpenProfile}
++          >
++            {nickname}
++          </button>
++          <span className="xi-pc-uid" data-testid="xi-pc-uid">
++            UID {playerIdLabel}
++          </span>
++          <button
++            type="button"
++            className="xi-pc-vip"
++            data-testid="xi-pc-vip"
++            onClick={onOpenVip}
++          >
++            {vipLabel}
++          </button>
++        </div>
++        {profile.status === "error" ? (
++          <p className="xi-pc-hint">{t("lobby.profile.error")}</p>
++        ) : null}
++      </header>
++
++      {/* Mid: wallet */}
++      <div className="xi-pc-wallet" data-testid="xi-pc-wallet">
++        <div className="xi-pc-wallet-head">
++          <h2 className="xi-pc-section-title">{t("lobby.me.wallet")}</h2>
++          <span className="xi-pc-total" data-testid="xi-pc-total">
++            {t("lobby.me.total")}: {totalText}
++          </span>
++        </div>
++        <div className="xi-pc-wallet-row">
++          <div
++            className={`xi-pc-coin${balance.status !== "ok" ? (balance.status === "loading" ? " is-loading" : " is-error") : ""}`}
++            data-testid="xi-pc-mmk"
++          >
++            <span className="xi-pc-coin-code">{mmkCurrency}</span>
++            <strong className="xi-pc-coin-amt">{mmkText}</strong>
++          </div>
++          <div
++            className={`xi-pc-coin is-usdt${!usdtSupported ? " is-pending" : ""}`}
++            data-testid="xi-pc-usdt"
++            title={
++              usdtSupported
++                ? undefined
++                : t("lobby.wallet.usdt.pending")
++            }
++          >
++            <span className="xi-pc-coin-code">{t("lobby.balance.usdt")}</span>
++            <strong className="xi-pc-coin-amt">{usdtText}</strong>
++          </div>
++        </div>
++        <div className="xi-pc-shortcuts" data-testid="xi-pc-wallet-shortcuts">
++          <button type="button" className="xi-pc-sc" onClick={onOpenDeposit}>
++            {t("lobby.feat.recharge")}
++          </button>
++          <button type="button" className="xi-pc-sc" onClick={onOpenWithdraw}>
++            {t("lobby.feat.withdraw")}
++          </button>
++          <button
++            type="button"
++            className="xi-pc-sc"
++            data-testid="xi-pc-ledger"
++            onClick={() => openSheet("ledger")}
++          >
++            {t("lobby.me.ledger")}
++          </button>
++          <button
++            type="button"
++            className="xi-pc-sc"
++            data-testid="xi-pc-records"
++            onClick={() => openSheet("records")}
++          >
++            {t("lobby.me.records")}
++          </button>
++        </div>
++      </div>
++
++      {/* Group 2: activity */}
++      <div className="xi-pc-group" data-testid="xi-pc-group-activity">
++        <h2 className="xi-pc-section-title">{t("lobby.me.group.activity")}</h2>
++        <div className="xi-pc-list">
++          <button type="button" className="xi-pc-row" onClick={onOpenActivity}>
++            <span>{t("lobby.feat.activity")}</span>
++            <span className="xi-pc-chev" aria-hidden />
++          </button>
++          <button type="button" className="xi-pc-row" onClick={onOpenCheckin}>
++            <span>{t("lobby.feat.checkin")}</span>
++            <span className="xi-pc-chev" aria-hidden />
++          </button>
++          <button
++            type="button"
++            className="xi-pc-row"
++            data-testid="xi-pc-coupons"
++            onClick={() => onOpenComingSoon("lobby.me.coupons")}
++          >
++            <span>{t("lobby.me.coupons")}</span>
++            <span className="xi-pc-badge">{t("lobby.comingSoon")}</span>
++          </button>
++          <button type="button" className="xi-pc-row" onClick={onOpenRankings}>
++            <span>{t("lobby.feat.rankings")}</span>
++            <span className="xi-pc-chev" aria-hidden />
++          </button>
++        </div>
++      </div>
++
++      {/* Group 3: account / support */}
++      <div className="xi-pc-group" data-testid="xi-pc-group-account">
++        <h2 className="xi-pc-section-title">{t("lobby.me.group.account")}</h2>
++        <div className="xi-pc-list">
++          <button
++            type="button"
++            className="xi-pc-row"
++            data-testid="xi-pc-security"
++            onClick={() => openSheet("security")}
++          >
++            <span>{t("lobby.me.security")}</span>
++            <span className="xi-pc-chev" aria-hidden />
++          </button>
++          <div className="xi-pc-row xi-pc-lang-row" data-testid="xi-pc-language">
++            <span>{t("lobby.language")}</span>
++            <div className="xi-pc-lang-toggle" role="group" aria-label={t("lobby.language")}>
++              {LOBBY_LANGS.map((code) => (
++                <button
++                  key={code}
++                  type="button"
++                  className={`xi-pc-lang-btn${lang === code ? " is-active" : ""}`}
++                  data-testid={`xi-pc-lang-${code}`}
++                  onClick={() => saveLobbyLang(code)}
++                >
++                  {LANG_LABEL[code]}
++                </button>
++              ))}
++            </div>
++          </div>
++          <button
++            type="button"
++            className="xi-pc-row"
++            data-testid="xi-pc-cs"
++            onClick={() => openSheet("cs")}
++          >
++            <span>{t("lobby.feat.cs")}</span>
++            <span className="xi-pc-badge">{t("lobby.comingSoon")}</span>
++          </button>
++          <button
++            type="button"
++            className="xi-pc-row"
++            data-testid="xi-pc-help"
++            onClick={() => openSheet("help")}
++          >
++            <span>{t("lobby.me.help")}</span>
++            <span className="xi-pc-chev" aria-hidden />
++          </button>
++          <button
++            type="button"
++            className="xi-pc-row"
++            data-testid="xi-pc-about"
++            onClick={() => openSheet("about")}
++          >
++            <span>{t("lobby.me.about")}</span>
++            <span className="xi-pc-chev" aria-hidden />
++          </button>
++        </div>
++      </div>
++
++      {/* Bottom: logout */}
++      <div className="xi-pc-logout-wrap">
++        {hasAuthSession ? (
++          <button
++            type="button"
++            className="xi-pc-logout"
++            data-testid="xi-pc-logout"
++            onClick={onLogout}
++          >
++            {t("lobby.auth.logout")}
++          </button>
++        ) : (
++          <div className="xi-pc-auth-entry" data-testid="xi-pc-auth-entry">
++            <button
++              type="button"
++              className="xi-pc-logout is-secondary"
++              onClick={() =>
++                navigateXi({ href: XI_ROUTES.login, from: "lobby", to: "lobby" })
++              }
++            >
++              {t("lobby.auth.login")}
++            </button>
++            <button
++              type="button"
++              className="xi-pc-logout"
++              onClick={() =>
++                navigateXi({ href: XI_ROUTES.register, from: "lobby", to: "lobby" })
++              }
++            >
++              {t("lobby.auth.register")}
++            </button>
++          </div>
++        )}
++      </div>
++
++      {sheet ? (
++        <div
++          className="xi-pc-sheet-backdrop"
++          role="presentation"
++          data-testid="xi-pc-sheet"
++          onClick={(e) => {
++            if (e.target === e.currentTarget) closeSheet();
++          }}
++        >
++          <div className="xi-pc-sheet" role="dialog" aria-modal="true">
++            {sheet === "ledger" && (
++              <>
++                <h2>{t("lobby.me.ledger")}</h2>
++                <WalletPanel t={t} />
++              </>
++            )}
++            {sheet === "records" && (
++              <>
++                <h2>{t("lobby.me.records")}</h2>
++                <RecordsPanel t={t} />
++              </>
++            )}
++            {sheet === "security" && (
++              <>
++                <h2>{t("lobby.me.security")}</h2>
++                <p className="xi-pc-sheet-hint">{t("lobby.me.security.hint")}</p>
++                <div className="xi-pc-list">
++                  <button
++                    type="button"
++                    className="xi-pc-row"
++                    data-testid="xi-pc-change-password"
++                    onClick={onChangePassword}
++                  >
++                    <span>{t("lobby.me.security.password")}</span>
++                    <span className="xi-pc-chev" aria-hidden />
++                  </button>
++                  {(
++                    [
++                      ["devices", "lobby.me.security.devices"],
++                      ["loginHistory", "lobby.me.security.loginHistory"],
++                      ["phone", "lobby.me.security.phone"],
++                      ["email", "lobby.me.security.email"],
++                      ["kyc", "lobby.me.security.kyc"],
++                      ["otp", "lobby.me.security.otp"],
++                    ] as const
++                  ).map(([id, key]) => (
++                    <div
++                      key={id}
++                      className="xi-pc-row is-reserved"
++                      data-testid={`xi-pc-security-${id}`}
++                    >
++                      <span>{t(key)}</span>
++                      <span className="xi-pc-badge">{t("lobby.me.reserved")}</span>
++                    </div>
++                  ))}
++                </div>
++              </>
++            )}
++            {sheet === "cs" && (
++              <>
++                <h2>{t("lobby.feat.cs")}</h2>
++                <p className="xi-pc-sheet-hint">{t("lobby.me.cs.body")}</p>
++                <p className="xi-pc-badge-inline">{t("lobby.comingSoon")}</p>
++              </>
++            )}
++            {sheet === "help" && (
++              <>
++                <h2>{t("lobby.me.help")}</h2>
++                <p className="xi-pc-sheet-hint">{t("lobby.me.help.body")}</p>
++              </>
++            )}
++            {sheet === "about" && (
++              <>
++                <h2>{t("lobby.me.about")}</h2>
++                <p className="xi-pc-sheet-hint">{t("lobby.me.about.body")}</p>
++                <p className="xi-pc-sheet-hint">{t("lobby.brand")}</p>
++              </>
++            )}
++            <div className="xi-pc-sheet-actions">
++              <button type="button" className="xi-pc-sc" onClick={closeSheet}>
++                {t("lobby.close")}
++              </button>
++            </div>
++          </div>
++        </div>
++      ) : null}
++    </section>
++  );
++}
+diff --git a/client/xi-lobby/player-center.css b/client/xi-lobby/player-center.css
+new file mode 100644
+--- /dev/null
++++ b/client/xi-lobby/player-center.css
+@@ -0,0 +1,388 @@
++/* Player Center（我的）— scoped mythic black-gold; does not restyle Lobby home/Hub/Play */
++
++.xi-pc {
++  --pc-ink: #0a0d14;
++  --pc-panel: rgba(16, 20, 30, 0.92);
++  --pc-gold: #e8c56a;
++  --pc-gold-dim: rgba(232, 197, 106, 0.22);
++  --pc-mist: rgba(232, 220, 190, 0.9);
++  --pc-muted: rgba(232, 220, 190, 0.55);
++  display: flex;
++  flex-direction: column;
++  gap: 0.75rem;
++  padding: 0.15rem 0 1.25rem;
++  min-width: 0;
++}
++
++.xi-pc-hero {
++  display: flex;
++  flex-wrap: wrap;
++  align-items: center;
++  gap: 0.75rem;
++  padding: 0.9rem 0.95rem;
++  border-radius: 14px;
++  border: 1px solid var(--pc-gold-dim);
++  background:
++    linear-gradient(145deg, rgba(40, 32, 18, 0.55) 0%, transparent 42%),
++    linear-gradient(180deg, rgba(22, 26, 38, 0.95), var(--pc-panel));
++  box-shadow: inset 0 1px 0 rgba(232, 197, 106, 0.12);
++}
++
++.xi-pc-avatar {
++  width: 64px;
++  height: 64px;
++  min-width: 64px;
++  border-radius: 50%;
++  border: 2px solid var(--pc-gold);
++  background:
++    radial-gradient(circle at 35% 30%, #3a455c 0%, #141a26 70%);
++  cursor: pointer;
++  padding: 0;
++}
++
++.xi-pc-id-block {
++  display: flex;
++  flex-direction: column;
++  align-items: flex-start;
++  gap: 0.28rem;
++  min-width: 0;
++  flex: 1;
++}
++
++.xi-pc-nick {
++  border: 0;
++  background: transparent;
++  padding: 0;
++  color: var(--pc-mist);
++  font-family: var(--xi-font-display, "Cinzel", Georgia, serif);
++  font-size: 1.15rem;
++  letter-spacing: 0.02em;
++  text-align: left;
++  cursor: pointer;
++  max-width: 100%;
++  overflow: hidden;
++  text-overflow: ellipsis;
++  white-space: nowrap;
++}
++
++.xi-pc-uid {
++  color: var(--pc-muted);
++  font-size: 0.78rem;
++  font-variant-numeric: tabular-nums;
++}
++
++.xi-pc-vip {
++  border: 1px solid var(--pc-gold-dim);
++  border-radius: 999px;
++  padding: 0.18rem 0.65rem;
++  background: linear-gradient(180deg, rgba(184, 137, 45, 0.35), rgba(20, 16, 10, 0.55));
++  color: var(--pc-gold);
++  font-size: 0.72rem;
++  font-weight: 700;
++  letter-spacing: 0.04em;
++  cursor: pointer;
++}
++
++.xi-pc-hint {
++  width: 100%;
++  margin: 0;
++  color: #e8a090;
++  font-size: 0.78rem;
++}
++
++.xi-pc-wallet,
++.xi-pc-group {
++  border-radius: 14px;
++  border: 1px solid var(--pc-gold-dim);
++  background: var(--pc-panel);
++  padding: 0.8rem 0.85rem;
++}
++
++.xi-pc-wallet-head {
++  display: flex;
++  flex-wrap: wrap;
++  align-items: baseline;
++  justify-content: space-between;
++  gap: 0.35rem 0.75rem;
++  margin-bottom: 0.55rem;
++}
++
++.xi-pc-section-title {
++  margin: 0;
++  font-family: var(--xi-font-display, "Cinzel", Georgia, serif);
++  font-size: 0.95rem;
++  color: var(--pc-gold);
++  font-weight: 600;
++}
++
++.xi-pc-total {
++  color: var(--pc-muted);
++  font-size: 0.75rem;
++  font-variant-numeric: tabular-nums;
++}
++
++.xi-pc-wallet-row {
++  display: grid;
++  grid-template-columns: 1fr 1fr;
++  gap: 0.5rem;
++}
++
++.xi-pc-coin {
++  display: flex;
++  flex-direction: column;
++  gap: 0.2rem;
++  padding: 0.55rem 0.65rem;
++  border-radius: 10px;
++  border: 1px solid var(--pc-gold-dim);
++  background: linear-gradient(180deg, rgba(30, 36, 50, 0.9), rgba(12, 14, 20, 0.9));
++  min-width: 0;
++}
++
++.xi-pc-coin.is-pending .xi-pc-coin-amt,
++.xi-pc-coin.is-loading .xi-pc-coin-amt,
++.xi-pc-coin.is-error .xi-pc-coin-amt {
++  color: var(--pc-muted);
++  font-weight: 500;
++  font-size: 0.82rem;
++}
++
++.xi-pc-coin-code {
++  color: var(--pc-muted);
++  font-size: 0.7rem;
++  letter-spacing: 0.06em;
++}
++
++.xi-pc-coin-amt {
++  color: var(--pc-mist);
++  font-size: 1.05rem;
++  font-variant-numeric: tabular-nums;
++  overflow: hidden;
++  text-overflow: ellipsis;
++  white-space: nowrap;
++}
++
++.xi-pc-shortcuts {
++  display: grid;
++  grid-template-columns: repeat(4, minmax(0, 1fr));
++  gap: 0.4rem;
++  margin-top: 0.65rem;
++}
++
++.xi-pc-sc {
++  min-height: 40px;
++  border-radius: 10px;
++  border: 1px solid var(--pc-gold-dim);
++  background: linear-gradient(180deg, rgba(48, 40, 22, 0.55), rgba(16, 18, 26, 0.85));
++  color: var(--pc-mist);
++  font-size: 0.72rem;
++  padding: 0.35rem 0.25rem;
++  cursor: pointer;
++}
++
++.xi-pc-sc:active {
++  transform: translateY(1px);
++  filter: brightness(1.08);
++}
++
++.xi-pc-group .xi-pc-section-title {
++  margin-bottom: 0.45rem;
++}
++
++.xi-pc-list {
++  display: flex;
++  flex-direction: column;
++  gap: 0.2rem;
++}
++
++.xi-pc-row {
++  display: flex;
++  align-items: center;
++  justify-content: space-between;
++  gap: 0.5rem;
++  width: 100%;
++  min-height: 44px;
++  padding: 0.45rem 0.35rem;
++  border: 0;
++  border-bottom: 1px solid rgba(232, 197, 106, 0.1);
++  background: transparent;
++  color: var(--pc-mist);
++  font-size: 0.88rem;
++  text-align: left;
++  cursor: pointer;
++}
++
++.xi-pc-list > .xi-pc-row:last-child {
++  border-bottom: 0;
++}
++
++.xi-pc-row.is-reserved {
++  cursor: default;
++  opacity: 0.85;
++}
++
++.xi-pc-chev {
++  width: 0.45rem;
++  height: 0.45rem;
++  border-right: 1.5px solid var(--pc-gold);
++  border-top: 1.5px solid var(--pc-gold);
++  transform: rotate(45deg);
++  opacity: 0.7;
++  flex-shrink: 0;
++}
++
++.xi-pc-badge,
++.xi-pc-badge-inline {
++  flex-shrink: 0;
++  border: 1px solid var(--pc-gold-dim);
++  border-radius: 999px;
++  padding: 0.12rem 0.45rem;
++  font-size: 0.65rem;
++  color: var(--pc-gold);
++  letter-spacing: 0.02em;
++}
++
++.xi-pc-badge-inline {
++  display: inline-block;
++  margin-top: 0.35rem;
++}
++
++.xi-pc-lang-row {
++  cursor: default;
++}
++
++.xi-pc-lang-toggle {
++  display: inline-flex;
++  gap: 0.25rem;
++  flex-wrap: wrap;
++  justify-content: flex-end;
++}
++
++.xi-pc-lang-btn {
++  min-height: 32px;
++  min-width: 2.4rem;
++  padding: 0.2rem 0.4rem;
++  border-radius: 8px;
++  border: 1px solid var(--pc-gold-dim);
++  background: rgba(10, 12, 18, 0.65);
++  color: var(--pc-muted);
++  font-size: 0.7rem;
++  cursor: pointer;
++}
++
++.xi-pc-lang-btn.is-active {
++  color: var(--pc-ink);
++  background: linear-gradient(180deg, #f0d78a, #b8892d);
++  border-color: var(--pc-gold);
++  font-weight: 700;
++}
++
++.xi-pc-logout-wrap {
++  padding: 0.35rem 0 0.15rem;
++}
++
++.xi-pc-auth-entry {
++  display: grid;
++  grid-template-columns: 1fr 1fr;
++  gap: 0.5rem;
++}
++
++.xi-pc-logout {
++  width: 100%;
++  min-height: 46px;
++  border-radius: 12px;
++  border: 1px solid rgba(196, 60, 44, 0.45);
++  background: linear-gradient(180deg, rgba(80, 28, 22, 0.75), rgba(28, 12, 12, 0.92));
++  color: #f0d0c8;
++  font-size: 0.92rem;
++  letter-spacing: 0.04em;
++  cursor: pointer;
++}
++
++.xi-pc-logout.is-secondary {
++  border-color: var(--pc-gold-dim);
++  background: linear-gradient(180deg, rgba(40, 36, 28, 0.7), rgba(16, 18, 26, 0.9));
++  color: var(--pc-mist);
++}
++
++.xi-pc-sheet-backdrop {
++  position: fixed;
++  inset: 0;
++  z-index: 80;
++  display: flex;
++  align-items: flex-end;
++  justify-content: center;
++  padding: 0.75rem;
++  background: rgba(4, 6, 10, 0.72);
++}
++
++.xi-pc-sheet {
++  width: min(100%, 420px);
++  max-height: min(82vh, 640px);
++  overflow: auto;
++  border-radius: 16px 16px 12px 12px;
++  border: 1px solid var(--pc-gold-dim);
++  background: linear-gradient(180deg, #1a2030, #0c1018);
++  padding: 1rem 0.95rem 0.85rem;
++  color: var(--pc-mist);
++  box-shadow: 0 -8px 28px rgba(0, 0, 0, 0.45);
++}
++
++.xi-pc-sheet h2 {
++  margin: 0 0 0.65rem;
++  font-family: var(--xi-font-display, "Cinzel", Georgia, serif);
++  font-size: 1.05rem;
++  color: var(--pc-gold);
++}
++
++.xi-pc-sheet-hint {
++  margin: 0 0 0.65rem;
++  color: var(--pc-muted);
++  font-size: 0.84rem;
++  line-height: 1.45;
++}
++
++.xi-pc-sheet-actions {
++  display: flex;
++  justify-content: flex-end;
++  margin-top: 0.85rem;
++}
++
++/* Mobile 320–430 */
++@media (max-width: 430px) {
++  .xi-pc-shortcuts {
++    grid-template-columns: repeat(2, minmax(0, 1fr));
++  }
++
++  .xi-pc-avatar {
++    width: 56px;
++    height: 56px;
++    min-width: 56px;
++  }
++
++  .xi-pc-nick {
++    font-size: 1.05rem;
++  }
++
++  .xi-pc-coin-amt {
++    font-size: 0.95rem;
++  }
++}
++
++@media (max-width: 340px) {
++  .xi-pc-wallet-row {
++    grid-template-columns: 1fr;
++  }
++
++  .xi-pc-lang-btn {
++    min-width: 2.1rem;
++    font-size: 0.65rem;
++  }
++}
++
++/* Prefer reduced motion */
++@media (prefers-reduced-motion: reduce) {
++  .xi-pc-sc:active,
++  .xi-pc-logout:active {
++    transform: none;
++  }
++}
+diff --git a/client/xi-lobby/lobby-app.tsx b/client/xi-lobby/lobby-app.tsx
+new file mode 100644
+--- /dev/null
++++ b/client/xi-lobby/lobby-app.tsx
+@@ -0,0 +1,1088 @@
++"use client";
++
++import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
++import type { LobbyCatalogResponse, LobbyGameCard } from "../../lib/lobby-catalog.ts";
++import {
++  clearLobbyCaches,
++  fetchAnnouncements,
++  fetchBalance,
++  fetchLobbyCatalog,
++  fetchProfile,
++  formatMinor,
++  peekCachedBalance,
++  peekCachedProfile,
++  type LoadState,
++  type LobbyBalanceView,
++  type LobbyProfileView,
++} from "./api.ts";
++import { authLogout } from "./auth-api.ts";
++import {
++  ActivityPanel,
++  CheckinPanel,
++  DepositPanel,
++  RankingsPanel,
++  VipCenterPanel,
++  WalletPanel,
++  WithdrawPanel,
++} from "./commerce-panels.tsx";
++import {
++  LOBBY_LANGS,
++  getLobbyLangServerSnapshot,
++  loadLobbyLang,
++  saveLobbyLang,
++  subscribeLobbyLang,
++  tLobby,
++  type LobbyLang,
++} from "./i18n.ts";
++import { consumeEnterTransition, navigateXi, XI_ROUTES } from "./nav.ts";
++import {
++  heroAvifSrcSet,
++  heroSizes,
++  heroSources,
++  heroSrcSet,
++  particleCountForTier,
++  resolveTier,
++} from "./quality.ts";
++import { PlayerCenter } from "./player-center.tsx";
++import { ProgressiveHeroImage, QualitySettingsPanel } from "./quality-panel.tsx";
++import {
++  getXiHydratedServerSnapshot,
++  getXiHydratedSnapshot,
++  getXiQualityServerSnapshot,
++  getXiQualitySnapshot,
++  setXiQualitySettings,
++  subscribeXiHydrated,
++  subscribeXiQuality,
++} from "./ui-store.ts";
++import "./lobby.css";
++
++type NavId = "home" | "games" | "wallet" | "activity" | "me";
++type ModalKind =
++  | null
++  | "pending"
++  | "announcements"
++  | "messages"
++  | "settings"
++  | "coming_soon"
++  | "vip"
++  | "profile"
++  | "deposit"
++  | "withdraw"
++  | "checkin"
++  | "activity"
++  | "rankings";
++
++type FeatureId =
++  | "recharge"
++  | "withdraw"
++  | "activity"
++  | "vip"
++  | "rankings"
++  | "announcements"
++  | "cs";
++
++/** Reference order: 充值/提现/活动中心/VIP中心/排行榜/公告/客服 */
++const QUICK_FEATURES: FeatureId[] = [
++  "recharge",
++  "withdraw",
++  "activity",
++  "vip",
++  "rankings",
++  "announcements",
++  "cs",
++];
++
++/** Always-visible lang labels (reference: 中文 / မြန်မာ / EN). */
++const LANG_TOGGLE_ORDER: LobbyLang[] = ["zh-CN", "my-MM", "en"];
++const LANG_LABEL: Record<LobbyLang, string> = {
++  "zh-CN": "中文",
++  "my-MM": "မြန်မာ",
++  en: "EN",
++};
++
++type RecGame = {
++  id: string;
++  titleKey: string;
++  status: "live" | "coming_soon";
++  href?: string;
++  hot?: boolean;
++  art: "bdk" | "dragon" | "phoenix" | "wealth" | "panda";
++  /** Only set when a real jackpot feed exists — never fake. */
++  jackpotDisplay?: string | null;
++  /** Eager first card; others lazy. */
++  imageSrc?: string;
++};
++
++/** Zhao reference recommended row — presentation only (no catalog API change). */
++const RECOMMENDED_GAMES: RecGame[] = [
++  {
++    id: "bdk",
++    titleKey: "lobby.games.bdk.title",
++    status: "live",
++    href: "/xi/bull-demon-king",
++    hot: true,
++    art: "bdk",
++    jackpotDisplay: null,
++    imageSrc: "/xi/heroes/bdk-mobile.webp",
++  },
++  {
++    id: "dragonking",
++    titleKey: "lobby.games.dragonking.title",
++    status: "coming_soon",
++    art: "dragon",
++    jackpotDisplay: null,
++  },
++  {
++    id: "phoenix",
++    titleKey: "lobby.games.phoenix.title",
++    status: "coming_soon",
++    art: "phoenix",
++    jackpotDisplay: null,
++  },
++  {
++    id: "caishen",
++    titleKey: "lobby.games.caishen.title",
++    status: "coming_soon",
++    art: "wealth",
++    jackpotDisplay: null,
++  },
++  {
++    id: "wulinpanda",
++    titleKey: "lobby.games.wulinpanda.title",
++    status: "coming_soon",
++    art: "panda",
++    jackpotDisplay: null,
++  },
++];
++
++type FeatMotif = "chest" | "pouch" | "gift" | "crown" | "trophy" | "scroll" | "headset";
++
++function featMotif(id: FeatureId): FeatMotif {
++  switch (id) {
++    case "recharge":
++      return "chest";
++    case "withdraw":
++      return "pouch";
++    case "activity":
++      return "gift";
++    case "vip":
++      return "crown";
++    case "rankings":
++      return "trophy";
++    case "announcements":
++      return "scroll";
++    case "cs":
++      return "headset";
++  }
++}
++
++function filterGames(games: LobbyGameCard[], cat: string): LobbyGameCard[] {
++  if (cat === "recommended") {
++    return games.filter(
++      (g) => g.badges.includes("recommended") || g.category === "recommended",
++    );
++  }
++  if (cat === "hot") return games.filter((g) => g.badges.includes("hot"));
++  if (cat === "new") return games.filter((g) => g.badges.includes("new"));
++  if (cat === "jackpot") {
++    return games.filter(
++      (g) => g.badges.includes("jackpot") || g.category === "jackpot",
++    );
++  }
++  if (cat === "slots") {
++    return games.filter((g) => g.category === "slots" || g.id === "bdk");
++  }
++  return games;
++}
++
++function shortPlayerId(raw: string | null | undefined): string {
++  if (!raw) return "————";
++  const digits = raw.replace(/\D/g, "");
++  if (digits.length >= 6) return digits.slice(-6);
++  if (raw.length >= 6) return raw.slice(-6);
++  return raw;
++}
++
++export default function LobbyApp() {
++  const lang = useSyncExternalStore(
++    subscribeLobbyLang,
++    loadLobbyLang,
++    getLobbyLangServerSnapshot,
++  );
++  const [nav, setNav] = useState<NavId>("home");
++  const [cat, setCat] = useState("recommended");
++  const [modal, setModal] = useState<ModalKind>(null);
++  const [pendingKey, setPendingKey] = useState("lobby.pending.title");
++  const [comingTitleKey, setComingTitleKey] = useState("lobby.comingSoon");
++  const [catalog, setCatalog] = useState<LoadState<LobbyCatalogResponse>>({
++    status: "loading",
++  });
++  const [profile, setProfile] = useState<
++    LoadState<{
++      nickname: string;
++      vipLevel: number | null;
++      avatarUrl: string | null;
++      playerId: string | null;
++    }>
++  >({ status: "loading" });
++  const [balance, setBalance] = useState<
++    LoadState<{ currency: string; balanceMinor: number }>
++  >({ status: "loading" });
++  /** Formal Auth session (cookie) — independent of DevTest identity profile. */
++  const [hasAuthSession, setHasAuthSession] = useState(false);
++  const [announcements, setAnnouncements] = useState<
++    LoadState<Array<{ id: string; title: string; body: string }>>
++  >({ status: "loading" });
++  const [announceLang, setAnnounceLang] = useState<LobbyLang>(lang);
++  const qualitySettings = useSyncExternalStore(
++    subscribeXiQuality,
++    getXiQualitySnapshot,
++    getXiQualityServerSnapshot,
++  );
++  const qualityHydrated = useSyncExternalStore(
++    subscribeXiHydrated,
++    getXiHydratedSnapshot,
++    getXiHydratedServerSnapshot,
++  );
++
++  const rootRef = useRef<HTMLDivElement | null>(null);
++  const t = (key: string) => tLobby(lang, key);
++
++  useEffect(() => {
++    consumeEnterTransition(rootRef.current);
++  }, []);
++
++  const announcementsView: LoadState<Array<{ id: string; title: string; body: string }>> =
++    announceLang !== lang ? { status: "loading" } : announcements;
++  // Particles only after hydrate — SSR + first client paint share empty set.
++  const qualityTier = qualityHydrated
++    ? resolveTier(qualitySettings.mode)
++    : ("medium" as const);
++  const particleN = qualityHydrated
++    ? particleCountForTier(qualityTier, qualitySettings.fxEnabled)
++    : 0;
++
++  useEffect(() => {
++    document.title = tLobby(lang, "lobby.page.xi");
++  }, [lang]);
++
++  useEffect(() => {
++    // Post-hydrate shell cache only — never in useState init (SSR mismatch).
++    const cachedProfile = peekCachedProfile();
++    const cachedBalance = peekCachedBalance();
++    if (cachedProfile) setProfile({ status: "ok", data: cachedProfile });
++    if (cachedBalance) setBalance({ status: "ok", data: cachedBalance });
++
++    let cancelled = false;
++    void (async () => {
++      const [c, p, b] = await Promise.all([
++        fetchLobbyCatalog(),
++        fetchProfile(),
++        fetchBalance(),
++      ]);
++      if (cancelled) return;
++      if (c.status === "ok") {
++        setCatalog({ status: "ok", data: c.data as unknown as LobbyCatalogResponse });
++      } else {
++        setCatalog(c);
++      }
++      setProfile(p);
++      setBalance(b);
++    })();
++
++    const onAuthHydrated = (ev: Event) => {
++      const detail = (ev as CustomEvent<{ profile: LobbyProfileView; wallet: LobbyBalanceView }>)
++        .detail;
++      if (!detail?.profile || !detail?.wallet) return;
++      setHasAuthSession(true);
++      setProfile({ status: "ok", data: detail.profile });
++      setBalance({ status: "ok", data: detail.wallet });
++    };
++    window.addEventListener("xi-auth-hydrated", onAuthHydrated);
++
++    void fetch("/api/v1/auth/me", { credentials: "same-origin" })
++      .then((res) => {
++        if (!cancelled) setHasAuthSession(res.ok);
++      })
++      .catch(() => {
++        if (!cancelled) setHasAuthSession(false);
++      });
++
++    return () => {
++      cancelled = true;
++      window.removeEventListener("xi-auth-hydrated", onAuthHydrated);
++    };
++  }, []);
++
++  useEffect(() => {
++    let cancelled = false;
++    const requested = lang;
++    void fetchAnnouncements(requested).then((a) => {
++      if (cancelled) return;
++      setAnnouncements(a);
++      setAnnounceLang(requested);
++    });
++    return () => {
++      cancelled = true;
++    };
++  }, [lang]);
++
++  const games = useMemo(() => {
++    if (catalog.status !== "ok") return [];
++    return filterGames(catalog.data.games, cat);
++  }, [catalog, cat]);
++
++  const tickerText = useMemo(() => {
++    if (announcementsView.status === "loading") {
++      return t("lobby.loading");
++    }
++    if (announcementsView.status === "error") {
++      return t("lobby.announcements.error");
++    }
++    if (announcementsView.status === "ok" && announcementsView.data.length > 0) {
++      return announcementsView.data
++        .map((a) => a.title || a.body)
++        .filter(Boolean)
++        .join("   ·   ");
++    }
++    return t("lobby.ticker.empty");
++  }, [announcementsView, lang]);
++
++  const tickerIsMarquee =
++    announcementsView.status === "ok" && announcementsView.data.length > 0;
++
++  function refreshBalance() {
++    void fetchBalance().then(setBalance);
++  }
++
++  function openPending(feature: FeatureId | "checkin") {
++    if (feature === "announcements") {
++      setModal("announcements");
++      return;
++    }
++    if (feature === "vip") {
++      setModal("vip");
++      return;
++    }
++    if (feature === "recharge") {
++      setModal("deposit");
++      return;
++    }
++    if (feature === "withdraw") {
++      setModal("withdraw");
++      return;
++    }
++    if (feature === "checkin") {
++      setModal("checkin");
++      return;
++    }
++    if (feature === "activity") {
++      setNav("activity");
++      setModal("activity");
++      return;
++    }
++    if (feature === "rankings") {
++      setModal("rankings");
++      return;
++    }
++    if (feature === "cs") {
++      setComingTitleKey("lobby.feat.cs");
++      setModal("coming_soon");
++      return;
++    }
++    setPendingKey(`lobby.feat.${feature}`);
++    setModal("pending");
++  }
++
++  function goLiveHref(href: string) {
++    const toHub =
++      href === XI_ROUTES.hub ||
++      href.startsWith("/xi/bull-demon-king") ||
++      href === "/xi/bdk";
++    if (toHub) {
++      navigateXi({ href: XI_ROUTES.hub, from: "lobby", to: "hub", ms: 220 });
++      return;
++    }
++    navigateXi({ href, from: "lobby", to: "lobby", ms: 200 });
++  }
++
++  function onRecGameClick(game: RecGame) {
++    if (game.status === "live" && game.href) {
++      goLiveHref(game.href);
++      return;
++    }
++    setComingTitleKey(game.titleKey);
++    setModal("coming_soon");
++  }
++
++  function onGameClick(game: LobbyGameCard) {
++    if (game.status === "live" && game.href) {
++      goLiveHref(game.href);
++      return;
++    }
++    setComingTitleKey(game.titleKey);
++    setModal("coming_soon");
++  }
++
++  function switchLang(next: LobbyLang) {
++    saveLobbyLang(next);
++  }
++
++  const nickname =
++    profile.status === "ok" && profile.data.nickname
++      ? profile.data.nickname
++      : profile.status === "loading"
++        ? t("lobby.loading")
++        : t("lobby.profile.guest");
++
++  const playerIdLabel =
++    profile.status === "ok"
++      ? shortPlayerId(profile.data.playerId)
++      : profile.status === "loading"
++        ? "······"
++        : "————";
++
++  const vipLabel =
++    profile.status === "ok" && profile.data.vipLevel != null
++      ? `${t("lobby.vip")} ${profile.data.vipLevel}`
++      : t("lobby.vip");
++
++  const mmkText =
++    balance.status === "loading"
++      ? t("lobby.loading")
++      : balance.status === "error"
++        ? t("lobby.wallet.error")
++        : `${formatMinor(balance.data.balanceMinor, balance.data.currency)}`;
++
++  const mmkCurrency =
++    balance.status === "ok" ? balance.data.currency : t("lobby.balance.mmk");
++
++  const onLogout = () => {
++    void (async () => {
++      await authLogout();
++      clearLobbyCaches();
++      setHasAuthSession(false);
++      // Soft refresh profile/balance for DevTest fallback (if gated).
++      const [p, b] = await Promise.all([fetchProfile(), fetchBalance()]);
++      setProfile(p);
++      setBalance(b);
++    })();
++  };
++
++  return (
++    <div
++      ref={rootRef}
++      className="xi-lobby-root xi-mythic-lobby xi-layout-v2 xi-lobby-v3"
++      data-testid="xi-lobby-root"
++      lang={lang}
++      data-lang={lang}
++      data-xi-lobby-tier={qualityHydrated ? qualityTier : "medium"}
++      data-xi-lobby-v3="1"
++    >
++      <header className="xi-topbar xi-jade-tablet xi-topbar-v2" data-testid="xi-topbar">
++        <div className="xi-tablet-cloud" aria-hidden />
++        <div className="xi-top-left">
++          <button
++            type="button"
++            className="xi-avatar"
++            aria-label={t("lobby.panel.me")}
++            onClick={() => setModal("profile")}
++            style={
++              profile.status === "ok" && profile.data.avatarUrl
++                ? {
++                    backgroundImage: `url(${profile.data.avatarUrl})`,
++                    backgroundSize: "cover",
++                  }
++                : undefined
++            }
++          />
++          <div className="xi-user-meta">
++            <span className="xi-nickname">{nickname}</span>
++            <span className="xi-user-id" data-testid="xi-player-id">
++              ID: {playerIdLabel}
++            </span>
++            <span className="xi-vip-pill xi-vip-breath" data-testid="xi-vip-pill">
++              {vipLabel}
++            </span>
++          </div>
++        </div>
++
++        <div className="xi-top-center">
++          <div
++            className={`xi-wallet-chip xi-wallet-breath${balance.status !== "ok" ? (balance.status === "loading" ? " is-loading" : " is-error") : ""}`}
++            data-testid="xi-wallet-mmk"
++          >
++            <span className="xi-wallet-ico xi-wallet-ico-mmk" aria-hidden />
++            <span className="xi-wallet-meta">
++              <span className="xi-wallet-code">{mmkCurrency}</span>
++              <strong className="xi-wallet-amount">{mmkText}</strong>
++            </span>
++            <button
++              type="button"
++              className="xi-wallet-plus"
++              aria-label={t("lobby.feat.recharge")}
++              onClick={() => openPending("recharge")}
++            >
++              +
++            </button>
++          </div>
++          <div
++            className="xi-wallet-chip is-usdt is-loading"
++            title={t("lobby.wallet.usdt.pending")}
++            data-testid="xi-wallet-usdt"
++          >
++            <span className="xi-wallet-ico xi-wallet-ico-usdt" aria-hidden />
++            <span className="xi-wallet-meta">
++              <span className="xi-wallet-code">{t("lobby.balance.usdt")}</span>
++              <strong>{t("lobby.unavailable")}</strong>
++            </span>
++            <button
++              type="button"
++              className="xi-wallet-plus"
++              aria-label={t("lobby.feat.recharge")}
++              onClick={() => openPending("recharge")}
++            >
++              +
++            </button>
++          </div>
++        </div>
++
++        <div className="xi-top-right">
++          {!hasAuthSession ? (
++            <div className="xi-auth-entry" data-testid="xi-auth-entry">
++              <button
++                type="button"
++                className="xi-auth-entry-btn"
++                onClick={() => navigateXi({ href: XI_ROUTES.login, from: "lobby", to: "lobby" })}
++              >
++                {t("lobby.auth.login")}
++              </button>
++              <button
++                type="button"
++                className="xi-auth-entry-btn is-primary"
++                onClick={() =>
++                  navigateXi({ href: XI_ROUTES.register, from: "lobby", to: "lobby" })
++                }
++              >
++                {t("lobby.auth.register")}
++              </button>
++            </div>
++          ) : (
++            <button
++              type="button"
++              className="xi-auth-entry-btn"
++              data-testid="xi-auth-logout"
++              onClick={onLogout}
++            >
++              {t("lobby.auth.logout")}
++            </button>
++          )}
++          <button
++            type="button"
++            className="xi-icon-btn xi-icon-msg"
++            onClick={() => setModal("messages")}
++            aria-label={t("lobby.messages")}
++          >
++            <span className="xi-ico-envelope" aria-hidden />
++            <span className="xi-icon-label">{t("lobby.messages")}</span>
++          </button>
++          <button
++            type="button"
++            className="xi-icon-btn xi-icon-settings"
++            onClick={() => setModal("settings")}
++            aria-label={t("lobby.settings")}
++          >
++            <span className="xi-ico-gear" aria-hidden />
++            <span className="xi-icon-label">{t("lobby.settings")}</span>
++          </button>
++          <div className="xi-lang-direct" data-testid="xi-lang-direct" role="group" aria-label={t("lobby.language")}>
++            {LANG_TOGGLE_ORDER.map((code) => (
++              <button
++                key={code}
++                type="button"
++                className={`xi-lang-direct-btn${lang === code ? " is-active" : ""}`}
++                data-testid={`xi-lang-${code}`}
++                onClick={() => switchLang(code)}
++              >
++                {LANG_LABEL[code]}
++              </button>
++            ))}
++          </div>
++        </div>
++      </header>
++
++      {(nav === "home" || nav === "games") && (
++        <>
++          <section
++            className="xi-hero xi-hero-mythic xi-hero-photo"
++            data-testid="xi-lobby-hero"
++            aria-label={t("lobby.hero.journey")}
++          >
++            <ProgressiveHeroImage
++              kind="journey"
++              className="xi-hero-img"
++              alt={t("lobby.hero.journey")}
++              testId="xi-hero-img"
++              sources={heroSources("journey")}
++              srcSet={heroSrcSet("journey")}
++              avifSrcSet={heroAvifSrcSet("journey")}
++              sizes={heroSizes()}
++            />
++            <div className="xi-hero-sky" aria-hidden />
++            <div className="xi-hero-sun xi-hero-sun-breath" aria-hidden />
++            <div className="xi-hero-rays" aria-hidden />
++            <div className="xi-hero-clouds" aria-hidden />
++            <div className="xi-hero-mist" aria-hidden />
++            {/* Spirit dots — HIGH/ULTRA only via particleN; no canvas/blur spam */}
++            <div className="xi-hero-particles xi-hero-spirit-dots" aria-hidden>
++              {Array.from({ length: particleN }, (_, i) => (
++                <span key={i} />
++              ))}
++            </div>
++            <div className="xi-hero-copy xi-hero-copy-overlay">
++              <div className="xi-hero-brand" data-testid="xi-lobby-brand">
++                {t("lobby.brand")}
++              </div>
++              <div className="xi-hero-journey">{t("lobby.hero.journey")}</div>
++            </div>
++          </section>
++
++          <section
++            className={`xi-ticker${tickerIsMarquee ? "" : " is-static"}`}
++            data-testid="xi-ticker"
++            aria-label={t("lobby.announcements")}
++          >
++            <span className="xi-ticker-speaker" aria-hidden />
++            <div className="xi-ticker-track">
++              {tickerIsMarquee ? (
++                <div className="xi-ticker-scroll" key={`${lang}-${tickerText.slice(0, 24)}`}>
++                  <span>{tickerText}</span>
++                  <span aria-hidden>{tickerText}</span>
++                </div>
++              ) : (
++                <div className="xi-ticker-static" data-testid="xi-ticker-empty">
++                  {tickerText}
++                </div>
++              )}
++            </div>
++            <button
++              type="button"
++              className="xi-ticker-more"
++              onClick={() => setModal("announcements")}
++            >
++              {t("lobby.ticker.more")}
++            </button>
++          </section>
++        </>
++      )}
++
++      <main className="xi-main">
++        {nav === "home" && (
++          <>
++            <section className="xi-rec-section" data-testid="xi-recommended">
++              <div className="xi-section-head">
++                <h2 className="xi-section-title">{t("lobby.section.recommended")}</h2>
++                <button
++                  type="button"
++                  className="xi-section-more"
++                  onClick={() => setNav("games")}
++                >
++                  {t("lobby.section.moreGames")}
++                </button>
++              </div>
++              <div className="xi-ornament" aria-hidden />
++              <div className="xi-rec-row">
++                {RECOMMENDED_GAMES.map((game, index) => (
++                  <button
++                    key={game.id}
++                    type="button"
++                    className={`xi-rec-card art-${game.art}${game.hot ? " is-hot" : ""}${game.status === "coming_soon" ? " is-soon" : ""}`}
++                    data-id={game.id}
++                    data-testid={game.id === "bdk" ? "xi-card-bdk" : `xi-card-${game.id}`}
++                    data-href={game.href ?? ""}
++                    onClick={() => onRecGameClick(game)}
++                  >
++                    {game.hot ? (
++                      <span className="xi-rec-hot">{t("lobby.badge.hot")}</span>
++                    ) : null}
++                    {game.status === "coming_soon" ? (
++                      <span className="xi-rec-soon">{t("lobby.rec.soon")}</span>
++                    ) : null}
++                    <span className="xi-rec-art" aria-hidden>
++                      {game.imageSrc ? (
++                        <img
++                          className="xi-rec-art-img"
++                          src={game.imageSrc}
++                          alt=""
++                          decoding="async"
++                          loading={index === 0 ? "eager" : "lazy"}
++                          fetchPriority={index === 0 ? "high" : "low"}
++                        />
++                      ) : null}
++                    </span>
++                    <span className="xi-rec-title">{t(game.titleKey)}</span>
++                    {game.jackpotDisplay ? (
++                      <span className="xi-rec-jackpot">
++                        {t("lobby.badge.jackpot")} {game.jackpotDisplay}
++                      </span>
++                    ) : game.status === "coming_soon" ? (
++                      <span className="xi-rec-meta">{t("lobby.comingSoon")}</span>
++                    ) : (
++                      <span className="xi-rec-meta">{t("lobby.games.bdk.subtitle")}</span>
++                    )}
++                  </button>
++                ))}
++              </div>
++            </section>
++
++            <section className="xi-quick-section" data-testid="xi-quick-features">
++              <h2 className="xi-section-title">{t("lobby.section.quick")}</h2>
++              <div className="xi-ornament" aria-hidden />
++              <div className="xi-quick-row">
++                {QUICK_FEATURES.map((id) => (
++                  <button
++                    key={id}
++                    type="button"
++                    className="xi-feat-btn xi-quick-btn"
++                    data-motif={featMotif(id)}
++                    data-testid={`xi-feat-${id}`}
++                    onClick={() => openPending(id)}
++                  >
++                    <span className={`xi-feat-ico motif-${featMotif(id)}`} aria-hidden />
++                    {id === "activity" ? <span className="xi-feat-dot" aria-hidden /> : null}
++                    <span className="xi-quick-label">{t(`lobby.feat.${id}`)}</span>
++                  </button>
++                ))}
++              </div>
++            </section>
++          </>
++        )}
++
++        {nav === "games" && (
++          <CatalogBlock
++            t={t}
++            catalog={catalog}
++            cat={cat}
++            setCat={setCat}
++            games={games}
++            onGameClick={onGameClick}
++          />
++        )}
++
++        {nav === "wallet" && (
++          <section className="xi-panel-card">
++            <h2 className="xi-section-title">{t("lobby.panel.wallet")}</h2>
++            <WalletPanel t={t} />
++            <div className="xi-bdk-actions" style={{ marginTop: "0.85rem" }}>
++              <button
++                type="button"
++                className="xi-primary"
++                onClick={() => openPending("recharge")}
++              >
++                {t("lobby.feat.recharge")}
++              </button>
++              <button
++                type="button"
++                className="xi-secondary"
++                onClick={() => openPending("withdraw")}
++              >
++                {t("lobby.feat.withdraw")}
++              </button>
++            </div>
++          </section>
++        )}
++
++        {nav === "activity" && (
++          <section className="xi-panel-card">
++            <h2 className="xi-section-title">{t("lobby.panel.activity")}</h2>
++            <ActivityPanel t={t} lang={lang} onBalanceRefresh={refreshBalance} />
++            <div className="xi-activity-checkin-entry">
++              <button
++                type="button"
++                className="xi-primary"
++                data-testid="xi-nav-activity-open-checkin"
++                onClick={() => openPending("checkin")}
++              >
++                {t("lobby.feat.checkin")}
++              </button>
++            </div>
++          </section>
++        )}
++
++        {nav === "me" && (
++          <PlayerCenter
++            t={t}
++            lang={lang}
++            profile={profile}
++            balance={balance}
++            hasAuthSession={hasAuthSession}
++            onOpenProfile={() => setModal("profile")}
++            onOpenVip={() => setModal("vip")}
++            onOpenDeposit={() => openPending("recharge")}
++            onOpenWithdraw={() => openPending("withdraw")}
++            onOpenActivity={() => openPending("activity")}
++            onOpenCheckin={() => openPending("checkin")}
++            onOpenRankings={() => openPending("rankings")}
++            onOpenComingSoon={(titleKey) => {
++              setComingTitleKey(titleKey);
++              setModal("coming_soon");
++            }}
++            onLogout={onLogout}
++          />
++        )}
++      </main>
++
++      <nav className="xi-bottom-nav xi-bottom-nav-v2" aria-label="XI GAME" data-testid="xi-bottom-nav">
++        {(
++          [
++            ["home", "lobby.nav.home", "temple"],
++            ["games", "lobby.nav.games", "pad"],
++            ["wallet", "lobby.nav.wallet", "bag"],
++            ["activity", "lobby.nav.activity", "gift"],
++            ["me", "lobby.nav.me", "user"],
++          ] as const
++        ).map(([id, key, icon]) => (
++          <button
++            key={id}
++            type="button"
++            className={`xi-nav-btn${nav === id ? " is-active" : ""}`}
++            data-testid={`xi-nav-${id}`}
++            data-icon={icon}
++            onClick={() => setNav(id)}
++          >
++            <span className={`xi-nav-ico ico-${icon}`} aria-hidden />
++            {id === "activity" ? <span className="xi-nav-dot-badge" aria-hidden /> : null}
++            <span>{t(key)}</span>
++          </button>
++        ))}
++      </nav>
++
++      {modal && (
++        <div
++          className="xi-modal-backdrop"
++          role="presentation"
++          onClick={(e) => {
++            if (e.target === e.currentTarget) setModal(null);
++          }}
++        >
++          <div className="xi-modal" role="dialog" aria-modal="true">
++            {modal === "pending" && (
++              <>
++                <h2>{t(pendingKey)}</h2>
++                <p>{t("lobby.pending.title")}</p>
++                <p>{t("lobby.pending.body")}</p>
++              </>
++            )}
++            {modal === "coming_soon" && (
++              <div className="xi-coming-soon-toast" data-testid="xi-coming-soon-modal">
++                <h2>{t(comingTitleKey)}</h2>
++                <p className="xi-coming-soon-badge">{t("lobby.comingSoon")}</p>
++                <p>{t("lobby.comingSoon.body")}</p>
++              </div>
++            )}
++            {modal === "vip" && (
++              <>
++                <h2>{t("lobby.feat.vip")}</h2>
++                <VipCenterPanel t={t} lang={lang} />
++              </>
++            )}
++            {modal === "deposit" && (
++              <>
++                <h2>{t("lobby.feat.recharge")}</h2>
++                <DepositPanel t={t} lang={lang} onBalanceRefresh={refreshBalance} />
++              </>
++            )}
++            {modal === "withdraw" && (
++              <>
++                <h2>{t("lobby.feat.withdraw")}</h2>
++                <WithdrawPanel t={t} lang={lang} onBalanceRefresh={refreshBalance} />
++              </>
++            )}
++            {modal === "activity" && (
++              <>
++                <h2>{t("lobby.feat.activity")}</h2>
++                <ActivityPanel t={t} lang={lang} onBalanceRefresh={refreshBalance} />
++                <div className="xi-activity-checkin-entry">
++                  <button
++                    type="button"
++                    className="xi-primary"
++                    data-testid="xi-activity-open-checkin"
++                    onClick={() => openPending("checkin")}
++                  >
++                    {t("lobby.feat.checkin")}
++                  </button>
++                </div>
++              </>
++            )}
++            {modal === "checkin" && (
++              <>
++                <h2>{t("lobby.feat.checkin")}</h2>
++                <CheckinPanel t={t} onBalanceRefresh={refreshBalance} />
++              </>
++            )}
++            {modal === "rankings" && (
++              <>
++                <h2>{t("lobby.feat.rankings")}</h2>
++                <RankingsPanel t={t} />
++              </>
++            )}
++            {modal === "profile" && (
++              <>
++                <h2>{t("lobby.panel.me")}</h2>
++                <p>
++                  {t("lobby.nickname")}: {nickname}
++                </p>
++                <p>ID: {playerIdLabel}</p>
++                <p>{vipLabel}</p>
++                {profile.status === "error" && <p>{t("lobby.profile.error")}</p>}
++              </>
++            )}
++            {modal === "messages" && (
++              <>
++                <h2>{t("lobby.messages")}</h2>
++                <p>{t("lobby.messages.empty")}</p>
++              </>
++            )}
++            {modal === "announcements" && (
++              <>
++                <h2>{t("lobby.announcements")}</h2>
++                {announcementsView.status === "loading" && <p>{t("lobby.loading")}</p>}
++                {announcementsView.status === "error" && (
++                  <p>{t("lobby.announcements.error")}</p>
++                )}
++                {announcementsView.status === "ok" &&
++                  announcementsView.data.length === 0 && (
++                  <p>{t("lobby.announcements.empty")}</p>
++                )}
++                {announcementsView.status === "ok" &&
++                  announcementsView.data.length > 0 && (
++                  <ul className="xi-announce-list">
++                    {announcementsView.data.map((item) => (
++                      <li key={item.id}>
++                        <strong>{item.title || t("lobby.announcements")}</strong>
++                        {item.body ? <div>{item.body}</div> : null}
++                      </li>
++                    ))}
++                  </ul>
++                )}
++              </>
++            )}
++            {modal === "settings" && (
++              <>
++                <h2>{t("lobby.settings")}</h2>
++                <p>{t("lobby.settings.body")}</p>
++                <QualitySettingsPanel
++                  t={t}
++                  settings={qualitySettings}
++                  onChange={setXiQualitySettings}
++                  testIdPrefix="xi-lobby-quality"
++                />
++                <div className="xi-lang-row">
++                  {LOBBY_LANGS.map((code) => (
++                    <button
++                      key={code}
++                      type="button"
++                      className={`xi-icon-btn${lang === code ? " is-active" : ""}`}
++                      onClick={() => switchLang(code)}
++                    >
++                      {LANG_LABEL[code]}
++                    </button>
++                  ))}
++                </div>
++              </>
++            )}
++            <div className="xi-modal-actions">
++              <button
++                type="button"
++                className="xi-secondary"
++                onClick={() => setModal(null)}
++              >
++                {t("lobby.close")}
++              </button>
++            </div>
++          </div>
++        </div>
++      )}
++    </div>
++  );
++}
++
++function CatalogBlock({
++  t,
++  catalog,
++  cat,
++  setCat,
++  games,
++  onGameClick,
++}: {
++  t: (key: string) => string;
++  catalog: LoadState<LobbyCatalogResponse>;
++  cat: string;
++  setCat: (id: string) => void;
++  games: LobbyGameCard[];
++  onGameClick: (game: LobbyGameCard) => void;
++}) {
++  return (
++    <section>
++      <h2 className="xi-section-title">{t("lobby.section.catalog")}</h2>
++      {catalog.status === "loading" && (
++        <p className="xi-status-line">{t("lobby.loading")}</p>
++      )}
++      {catalog.status === "error" && (
++        <p className="xi-status-line">{t("lobby.error")}</p>
++      )}
++      {catalog.status === "ok" && (
++        <>
++          <div className="xi-cats">
++            {catalog.data.categories.map((c) => (
++              <button
++                key={c.id}
++                type="button"
++                className={`xi-cat-chip${cat === c.id ? " is-active" : ""}`}
++                onClick={() => setCat(c.id)}
++              >
++                {t(c.labelKey)}
++              </button>
++            ))}
++          </div>
++          <div className="xi-game-grid" style={{ marginTop: "0.65rem" }}>
++            {games.map((game) => (
++              <button
++                key={game.id}
++                type="button"
++                className={`xi-game-card${game.status === "coming_soon" ? " is-soon" : ""}`}
++                data-id={game.id}
++                data-testid={game.id === "bdk" ? "xi-card-bdk" : `xi-card-${game.id}`}
++                data-href={game.href ?? ""}
++                onClick={() => onGameClick(game)}
++              >
++                <span className="xi-game-art" aria-hidden />
++                <div className="xi-badges">
++                  {game.badges.map((b) => (
++                    <span key={b} className={`xi-badge ${b}`}>
++                      {t(`lobby.badge.${b}`)}
++                    </span>
++                  ))}
++                  {game.status === "coming_soon" && (
++                    <span className="xi-badge new">{t("lobby.comingSoon")}</span>
++                  )}
++                </div>
++                <div className="xi-game-title">{t(game.titleKey)}</div>
++                <div className="xi-game-meta">
++                  {game.id === "bdk" && <span>{t("lobby.games.bdk.subtitle")}</span>}
++                  {game.multiplierLabel && <span>{game.multiplierLabel}</span>}
++                  <span>
++                    {t("lobby.players")}:{" "}
++                    {game.playersOnline == null
++                      ? t("lobby.players.unknown")
++                      : game.playersOnline}
++                  </span>
++                </div>
++              </button>
++            ))}
++          </div>
++        </>
++      )}
++    </section>
++  );
++}
+diff --git a/client/xi-lobby/i18n.ts b/client/xi-lobby/i18n.ts
+new file mode 100644
+--- /dev/null
++++ b/client/xi-lobby/i18n.ts
+@@ -0,0 +1,912 @@
++/**
++ * XI GAME lobby i18n — zh-CN / en / my-MM (en keys match project “en” locale).
++ */
++
++export type LobbyLang = "zh-CN" | "en" | "my-MM";
++export const LOBBY_LANGS: LobbyLang[] = ["zh-CN", "en", "my-MM"];
++export const LOBBY_LANG_STORAGE = "xi-lobby-lang";
++/** Cookie mirror — written on save; SSR first paint still uses shared default. */
++export const LOBBY_LANG_COOKIE = "xi-lobby-lang";
++
++function isLobbyLang(raw: string | null | undefined): raw is LobbyLang {
++  return raw === "zh-CN" || raw === "en" || raw === "my-MM";
++}
++
++function writeLangCookie(lang: LobbyLang): void {
++  if (typeof document === "undefined") return;
++  try {
++    document.cookie = `${LOBBY_LANG_COOKIE}=${lang}; Path=/; Max-Age=31536000; SameSite=Lax`;
++  } catch {
++    /* ignore */
++  }
++}
++
++const dict: Record<LobbyLang, Record<string, string>> = {
++  "zh-CN": {
++    "lobby.brand": "西游戏",
++    "lobby.brandEn": "XI GAME",
++    "lobby.tagline": "西游神话 · 平台大厅",
++    "lobby.hero.journey": "西天取经 · 仙气长存",
++    "lobby.hero.placeholder": "西游记主题主视觉待提供",
++    "lobby.loading": "加载中…",
++    "lobby.error": "暂时无法加载，请稍后重试",
++    "lobby.retry": "重试",
++    "lobby.unavailable": "暂不可用",
++    "lobby.vip": "VIP",
++    "lobby.recharge": "充值",
++    "lobby.balance.mmk": "MMK",
++    "lobby.balance.usdt": "USDT",
++    "lobby.messages": "消息",
++    "lobby.announcements": "公告",
++    "lobby.settings": "设置",
++    "lobby.language": "语言",
++    "lobby.nav.home": "首页",
++    "lobby.nav.games": "游戏",
++    "lobby.nav.wallet": "钱包",
++    "lobby.nav.activity": "活动",
++    "lobby.nav.me": "我的",
++    "lobby.cat.recommended": "推荐",
++    "lobby.cat.hot": "热门",
++    "lobby.cat.new": "上新",
++    "lobby.cat.jackpot": "奖池",
++    "lobby.cat.slots": "老虎机",
++    "lobby.section.recommended": "推荐游戏",
++    "lobby.section.moreGames": "更多游戏 >",
++    "lobby.section.quick": "快捷功能",
++    "lobby.section.features": "功能入口",
++    "lobby.section.catalog": "游戏大厅",
++    "lobby.badge.hot": "热门",
++    "lobby.badge.new": "NEW",
++    "lobby.badge.jackpot": "JACKPOT",
++    "lobby.badge.recommended": "推荐",
++    "lobby.ticker.default": "暂无公告",
++    "lobby.ticker.empty": "暂无公告",
++    "lobby.ticker.more": "更多 >",
++    "lobby.rec.soon": "即将上线",
++    "lobby.players": "在线",
++    "lobby.players.unknown": "—",
++    "lobby.comingSoon": "即将上线",
++    "lobby.comingSoon.body": "玩法与数学配置待业务规则确认，敬请期待。",
++    "lobby.comingSoon.toast": "即将上线",
++    "lobby.play": "进入游戏",
++    "lobby.close": "关闭",
++    "lobby.games.bdk.title": "牛魔王",
++    "lobby.games.bdk.subtitle": "西游戏之牛魔王",
++    "lobby.games.wukong.title": "孙悟空",
++    "lobby.games.nezha.title": "哪吒",
++    "lobby.games.dragonking.title": "龙王",
++    "lobby.games.phoenix.title": "凤凰",
++    "lobby.games.caishen.title": "财神",
++    "lobby.games.wulinpanda.title": "武林熊猫",
++    "lobby.games.redboy.title": "红孩儿",
++    "lobby.games.bonespirit.title": "白骨精",
++    "lobby.feat.recharge": "充值",
++    "lobby.feat.withdraw": "提现",
++    "lobby.feat.vip": "VIP中心",
++    "lobby.feat.activity": "活动中心",
++    "lobby.feat.announcements": "公告",
++    "lobby.feat.rankings": "排行榜",
++    "lobby.feat.checkin": "签到",
++    "lobby.feat.cs": "客服",
++    "lobby.feat.invite": "邀请",
++    "lobby.feat.tasks": "任务",
++    "lobby.feat.mail": "邮件",
++    "lobby.feat.gifts": "礼包",
++    "lobby.feat.redeem": "兑换码",
++    "lobby.pending.title": "业务规则待定",
++    "lobby.pending.body": "该功能入口已开通，业务规则与通道配置完成后开放。",
++    "lobby.announcements.empty": "暂无公告",
++    "lobby.announcements.error": "公告加载失败",
++    "lobby.profile.error": "资料加载失败",
++    "lobby.profile.guest": "游客",
++    "lobby.auth.login": "登录",
++    "lobby.auth.register": "注册",
++    "lobby.auth.logout": "退出登录",
++    "lobby.auth.forgot": "忘记密码",
++    "auth.brand": "西游戏",
++    "auth.title.login": "登录账号",
++    "auth.title.register": "注册账号",
++    "auth.title.forgot": "重置密码",
++    "auth.tab.phone": "手机号",
++    "auth.tab.email": "邮箱",
++    "auth.phone": "手机号",
++    "auth.email": "邮箱",
++    "auth.password": "密码",
++    "auth.passwordConfirm": "确认密码",
++    "auth.passwordNew": "新密码",
++    "auth.nickname": "昵称（可选）",
++    "auth.otp": "验证码",
++    "auth.sendOtp": "获取验证码",
++    "auth.resendOtp": "重新发送",
++    "auth.verify": "验证",
++    "auth.next": "下一步",
++    "auth.submitLogin": "登录",
++    "auth.submitRegister": "完成注册",
++    "auth.submitReset": "重置密码",
++    "auth.backLogin": "返回登录",
++    "auth.goRegister": "没有账号？注册",
++    "auth.goLogin": "已有账号？登录",
++    "auth.goForgot": "忘记密码？",
++    "auth.hint.phone": "请输入 E.164 手机号，如 +959…",
++    "auth.hint.password": "至少 8 位，需包含字母与数字",
++    "auth.hint.otpTest": "测试模式验证码可用",
++    "auth.step.destination": "填写账号",
++    "auth.step.otp": "验证码",
++    "auth.step.password": "设置密码",
++    "auth.success.register": "注册成功",
++    "auth.success.login": "登录成功",
++    "auth.success.reset": "密码已重置，请重新登录",
++    "auth.error.generic": "操作失败，请稍后重试",
++    "auth.error.network": "网络异常",
++    "auth.error.INVALID_PHONE": "手机号格式无效",
++    "auth.error.INVALID_EMAIL": "邮箱格式无效",
++    "auth.error.INVALID_PASSWORD": "密码不符合要求",
++    "auth.error.INVALID_CREDENTIALS": "账号或密码错误",
++    "auth.error.ALREADY_REGISTERED": "账号已注册",
++    "auth.error.ACCOUNT_NOT_FOUND": "账号不存在",
++    "auth.error.OTP_INVALID": "验证码错误",
++    "auth.error.OTP_EXPIRED": "验证码已过期",
++    "auth.error.OTP_RATE_LIMITED": "验证码请求过于频繁",
++    "auth.error.LOGIN_RATE_LIMITED": "登录尝试过多，请稍后再试",
++    "auth.error.ACCOUNT_LOCKED": "账号已临时锁定",
++    "auth.error.PROVIDER_NOT_CONFIGURED": "验证码服务未配置",
++    "auth.error.PROVIDER_NOT_PRODUCTION_READY": "验证码通道未就绪",
++    "auth.error.PASSWORD_MISMATCH": "两次密码不一致",
++    "auth.error.REGISTER_FAILED": "注册失败，请重试",
++    "lobby.wallet.error": "余额加载失败",
++    "lobby.wallet.usdt.pending": "多币种余额待合约",
++    "lobby.settings.body": "画质偏好会同步到大厅与游戏。语言请使用顶栏「中文 / မြန်မာ / EN」即时切换。",
++    "lobby.quality": "画质",
++    "lobby.quality.auto": "自动",
++    "lobby.quality.ultra": "旗舰",
++    "lobby.quality.high": "高",
++    "lobby.quality.medium": "中",
++    "lobby.quality.low": "低",
++    "lobby.quality.fx": "特效",
++    "lobby.quality.fxOn": "开",
++    "lobby.quality.fxOff": "关",
++    "lobby.quality.animal": "动物动画",
++    "lobby.quality.animalFull": "完整",
++    "lobby.quality.animalSimple": "简化",
++    "lobby.quality.fps": "帧率",
++    "lobby.quality.fpsAuto": "自动",
++    "lobby.quality.fps30": "30",
++    "lobby.quality.fps60": "60",
++    "lobby.messages.empty": "暂无站内信",
++    "lobby.page.xi": "西游戏",
++    "lobby.page.bdkHub": "西游戏之牛魔王",
++    "lobby.page.bdkPlay": "牛魔王",
++    "lobby.stub.afterAccept": "验收后开发 — 第二步《西游戏之牛魔王》主页待验收通过后再开工。",
++    "lobby.bdk.hubTitle": "西游戏之牛魔王",
++    "lobby.bdk.hubLead": "正式老虎机入口（Session / Spin / Round 服务器权威）。",
++    "lobby.bdk.hubTag": "天庭敕令 · 火焰山战意",
++    "lobby.bdk.openSlot": "开始游戏",
++    "lobby.bdk.startGame": "开始游戏",
++    "lobby.bdk.starting": "进入中…",
++    "lobby.bdk.decree": "天庭战令",
++    "lobby.bdk.backLobby": "返回大厅",
++    "lobby.bdk.backXi": "返回西游戏",
++    "lobby.bdk.backHub": "返回牛魔王首页",
++    "lobby.bdk.backGameHome": "返回游戏主页",
++    "lobby.bdk.homeLobby": "🏠 返回大厅",
++    "lobby.nav.crumbLobby": "西游戏",
++    "lobby.nav.crumbHub": "西游戏之牛魔王",
++    "lobby.nav.crumbPlay": "牛魔王",
++    "lobby.bdk.ambientHint": "鼓火雷息 · 分层氛围",
++    "lobby.bdk.heroGap": "牛魔王主视觉已接入",
++    "lobby.bdk.heroReady": "主视觉已接入",
++    "lobby.bdk.featSection": "功能入口",
++    "lobby.bdk.feat.recharge": "充值",
++    "lobby.bdk.feat.withdraw": "提现",
++    "lobby.bdk.feat.vip": "VIP",
++    "lobby.bdk.feat.activity": "活动",
++    "lobby.bdk.feat.rankings": "排行榜",
++    "lobby.bdk.feat.records": "战绩记录",
++    "lobby.bdk.feat.rules": "游戏规则",
++    "lobby.bdk.feat.paytable": "赔付表",
++    "lobby.bdk.feat.betHelp": "投注说明",
++    "lobby.bdk.feat.checkin": "签到",
++    "lobby.bdk.feat.announce": "公告",
++    "lobby.bdk.feat.cs": "客服",
++    "lobby.bdk.feat.help": "帮助",
++    "lobby.bdk.feat.profile": "个人资料",
++    "lobby.bdk.feat.settings": "设置",
++    "lobby.bdk.group.funds": "资金",
++    "lobby.bdk.group.member": "会员",
++    "lobby.bdk.group.game": "游戏",
++    "lobby.bdk.group.player": "玩家",
++    "lobby.bdk.group.service": "服务",
++    "lobby.bdk.wallet.shell": "充值/提现通道待业务规则与通道配置；余额仅由服务器权威更新，客户端不会改写。",
++    "lobby.bdk.vip.shell": "VIP 等级只读展示；升级条件与奖励领取规则由后台配置。",
++    "lobby.bdk.vip.status": "状态",
++    "lobby.bdk.rules.intro": "牛魔王正式规则。旋转与结算以服务器权威为准（Session / Spin / Round）。",
++    "lobby.bdk.rules.lines": "5×4、50 线玩法。赔付表数值为线注倍数；Big/Mega/Ultra/Super/Epic/Jackpot 仅为展示动画。",
++    "lobby.bdk.rules.wild": "WILD：可替代除 SCATTER 外所有符号。线奖与免费游戏由正式数学版本结算。",
++    "lobby.bdk.rules.scatter": "SCATTER：3/4/5 个触发 8/15/20 次免费旋转；免费旋转中 2 个及以上再触发额外次数。结算由服务器权威判定。",
++    "lobby.bdk.paytable.intro": "赔付表以正式数学版本为准，可在游戏内赔付表查看符号倍数。",
++    "lobby.bdk.paytable.note": "本页仅作说明；数值以服务器 mathVersion 与游戏内赔付表为准，不复制第三方数学。",
++    "lobby.bdk.betHelp.body": "选择投注后点击开始游戏进入老虎机。投注、余额与派彩均由服务器结算；余额不足时无法旋转。",
++    "lobby.bdk.rankings.empty": "暂无排行数据",
++    "lobby.bdk.rankings.range.today": "今日",
++    "lobby.bdk.rankings.range.7d": "7日",
++    "lobby.bdk.rankings.range.30d": "30日",
++    "lobby.bdk.records.empty": "暂无战绩记录",
++    "lobby.play.loading": "西游戏加载中…",
++    "lobby.play.leaveTitle": "对局进行中",
++    "lobby.play.leaveBody": "旋转尚未安全结束。可等待本局结算后再返回，或继续游戏。",
++    "lobby.play.leaveWaiting": "正在等待本局安全结束…",
++    "lobby.play.leaveStay": "继续游戏",
++    "lobby.play.leaveWait": "等待结束后返回",
++    "lobby.panel.home": "首页",
++    "lobby.panel.games": "全部游戏",
++    "lobby.panel.wallet": "钱包",
++    "lobby.panel.activity": "活动中心",
++    "lobby.panel.me": "个人中心",
++    "lobby.nickname": "昵称",
++    "lobby.commerce.error": "加载失败，请稍后重试",
++    "lobby.commerce.depositHint": "选择通道与预设金额下单；入账仅经服务器 Wallet/Ledger。",
++    "lobby.commerce.withdrawHint": "提现将先冻结可用余额，经审核后打款（可配置限额见后台）。",
++    "lobby.commerce.channel": "通道",
++    "lobby.commerce.account": "收款账号",
++    "lobby.commerce.amount": "金额",
++    "lobby.commerce.fee": "手续费",
++    "lobby.commerce.expected": "预计到账",
++    "lobby.commerce.createOrder": "创建充值订单",
++    "lobby.commerce.testConfirm": "测试确认入账",
++    "lobby.commerce.submitWithdraw": "提交提现",
++    "lobby.commerce.depositCreated": "订单已创建，等待通道确认",
++    "lobby.commerce.depositSuccess": "充值成功，余额已刷新",
++    "lobby.commerce.withdrawCreated": "提现已提交，余额已冻结待审",
++    "lobby.commerce.available": "可用",
++    "lobby.commerce.frozen": "冻结",
++    "lobby.commerce.noMoves": "暂无近期流水",
++    "lobby.commerce.usdtLive": "已启用",
++    "lobby.commerce.claim": "领取",
++    "lobby.commerce.claimOk": "领取成功",
++    "lobby.commerce.claimable": "可领取",
++    "lobby.commerce.claimed": "已领取",
++    "lobby.commerce.locked": "不可用",
++    "lobby.commerce.day": "签到日",
++    "lobby.commerce.reward": "奖励",
++    "lobby.commerce.notProductionReady":
++      "NOT_PRODUCTION_READY — 充值/提现生产通道与限额未由业务签核；当前为可配置占位与测试入账（Fail Closed）。",
++    "lobby.commerce.tempHarness": "TEMP",
++    "lobby.commerce.placeholderLimits": "限额/手续费为后台可配置占位（非最终业务数字）",
++    "lobby.me.title": "我的",
++    "lobby.me.wallet": "我的钱包",
++    "lobby.me.total": "合计",
++    "lobby.me.ledger": "流水",
++    "lobby.me.records": "游戏记录",
++    "lobby.me.group.activity": "活动与权益",
++    "lobby.me.group.account": "账户与支持",
++    "lobby.me.coupons": "优惠券",
++    "lobby.me.security": "安全中心",
++    "lobby.me.security.hint": "改密走现有认证流程；设备/登录记录/绑定/KYC/OTP 为预留位，无接口时不展示伪造日志。",
++    "lobby.me.security.password": "修改密码",
++    "lobby.me.security.devices": "登录设备",
++    "lobby.me.security.loginHistory": "登录历史",
++    "lobby.me.security.phone": "手机绑定",
++    "lobby.me.security.email": "邮箱绑定",
++    "lobby.me.security.kyc": "实名认证",
++    "lobby.me.security.otp": "二次验证",
++    "lobby.me.reserved": "预留",
++    "lobby.me.cs.body": "客服通道待业务开通。当前无伪造在线客服或工单数据。",
++    "lobby.me.help": "帮助",
++    "lobby.me.help.body": "充值、提现、活动与 VIP 请从本页快捷入口进入。玩法规则以游戏内说明为准。",
++    "lobby.me.about": "关于",
++    "lobby.me.about.body": "西游戏平台大厅 · 神话主题娱乐体验。版本信息以正式发布说明为准。",
++  },
++  en: {
++    "lobby.brand": "XI GAME",
++    "lobby.brandEn": "XI GAME",
++    "lobby.tagline": "Mythic Journey · Game Lobby",
++    "lobby.hero.journey": "Journey to the West · Immortal Qi",
++    "lobby.hero.placeholder": "Journey to the West hero art pending",
++    "lobby.loading": "Loading…",
++    "lobby.error": "Temporarily unavailable. Please try again.",
++    "lobby.retry": "Retry",
++    "lobby.unavailable": "Unavailable",
++    "lobby.vip": "VIP",
++    "lobby.recharge": "Top up",
++    "lobby.balance.mmk": "MMK",
++    "lobby.balance.usdt": "USDT",
++    "lobby.messages": "Messages",
++    "lobby.announcements": "Announcements",
++    "lobby.settings": "Settings",
++    "lobby.language": "Language",
++    "lobby.nav.home": "Home",
++    "lobby.nav.games": "Games",
++    "lobby.nav.wallet": "Wallet",
++    "lobby.nav.activity": "Activity",
++    "lobby.nav.me": "Me",
++    "lobby.cat.recommended": "Recommended",
++    "lobby.cat.hot": "Hot",
++    "lobby.cat.new": "New",
++    "lobby.cat.jackpot": "Jackpot",
++    "lobby.cat.slots": "Slots",
++    "lobby.section.recommended": "Recommended",
++    "lobby.section.moreGames": "More games >",
++    "lobby.section.quick": "Quick actions",
++    "lobby.section.features": "Features",
++    "lobby.section.catalog": "Game catalog",
++    "lobby.badge.hot": "HOT",
++    "lobby.badge.new": "NEW",
++    "lobby.badge.jackpot": "JACKPOT",
++    "lobby.badge.recommended": "PICK",
++    "lobby.ticker.default": "No announcements",
++    "lobby.ticker.empty": "No announcements",
++    "lobby.ticker.more": "More >",
++    "lobby.rec.soon": "Coming soon",
++    "lobby.players": "Online",
++    "lobby.players.unknown": "—",
++    "lobby.comingSoon": "Coming soon",
++    "lobby.comingSoon.body": "Rules and math config are pending business approval.",
++    "lobby.comingSoon.toast": "Coming soon",
++    "lobby.play": "Play",
++    "lobby.close": "Close",
++    "lobby.games.bdk.title": "Bull Demon King",
++    "lobby.games.bdk.subtitle": "XI GAME · Bull Demon King",
++    "lobby.games.wukong.title": "Sun Wukong",
++    "lobby.games.nezha.title": "Nezha",
++    "lobby.games.dragonking.title": "Dragon King",
++    "lobby.games.phoenix.title": "Phoenix",
++    "lobby.games.caishen.title": "God of Wealth",
++    "lobby.games.wulinpanda.title": "Wulin Panda",
++    "lobby.games.redboy.title": "Red Boy",
++    "lobby.games.bonespirit.title": "White Bone Spirit",
++    "lobby.feat.recharge": "Deposit",
++    "lobby.feat.withdraw": "Withdraw",
++    "lobby.feat.vip": "VIP Center",
++    "lobby.feat.activity": "Events",
++    "lobby.feat.announcements": "News",
++    "lobby.feat.rankings": "Rankings",
++    "lobby.feat.checkin": "Check-in",
++    "lobby.feat.cs": "Support",
++    "lobby.feat.invite": "Invite",
++    "lobby.feat.tasks": "Tasks",
++    "lobby.feat.mail": "Mail",
++    "lobby.feat.gifts": "Gifts",
++    "lobby.feat.redeem": "Redeem",
++    "lobby.pending.title": "Business rules pending",
++    "lobby.pending.body": "This entry is live; channels open after business rules are configured.",
++    "lobby.announcements.empty": "No announcements",
++    "lobby.announcements.error": "Failed to load announcements",
++    "lobby.profile.error": "Failed to load profile",
++    "lobby.profile.guest": "Guest",
++    "lobby.auth.login": "Log in",
++    "lobby.auth.register": "Register",
++    "lobby.auth.logout": "Log out",
++    "lobby.auth.forgot": "Forgot password",
++    "auth.brand": "XI GAME",
++    "auth.title.login": "Sign in",
++    "auth.title.register": "Create account",
++    "auth.title.forgot": "Reset password",
++    "auth.tab.phone": "Phone",
++    "auth.tab.email": "Email",
++    "auth.phone": "Phone",
++    "auth.email": "Email",
++    "auth.password": "Password",
++    "auth.passwordConfirm": "Confirm password",
++    "auth.passwordNew": "New password",
++    "auth.nickname": "Nickname (optional)",
++    "auth.otp": "Verification code",
++    "auth.sendOtp": "Send code",
++    "auth.resendOtp": "Resend",
++    "auth.verify": "Verify",
++    "auth.next": "Next",
++    "auth.submitLogin": "Sign in",
++    "auth.submitRegister": "Complete registration",
++    "auth.submitReset": "Reset password",
++    "auth.backLogin": "Back to sign in",
++    "auth.goRegister": "No account? Register",
++    "auth.goLogin": "Have an account? Sign in",
++    "auth.goForgot": "Forgot password?",
++    "auth.hint.phone": "Use E.164 format, e.g. +959…",
++    "auth.hint.password": "At least 8 characters with a letter and a digit",
++    "auth.hint.otpTest": "Test-mode OTP available",
++    "auth.step.destination": "Account",
++    "auth.step.otp": "OTP",
++    "auth.step.password": "Password",
++    "auth.success.register": "Registration complete",
++    "auth.success.login": "Signed in",
++    "auth.success.reset": "Password reset — please sign in again",
++    "auth.error.generic": "Something went wrong; try again",
++    "auth.error.network": "Network error",
++    "auth.error.INVALID_PHONE": "Invalid phone format",
++    "auth.error.INVALID_EMAIL": "Invalid email format",
++    "auth.error.INVALID_PASSWORD": "Password does not meet requirements",
++    "auth.error.INVALID_CREDENTIALS": "Invalid account or password",
++    "auth.error.ALREADY_REGISTERED": "Account already registered",
++    "auth.error.ACCOUNT_NOT_FOUND": "Account not found",
++    "auth.error.OTP_INVALID": "Invalid verification code",
++    "auth.error.OTP_EXPIRED": "Verification code expired",
++    "auth.error.OTP_RATE_LIMITED": "Too many OTP requests",
++    "auth.error.LOGIN_RATE_LIMITED": "Too many login attempts; try later",
++    "auth.error.ACCOUNT_LOCKED": "Account temporarily locked",
++    "auth.error.PROVIDER_NOT_CONFIGURED": "OTP provider not configured",
++    "auth.error.PROVIDER_NOT_PRODUCTION_READY": "OTP channel not ready",
++    "auth.error.PASSWORD_MISMATCH": "Passwords do not match",
++    "auth.error.REGISTER_FAILED": "Registration failed; retry",
++    "lobby.wallet.error": "Failed to load balance",
++    "lobby.wallet.usdt.pending": "Multi-currency balance pending contract",
++    "lobby.settings.body": "Quality preferences sync across lobby and game. Switch language via top-bar 中文 / မြန်မာ / EN.",
++    "lobby.quality": "Quality",
++    "lobby.quality.auto": "Auto",
++    "lobby.quality.ultra": "Ultra",
++    "lobby.quality.high": "High",
++    "lobby.quality.medium": "Med",
++    "lobby.quality.low": "Low",
++    "lobby.quality.fx": "Effects",
++    "lobby.quality.fxOn": "On",
++    "lobby.quality.fxOff": "Off",
++    "lobby.quality.animal": "Animal anim",
++    "lobby.quality.animalFull": "Full",
++    "lobby.quality.animalSimple": "Simple",
++    "lobby.quality.fps": "FPS",
++    "lobby.quality.fpsAuto": "Auto",
++    "lobby.quality.fps30": "30",
++    "lobby.quality.fps60": "60",
++    "lobby.messages.empty": "No messages",
++    "lobby.page.xi": "XI GAME",
++    "lobby.page.bdkHub": "XI GAME · Bull Demon King",
++    "lobby.page.bdkPlay": "BULL DEMON KING",
++    "lobby.stub.afterAccept": "After acceptance — Step 2 Bull Demon King hub starts only after lobby sign-off.",
++    "lobby.bdk.hubTitle": "XI GAME · Bull Demon King",
++    "lobby.bdk.hubLead": "Formal slot entry (server-authoritative Session / Spin / Round).",
++    "lobby.bdk.hubTag": "Heavenly decree · Flame Mountain will",
++    "lobby.bdk.openSlot": "Start game",
++    "lobby.bdk.startGame": "Start game",
++    "lobby.bdk.starting": "Entering…",
++    "lobby.bdk.decree": "Heavenly War Decree",
++    "lobby.bdk.backLobby": "Back to lobby",
++    "lobby.bdk.backXi": "Back to XI GAME",
++    "lobby.bdk.backHub": "Back to Bull Demon King home",
++    "lobby.bdk.backGameHome": "Back to game home",
++    "lobby.bdk.homeLobby": "🏠 Back to lobby",
++    "lobby.nav.crumbLobby": "XI GAME",
++    "lobby.nav.crumbHub": "XI GAME · Bull Demon King",
++    "lobby.nav.crumbPlay": "BULL DEMON KING",
++    "lobby.bdk.ambientHint": "Drum · fire · thunder · breath",
++    "lobby.bdk.heroGap": "BDK hero art connected",
++    "lobby.bdk.heroReady": "Hero art connected",
++    "lobby.bdk.featSection": "Features",
++    "lobby.bdk.feat.recharge": "Deposit",
++    "lobby.bdk.feat.withdraw": "Withdraw",
++    "lobby.bdk.feat.vip": "VIP",
++    "lobby.bdk.feat.activity": "Events",
++    "lobby.bdk.feat.rankings": "Rankings",
++    "lobby.bdk.feat.records": "Records",
++    "lobby.bdk.feat.rules": "Rules",
++    "lobby.bdk.feat.paytable": "Paytable",
++    "lobby.bdk.feat.betHelp": "Bet help",
++    "lobby.bdk.feat.checkin": "Check-in",
++    "lobby.bdk.feat.announce": "Announcements",
++    "lobby.bdk.feat.cs": "Support",
++    "lobby.bdk.feat.help": "Help",
++    "lobby.bdk.feat.profile": "Profile",
++    "lobby.bdk.feat.settings": "Settings",
++    "lobby.bdk.group.funds": "Funds",
++    "lobby.bdk.group.member": "Membership",
++    "lobby.bdk.group.game": "Game",
++    "lobby.bdk.group.player": "Player",
++    "lobby.bdk.group.service": "Service",
++    "lobby.bdk.wallet.shell": "Deposit/withdraw channels pending business rules. Balance updates are server-authoritative; the client never mutates balance.",
++    "lobby.bdk.vip.shell": "VIP level is read-only here. Upgrade conditions and rewards are admin-configured.",
++    "lobby.bdk.vip.status": "Status",
++    "lobby.bdk.rules.intro": "Bull Demon King formal rules. Spins and settlement are server-authoritative (Session / Spin / Round).",
++    "lobby.bdk.rules.lines": "5×4, 50-line play. Paytable values are line-bet multipliers; Big/Mega/Ultra/Super/Epic/Jackpot are presentation tiers only.",
++    "lobby.bdk.rules.wild": "WILD substitutes for all symbols except SCATTER. Line wins and free games settle on the formal math version.",
++    "lobby.bdk.rules.scatter": "SCATTER: 3/4/5 triggers 8/15/20 free spins; during free spins, 2+ can retrigger. Settlement is server-authoritative.",
++    "lobby.bdk.paytable.intro": "Paytable follows the formal math version; open the in-game paytable for symbol multipliers.",
++    "lobby.bdk.paytable.note": "This page is informational only. Values follow server mathVersion and the in-game paytable — no third-party math copy.",
++    "lobby.bdk.betHelp.body": "Choose your bet, then Start Game to enter the slot. Bet, balance, and payouts settle on the server; spins block when balance is insufficient.",
++    "lobby.bdk.rankings.empty": "No ranking data yet",
++    "lobby.bdk.rankings.range.today": "Today",
++    "lobby.bdk.rankings.range.7d": "7D",
++    "lobby.bdk.rankings.range.30d": "30D",
++    "lobby.bdk.records.empty": "No records yet",
++    "lobby.play.loading": "XI GAME loading…",
++    "lobby.play.leaveTitle": "Round in progress",
++    "lobby.play.leaveBody": "The spin has not finished safely. Wait for settlement before leaving, or stay in the game.",
++    "lobby.play.leaveWaiting": "Waiting for a safe round end…",
++    "lobby.play.leaveStay": "Stay",
++    "lobby.play.leaveWait": "Wait, then leave",
++    "lobby.panel.home": "Home",
++    "lobby.panel.games": "All games",
++    "lobby.panel.wallet": "Wallet",
++    "lobby.panel.activity": "Activity",
++    "lobby.panel.me": "Profile",
++    "lobby.nickname": "Nickname",
++    "lobby.commerce.error": "Failed to load. Please retry.",
++    "lobby.commerce.depositHint": "Pick channel and preset amount. Credits only via server Wallet/Ledger.",
++    "lobby.commerce.withdrawHint": "Withdrawal freezes available balance pending review (admin-configurable limits).",
++    "lobby.commerce.channel": "Channel",
++    "lobby.commerce.account": "Payout account",
++    "lobby.commerce.amount": "Amount",
++    "lobby.commerce.fee": "Fee",
++    "lobby.commerce.expected": "Expected",
++    "lobby.commerce.createOrder": "Create deposit order",
++    "lobby.commerce.testConfirm": "Test confirm credit",
++    "lobby.commerce.submitWithdraw": "Submit withdrawal",
++    "lobby.commerce.depositCreated": "Order created — awaiting channel confirm",
++    "lobby.commerce.depositSuccess": "Deposit success — balance refreshed",
++    "lobby.commerce.withdrawCreated": "Withdrawal submitted — balance held for review",
++    "lobby.commerce.available": "Available",
++    "lobby.commerce.frozen": "Frozen",
++    "lobby.commerce.noMoves": "No recent moves",
++    "lobby.commerce.usdtLive": "Enabled",
++    "lobby.commerce.claim": "Claim",
++    "lobby.commerce.claimOk": "Claimed",
++    "lobby.commerce.claimable": "Claimable",
++    "lobby.commerce.claimed": "Claimed",
++    "lobby.commerce.locked": "Unavailable",
++    "lobby.commerce.day": "Check-in day",
++    "lobby.commerce.reward": "Reward",
++    "lobby.commerce.notProductionReady":
++      "NOT_PRODUCTION_READY — Production deposit/withdraw channels and limits are not signed off; placeholders + test harness only (Fail Closed).",
++    "lobby.commerce.tempHarness": "TEMP",
++    "lobby.commerce.placeholderLimits": "Limits/fees are admin placeholders (not final business numbers)",
++    "lobby.me.title": "Me",
++    "lobby.me.wallet": "My Wallet",
++    "lobby.me.total": "Total",
++    "lobby.me.ledger": "Ledger",
++    "lobby.me.records": "Game records",
++    "lobby.me.group.activity": "Events & perks",
++    "lobby.me.group.account": "Account & support",
++    "lobby.me.coupons": "Coupons",
++    "lobby.me.security": "Security center",
++    "lobby.me.security.hint": "Password change uses existing auth. Devices / login history / bind / KYC / OTP are reserved — no fake security logs.",
++    "lobby.me.security.password": "Change password",
++    "lobby.me.security.devices": "Devices",
++    "lobby.me.security.loginHistory": "Login history",
++    "lobby.me.security.phone": "Phone binding",
++    "lobby.me.security.email": "Email binding",
++    "lobby.me.security.kyc": "Identity verification",
++    "lobby.me.security.otp": "Two-factor OTP",
++    "lobby.me.reserved": "Reserved",
++    "lobby.me.cs.body": "Support channels pending business enablement. No fake live-chat or ticket data.",
++    "lobby.me.help": "Help",
++    "lobby.me.help.body": "Use shortcuts on this page for deposit, withdraw, events, and VIP. Game rules follow in-game help.",
++    "lobby.me.about": "About",
++    "lobby.me.about.body": "XI GAME lobby · mythic entertainment. Version details follow official release notes.",
++  },
++  "my-MM": {
++    "lobby.brand": "XI GAME",
++    "lobby.brandEn": "XI GAME",
++    "lobby.tagline": "ဒဏ္ဍာရီခရီး · ဂိမ်းလော်ဘီ",
++    "lobby.hero.journey": "အနောက်တိုင်းခရီး · နတ်ဓာတ်",
++    "lobby.hero.placeholder": "Journey to the West အဓိကပုံ ဆိုင်းငံ့ထားသည်",
++    "lobby.loading": "ဖွင့်နေသည်…",
++    "lobby.error": "ယာယီမရရှိနိုင်ပါ။ ပြန်ကြိုးစားပါ။",
++    "lobby.retry": "ပြန်ကြိုးစား",
++    "lobby.unavailable": "မရရှိနိုင်",
++    "lobby.vip": "VIP",
++    "lobby.recharge": "ငွေသွင်း",
++    "lobby.balance.mmk": "MMK",
++    "lobby.balance.usdt": "USDT",
++    "lobby.messages": "စာများ",
++    "lobby.announcements": "ကြေညာချက်",
++    "lobby.settings": "ဆက်တင်",
++    "lobby.language": "ဘာသာစကား",
++    "lobby.nav.home": "ပင်မ",
++    "lobby.nav.games": "ဂိမ်းများ",
++    "lobby.nav.wallet": "ပိုက်ဆံအိတ်",
++    "lobby.nav.activity": "လှုပ်ရှားမှု",
++    "lobby.nav.me": "ကျွန်ုပ်",
++    "lobby.cat.recommended": "အကြံပြု",
++    "lobby.cat.hot": "လူကြိုက်များ",
++    "lobby.cat.new": "အသစ်",
++    "lobby.cat.jackpot": "ဂျက်ပေါ့",
++    "lobby.cat.slots": "စလော့",
++    "lobby.section.recommended": "အကြံပြုဂိမ်းများ",
++    "lobby.section.moreGames": "ဂိမ်းပိုများ >",
++    "lobby.section.quick": "အမြန်လုပ်ဆောင်ချက်",
++    "lobby.section.features": "ဝန်ဆောင်မှုများ",
++    "lobby.section.catalog": "ဂိမ်းစာရင်း",
++    "lobby.badge.hot": "HOT",
++    "lobby.badge.new": "NEW",
++    "lobby.badge.jackpot": "JACKPOT",
++    "lobby.badge.recommended": "PICK",
++    "lobby.ticker.default": "ကြေညာချက်မရှိ",
++    "lobby.ticker.empty": "ကြေညာချက်မရှိ",
++    "lobby.ticker.more": "ပိုမို >",
++    "lobby.rec.soon": "မကြာမီ",
++    "lobby.players": "အွန်လိုင်း",
++    "lobby.players.unknown": "—",
++    "lobby.comingSoon": "မကြာမီ",
++    "lobby.comingSoon.body": "စည်းမျဉ်းနှင့် သင်္ချာပြင်ဆင်မှု စီးပွားရေးအတည်ပြုချက် စောင့်ဆိုင်းနေသည်။",
++    "lobby.comingSoon.toast": "မကြာမီ",
++    "lobby.play": "ကစားမည်",
++    "lobby.close": "ပိတ်",
++    "lobby.games.bdk.title": "နွားနတ်ဆိုးဘုရင်",
++    "lobby.games.bdk.subtitle": "XI GAME · နွားနတ်ဆိုးဘုရင်",
++    "lobby.games.wukong.title": "ဆွန်ဝူခုန်း",
++    "lobby.games.nezha.title": "နယ်ဇာ",
++    "lobby.games.dragonking.title": "နဂါးဘုရင်",
++    "lobby.games.phoenix.title": "ဖီးနစ်",
++    "lobby.games.caishen.title": "စည်းစိမ်နတ်",
++    "lobby.games.wulinpanda.title": "ဝူလင် ပန်ဒါ",
++    "lobby.games.redboy.title": "သားနီ",
++    "lobby.games.bonespirit.title": "အရိုးဖြူနတ်",
++    "lobby.feat.recharge": "ငွေသွင်း",
++    "lobby.feat.withdraw": "ငွေထုတ်",
++    "lobby.feat.vip": "VIP စင်တာ",
++    "lobby.feat.activity": "ပွဲစင်တာ",
++    "lobby.feat.announcements": "ကြေညာချက်",
++    "lobby.feat.rankings": "အဆင့်ဇယား",
++    "lobby.feat.checkin": "နေ့စဉ်လက်မှတ်",
++    "lobby.feat.cs": "ဝန်ဆောင်မှု",
++    "lobby.feat.invite": "ဖိတ်ကြား",
++    "lobby.feat.tasks": "တာဝန်များ",
++    "lobby.feat.mail": "စာတိုက်",
++    "lobby.feat.gifts": "လက်ဆောင်",
++    "lobby.feat.redeem": "ကုဒ်လဲ",
++    "lobby.pending.title": "စီးပွားရေးစည်းမျဉ်း စောင့်ဆိုင်း",
++    "lobby.pending.body": "ဝင်ပေါက်ဖွင့်ပြီးဖြစ်သည်။ စည်းမျဉ်းပြီးမှ ချန်နယ်ဖွင့်မည်။",
++    "lobby.announcements.empty": "ကြေညာချက်မရှိ",
++    "lobby.announcements.error": "ကြေညာချက် မဖွင့်နိုင်",
++    "lobby.profile.error": "ပရိုဖိုင် မဖွင့်နိုင်",
++    "lobby.profile.guest": "ဧည့်သည်",
++    "lobby.auth.login": "ဝင်မည်",
++    "lobby.auth.register": "မှတ်ပုံတင်",
++    "lobby.auth.logout": "ထွက်မည်",
++    "lobby.auth.forgot": "စကားဝှက်မေ့",
++    "auth.brand": "XI GAME",
++    "auth.title.login": "အကောင့်ဝင်မည်",
++    "auth.title.register": "အကောင့်ဖန်တီးမည်",
++    "auth.title.forgot": "စကားဝှက်ပြန်သတ်မှတ်",
++    "auth.tab.phone": "ဖုန်း",
++    "auth.tab.email": "အီးမေးလ်",
++    "auth.phone": "ဖုန်းနံပါတ်",
++    "auth.email": "အီးမေးလ်",
++    "auth.password": "စကားဝှက်",
++    "auth.passwordConfirm": "စကားဝှက်အတည်ပြု",
++    "auth.passwordNew": "စကားဝှက်အသစ်",
++    "auth.nickname": "အမည်ပြောင် (ရွေးချယ်)",
++    "auth.otp": "အတည်ပြုကုဒ်",
++    "auth.sendOtp": "ကုဒ်ပို့မည်",
++    "auth.resendOtp": "ပြန်ပို့မည်",
++    "auth.verify": "အတည်ပြု",
++    "auth.next": "ရှေ့သို့",
++    "auth.submitLogin": "ဝင်မည်",
++    "auth.submitRegister": "မှတ်ပုံတင်ပြီးဆုံး",
++    "auth.submitReset": "စကားဝှက်ပြန်သတ်မှတ်",
++    "auth.backLogin": "ဝင်ရန်သို့ ပြန်",
++    "auth.goRegister": "အကောင့်မရှိသေး? မှတ်ပုံတင်",
++    "auth.goLogin": "အကောင့်ရှိပြီး? ဝင်မည်",
++    "auth.goForgot": "စကားဝှက်မေ့?",
++    "auth.hint.phone": "E.164 ပုံစံ သုံးပါ၊ ဥပမာ +959…",
++    "auth.hint.password": "အနည်းဆုံး ၈ လုံး၊ စာလုံးနှင့် ဂဏန်းပါရမည်",
++    "auth.hint.otpTest": "စမ်းသပ် OTP ရနိုင်သည်",
++    "auth.step.destination": "အကောင့်",
++    "auth.step.otp": "OTP",
++    "auth.step.password": "စကားဝှက်",
++    "auth.success.register": "မှတ်ပုံတင်ပြီး",
++    "auth.success.login": "ဝင်ရောက်ပြီး",
++    "auth.success.reset": "စကားဝှက်ပြောင်းပြီး — ပြန်ဝင်ပါ",
++    "auth.error.generic": "မအောင်မြင်ပါ — ပြန်ကြိုးစားပါ",
++    "auth.error.network": "ကွန်ရက်ချို့ယွင်း",
++    "auth.error.INVALID_PHONE": "ဖုန်းပုံစံမှား",
++    "auth.error.INVALID_EMAIL": "အီးမေးလ်ပုံစံမှား",
++    "auth.error.INVALID_PASSWORD": "စကားဝှက်မကိုက်ညီ",
++    "auth.error.INVALID_CREDENTIALS": "အကောင့် သို့မဟုတ် စကားဝှက်မှား",
++    "auth.error.ALREADY_REGISTERED": "အကောင့်ရှိပြီးသား",
++    "auth.error.ACCOUNT_NOT_FOUND": "အကောင့်မတွေ့",
++    "auth.error.OTP_INVALID": "အတည်ပြုကုဒ်မှား",
++    "auth.error.OTP_EXPIRED": "အတည်ပြုကုဒ် သက်တမ်းကုန်",
++    "auth.error.OTP_RATE_LIMITED": "OTP တောင်းဆိုမှု များလွန်း",
++    "auth.error.LOGIN_RATE_LIMITED": "ဝင်ရန်ကြိုးစားမှု များလွန်း",
++    "auth.error.ACCOUNT_LOCKED": "အကောင့်ယာယီပိတ်ထား",
++    "auth.error.PROVIDER_NOT_CONFIGURED": "OTP ဝန်ဆောင်မှု မပြင်ဆင်ရသေး",
++    "auth.error.PROVIDER_NOT_PRODUCTION_READY": "OTP လမ်းကြောင်း မရသေး",
++    "auth.error.PASSWORD_MISMATCH": "စကားဝှက်နှစ်ခု မတူ",
++    "auth.error.REGISTER_FAILED": "မှတ်ပုံတင်မအောင်မြင်",
++    "lobby.wallet.error": "လက်ကျန် မဖွင့်နိုင်",
++    "lobby.wallet.usdt.pending": "ငွေကြေးမျိုးစုံ စာချုပ်စောင့်ဆိုင်း",
++    "lobby.settings.body": "အရည်အသွေး သတ်မှတ်ချက်များကို လော်ဘီနှင့် ဂိမ်းတွင် မျှဝေသည်။ ဘာသာစကားကို ထိပ်ဘား 中文 / မြန်မာ / EN ဖြင့် ပြောင်းပါ။",
++    "lobby.quality": "အရည်အသွေး",
++    "lobby.quality.auto": "အလိုအလျောက်",
++    "lobby.quality.ultra": "အမြင့်ဆုံး",
++    "lobby.quality.high": "မြင့်",
++    "lobby.quality.medium": "အလတ်",
++    "lobby.quality.low": "နိမ့်",
++    "lobby.quality.fx": "အထူးပြုလုပ်ချက်",
++    "lobby.quality.fxOn": "ဖွင့်",
++    "lobby.quality.fxOff": "ပိတ်",
++    "lobby.quality.animal": "တိရစ္ဆာန် အန်နီမေးရှင်း",
++    "lobby.quality.animalFull": "ပြည့်စုံ",
++    "lobby.quality.animalSimple": "ရိုးရှင်း",
++    "lobby.quality.fps": "FPS",
++    "lobby.quality.fpsAuto": "အလိုအလျောက်",
++    "lobby.quality.fps30": "30",
++    "lobby.quality.fps60": "60",
++    "lobby.messages.empty": "စာမရှိ",
++    "lobby.page.xi": "XI GAME",
++    "lobby.page.bdkHub": "XI GAME · နွားနတ်ဆိုးဘုရင်",
++    "lobby.page.bdkPlay": "နွားနတ်ဆိုးဘုရင်",
++    "lobby.stub.afterAccept": "လက်ခံပြီးမှ ဆက်လုပ်မည် — Step 2 ကို လော်ဘီအတည်ပြုပြီးမှ စမည်။",
++    "lobby.bdk.hubTitle": "XI GAME · နွားနတ်ဆိုးဘုရင်",
++    "lobby.bdk.hubLead": "တရားဝင်စလော့ ဝင်ပေါက် (Server Session / Spin / Round)။",
++    "lobby.bdk.hubTag": "နတ်ဘုံအမိန့် · မီးတောင်စိတ်ဓာတ်",
++    "lobby.bdk.openSlot": "ဂိမ်းစတင်မည်",
++    "lobby.bdk.startGame": "ဂိမ်းစတင်မည်",
++    "lobby.bdk.starting": "ဝင်နေသည်…",
++    "lobby.bdk.decree": "နတ်ဘုံစစ်မိန့်",
++    "lobby.bdk.backLobby": "လော်ဘီသို့",
++    "lobby.bdk.backXi": "XI GAME သို့ ပြန်ရန်",
++    "lobby.bdk.backHub": "နွားနတ်ဆိုးဘုရင် ပင်မသို့",
++    "lobby.bdk.backGameHome": "ဂိမ်းပင်မသို့",
++    "lobby.bdk.homeLobby": "🏠 လော်ဘီသို့",
++    "lobby.nav.crumbLobby": "XI GAME",
++    "lobby.nav.crumbHub": "XI GAME · နွားနတ်ဆိုးဘုရင်",
++    "lobby.nav.crumbPlay": "နွားနတ်ဆိုးဘုရင်",
++    "lobby.bdk.ambientHint": "စည် · မီး · မိုးကြိုး · အသက်ရှူ",
++    "lobby.bdk.heroGap": "BDK အဓိကပုံ ချိတ်ဆက်ပြီး",
++    "lobby.bdk.heroReady": "အဓိကပုံ ချိတ်ဆက်ပြီး",
++    "lobby.bdk.featSection": "ဝန်ဆောင်မှုများ",
++    "lobby.bdk.feat.recharge": "ငွေသွင်း",
++    "lobby.bdk.feat.withdraw": "ငွေထုတ်",
++    "lobby.bdk.feat.vip": "VIP",
++    "lobby.bdk.feat.activity": "ပွဲများ",
++    "lobby.bdk.feat.rankings": "အဆင့်ဇယား",
++    "lobby.bdk.feat.records": "မှတ်တမ်း",
++    "lobby.bdk.feat.rules": "စည်းမျဉ်း",
++    "lobby.bdk.feat.paytable": "ပေးချေဇယား",
++    "lobby.bdk.feat.betHelp": "လောင်းကြေးအကူ",
++    "lobby.bdk.feat.checkin": "နေ့စဉ်လက်မှတ်",
++    "lobby.bdk.feat.announce": "ကြေညာချက်",
++    "lobby.bdk.feat.cs": "ဝန်ဆောင်မှု",
++    "lobby.bdk.feat.help": "အကူအညီ",
++    "lobby.bdk.feat.profile": "ပရိုဖိုင်",
++    "lobby.bdk.feat.settings": "ဆက်တင်",
++    "lobby.bdk.group.funds": "ငွေကြေး",
++    "lobby.bdk.group.member": "အသင်းဝင်",
++    "lobby.bdk.group.game": "ဂိမ်း",
++    "lobby.bdk.group.player": "ကစားသမား",
++    "lobby.bdk.group.service": "ဝန်ဆောင်မှု",
++    "lobby.bdk.wallet.shell": "ငွေသွင်း/ငွေထုတ် ချန်နယ်များ စီးပွားရေးစည်းမျဉ်း စောင့်ဆိုင်း။ လက်ကျန်ကို ဆာဗာကသာ ပြင်သည် — client မပြင်ပါ။",
++    "lobby.bdk.vip.shell": "VIP အဆင့်ကို ဖတ်ရှုသာ။ အဆင့်တက်စည်းမျဉ်းနှင့် ဆုများကို admin က ပြင်သည်။",
++    "lobby.bdk.vip.status": "အခြေအနေ",
++    "lobby.bdk.rules.intro": "Bull Demon King တရားဝင် စည်းမျဉ်း။ လှည့်ခြင်းနှင့် ဆုချီးမြှင့်မှုကို ဆာဗာက ဆုံးဖြတ်သည် (Session / Spin / Round)။",
++    "lobby.bdk.rules.lines": "5×4၊ 50 လိုင်း။ ပေးချေဇယားသည် လိုင်းလောင်းကြေး ဆတူများ။ Big/Mega/Ultra/Super/Epic/Jackpot သည် ပြသမှုသာ။",
++    "lobby.bdk.rules.wild": "WILD သည် SCATTER မှလွဲ၍ သင်္ကေတအားလုံးအစားထိုးနိုင်သည်။ လိုင်းဆုနှင့် အခမဲ့ဂိမ်းကို တရားဝင် math ဖြင့် ဆုံးဖြတ်သည်။",
++    "lobby.bdk.rules.scatter": "SCATTER: 3/4/5 က 8/15/20 အခမဲ့လှည့်ခြင်း။ အခမဲ့အတွင်း 2+ ပြန်ထပ်နိုင်သည်။ ဆုချီးမြှင့်မှုကို ဆာဗာက ဆုံးဖြတ်သည်။",
++    "lobby.bdk.paytable.intro": "ပေးချေဇယားသည် တရားဝင် math version အတိုင်း။ သင်္ကေတဆတူများကို ဂိမ်းတွင်းဇယားတွင် ကြည့်ပါ။",
++    "lobby.bdk.paytable.note": "ဤစာမျက်နှာသည် ရှင်းလင်းချက်သာ။ တန်ဖိုးများကို ဆာဗာ mathVersion နှင့် ဂိမ်းတွင်းဇယားအတိုင်း — ပြင်ပ math မကူးယူပါ။",
++    "lobby.bdk.betHelp.body": "လောင်းကြေးရွေးပြီး ဂိမ်းစတင်မည် ကိုနှိပ်ပါ။ လောင်းကြေး၊ လက်ကျန်နှင့် ဆုများကို ဆာဗာက ဆုံးဖြတ်သည်။ လက်ကျန်မလောက်ပါက မလှည့်နိုင်ပါ။",
++    "lobby.bdk.rankings.empty": "အဆင့်ဇယား ဒေတာမရှိသေး",
++    "lobby.bdk.rankings.range.today": "ယနေ့",
++    "lobby.bdk.rankings.range.7d": "၇ရက်",
++    "lobby.bdk.rankings.range.30d": "၃၀ရက်",
++    "lobby.bdk.records.empty": "မှတ်တမ်းမရှိသေး",
++    "lobby.play.loading": "XI GAME ဖွင့်နေသည်…",
++    "lobby.play.leaveTitle": "ဂိမ်းအလှည့် ဆက်လုပ်နေသည်",
++    "lobby.play.leaveBody": "လှည့်ခြင်း မပြီးသေးပါ။ ဆုချီးမြှင့်မှုပြီးမှ ပြန်ရန် စောင့်ပါ — သို့မဟုတ် ဆက်ကစားပါ။",
++    "lobby.play.leaveWaiting": "ဘေးကင်းစွာ ပြီးဆုံးရန် စောင့်နေသည်…",
++    "lobby.play.leaveStay": "ဆက်ကစားမည်",
++    "lobby.play.leaveWait": "ပြီးမှ ပြန်မည်",
++    "lobby.panel.home": "ပင်မ",
++    "lobby.panel.games": "ဂိမ်းအားလုံး",
++    "lobby.panel.wallet": "ပိုက်ဆံအိတ်",
++    "lobby.panel.activity": "လှုပ်ရှားမှု",
++    "lobby.panel.me": "ပရိုဖိုင်",
++    "lobby.nickname": "အမည်ပြောင်",
++    "lobby.commerce.error": "မဖွင့်နိုင်ပါ။ ပြန်ကြိုးစားပါ။",
++    "lobby.commerce.depositHint": "ချန်နယ်နှင့် preset ရွေးပါ။ ငွေသွင်းသည် ဆာဗာ Wallet/Ledger မှသာ။",
++    "lobby.commerce.withdrawHint": "ငွေထုတ်သည် လက်ကျန်ကို ဦးစွာ ထိန်းသိမ်းပြီး စိစစ်မည်။",
++    "lobby.commerce.channel": "ချန်နယ်",
++    "lobby.commerce.account": "လက်ခံအကောင့်",
++    "lobby.commerce.amount": "ပမာဏ",
++    "lobby.commerce.fee": "ကြေး",
++    "lobby.commerce.expected": "ရရှိမည့်ပမာဏ",
++    "lobby.commerce.createOrder": "ငွေသွင်း အော်ဒါ ဖန်တီး",
++    "lobby.commerce.testConfirm": "စမ်းသပ် အတည်ပြု",
++    "lobby.commerce.submitWithdraw": "ငွေထုတ် တင်သွင်း",
++    "lobby.commerce.depositCreated": "အော်ဒါ ဖန်တီးပြီး — ချန်နယ် စောင့်ဆိုင်း",
++    "lobby.commerce.depositSuccess": "ငွေသွင်း အောင်မြင် — လက်ကျန် ပြန်ဖတ်",
++    "lobby.commerce.withdrawCreated": "ငွေထုတ် တင်ပြီး — စိစစ်ရန် ထိန်းသိမ်း",
++    "lobby.commerce.available": "ရနိုင်",
++    "lobby.commerce.frozen": "ထိန်းသိမ်း",
++    "lobby.commerce.noMoves": "မကြာသေးမီ လှုပ်ရှားမှု မရှိ",
++    "lobby.commerce.usdtLive": "ဖွင့်ထား",
++    "lobby.commerce.claim": "ယူမည်",
++    "lobby.commerce.claimOk": "ယူပြီး",
++    "lobby.commerce.claimable": "ယူနိုင်",
++    "lobby.commerce.claimed": "ယူပြီး",
++    "lobby.commerce.locked": "မရနိုင်",
++    "lobby.commerce.day": "လက်မှတ်နေ့",
++    "lobby.commerce.reward": "ဆု",
++    "lobby.commerce.notProductionReady":
++      "NOT_PRODUCTION_READY — ထုတ်လုပ်ရေး ငွေသွင်း/ထုတ် လမ်းကြောင်းနှင့် ကန့်သတ်ချက်များ အတည်မပြုရသေးပါ (Fail Closed).",
++    "lobby.commerce.tempHarness": "TEMP",
++    "lobby.commerce.placeholderLimits": "ကန့်သတ်ချက်/ကြေးများသည် admin placeholder များဖြစ်သည်",
++    "lobby.me.title": "ကျွန်ုပ်",
++    "lobby.me.wallet": "ကျွန်ုပ်၏ ပိုက်ဆံအိတ်",
++    "lobby.me.total": "စုစုပေါင်း",
++    "lobby.me.ledger": "ငွေစာရင်း",
++    "lobby.me.records": "ဂိမ်းမှတ်တမ်း",
++    "lobby.me.group.activity": "လှုပ်ရှားမှုနှင့် အခွင့်အရေး",
++    "lobby.me.group.account": "အကောင့်နှင့် အကူအညီ",
++    "lobby.me.coupons": "ကူပွန်",
++    "lobby.me.security": "လုံခြုံရေးစင်တာ",
++    "lobby.me.security.hint": "စကားဝှက်ပြောင်းခြင်းသည် ရှိပြီးသား auth ကိုသုံးသည်။ စက်/ဝင်ရောက်မှတ်တမ်း/ချိတ်ဆက်/KYC/OTP သည် ကြိုတင်နေရာ — အတု log မပြပါ။",
++    "lobby.me.security.password": "စကားဝှက်ပြောင်း",
++    "lobby.me.security.devices": "ဝင်ရောက်သည့်စက်",
++    "lobby.me.security.loginHistory": "ဝင်ရောက်မှတ်တမ်း",
++    "lobby.me.security.phone": "ဖုန်းချိတ်ဆက်",
++    "lobby.me.security.email": "အီးမေးလ်ချိတ်ဆက်",
++    "lobby.me.security.kyc": "ကိုယ်ရေးအတည်ပြု",
++    "lobby.me.security.otp": "OTP နှစ်ဆင့်",
++    "lobby.me.reserved": "ကြိုတင်",
++    "lobby.me.cs.body": "ဖောက်သည်ဝန်ဆောင်မှု လမ်းကြောင်း စီးပွားရေးဖွင့်ရန် စောင့်ဆိုင်း။ အတု chat/ticket မရှိ။",
++    "lobby.me.help": "အကူအညီ",
++    "lobby.me.help.body": "ငွေသွင်း/ထုတ်၊ လှုပ်ရှားမှုနှင့် VIP အတွက် ဤစာမျက်နှာ shortcut ကိုသုံးပါ။ ဂိမ်းစည်းမျဉ်းသည် ဂိမ်းအတွင်း အကူအညီအတိုင်း။",
++    "lobby.me.about": "အကြောင်း",
++    "lobby.me.about.body": "XI GAME လော်ဘီ · ဒဏ္ဍာရီဖျော်ဖြေမှု။ ဗားရှင်းအသေးစိတ်သည် တရားဝင် ထုတ်ပြန်ချက်အတိုင်း။",
++  },
++};
++
++const langListeners = new Set<() => void>();
++
++function emitLobbyLang(): void {
++  for (const listener of langListeners) listener();
++}
++
++export function loadLobbyLang(): LobbyLang {
++  if (typeof window === "undefined") return "zh-CN";
++  const raw = window.localStorage.getItem(LOBBY_LANG_STORAGE);
++  if (isLobbyLang(raw)) return raw;
++  return "zh-CN";
++}
++
++export function saveLobbyLang(lang: LobbyLang): void {
++  if (typeof window === "undefined") return;
++  window.localStorage.setItem(LOBBY_LANG_STORAGE, lang);
++  writeLangCookie(lang);
++  emitLobbyLang();
++}
++
++/** SSR-safe subscribe for lobby language (avoids hydration setState-in-effect). */
++export function subscribeLobbyLang(onStoreChange: () => void): () => void {
++  langListeners.add(onStoreChange);
++  const onStorage = (e: StorageEvent) => {
++    if (e.key === LOBBY_LANG_STORAGE || e.key === null) onStoreChange();
++  };
++  if (typeof window !== "undefined") {
++    window.addEventListener("storage", onStorage);
++  }
++  return () => {
++    langListeners.delete(onStoreChange);
++    if (typeof window !== "undefined") {
++      window.removeEventListener("storage", onStorage);
++    }
++  };
++}
++
++/**
++ * Shared deterministic default for SSR + hydration first frame.
++ * Do NOT read cookie/localStorage here (would diverge from server HTML).
++ * Client syncs via loadLobbyLang after hydrate (useSyncExternalStore).
++ */
++export function getLobbyLangServerSnapshot(): LobbyLang {
++  return "zh-CN";
++}
++
++export function tLobby(lang: LobbyLang, key: string): string {
++  return dict[lang][key] ?? dict.en[key] ?? key;
++}
++
++export function lobbyKeys(): string[] {
++  return Object.keys(dict["zh-CN"]).sort();
++}
++
++export function assertLobbyI18nComplete(): { ok: boolean; missing: string[] } {
++  const base = Object.keys(dict["zh-CN"]);
++  const missing: string[] = [];
++  for (const lang of LOBBY_LANGS) {
++    for (const key of base) {
++      if (!dict[lang][key]) missing.push(`${lang}:${key}`);
++    }
++  }
++  return { ok: missing.length === 0, missing };
++}

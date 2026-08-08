@@ -1,0 +1,673 @@
+﻿diff --git a/lib/admin/admin-api.ts b/lib/admin/admin-api.ts
+index f99c3e7..8876c74 100644
+--- a/lib/admin/admin-api.ts
++++ b/lib/admin/admin-api.ts
+@@ -8,18 +8,17 @@
+  * and writes an admin_audit_logs row with time / admin / IP / reason.
+  *
+  * Money-safety invariants enforced here:
+- *   - no endpoint can modify wallet, ledger, math versions or balances;
+- *   - the only game-table mutation is players.status (freeze/unfreeze).
++ *   - no endpoint can modify wallet, ledger, math versions or balances via raw UPDATE;
++ *   - deposit confirm / withdraw hold-release call MoneyService adapters only;
++ *   - math versions remain read-only;
++ *   - player freeze remains the only direct players.status mutation.
+  */
+ 
+ import { sql } from "drizzle-orm";
+ import { ensureAdminBootstrap } from "./admin-bootstrap.ts";
+ import {
+-<<<<<<< Updated upstream
+-=======
+   ADMIN_PERMISSIONS,
+   ADMIN_ROLES,
+->>>>>>> Stashed changes
+   ADMIN_SESSION_TTL_MS,
+   extractClientIp,
+   generateAdminToken,
+@@ -27,24 +26,12 @@ import {
+   generateSalt,
+   isAdminRole,
+   resolveAdminIdentity,
+-<<<<<<< Updated upstream
+-=======
+   ROLE_PERMISSIONS,
+->>>>>>> Stashed changes
+   roleHasPermission,
+   type AdminIdentity,
+   type AdminPermission,
+ } from "./admin-auth.ts";
+ import {
+-<<<<<<< Updated upstream
+-  getDashboardMetrics,
+-  getLedgerHealth,
+-  getMathVersionDetail,
+-  getPlayerDetail,
+-  getRiskSignals,
+-  getRoundDetail,
+-  getSystemConfig,
+-=======
+   getAdminAuditFor,
+   getAdminStats,
+   getDashboardMetrics,
+@@ -57,7 +44,6 @@ import {
+   getSessionDetail,
+   getSystemConfig,
+   getSystemMonitor,
+->>>>>>> Stashed changes
+   listAdminAuditLogs,
+   listAdmins,
+   listAnnouncements,
+@@ -69,19 +55,39 @@ import {
+   listMathVersions,
+   listPlayers,
+   listRounds,
+-<<<<<<< Updated upstream
+-=======
+   listSessions,
+->>>>>>> Stashed changes
+   listWalletIntents,
+   listWalletProviderOps,
+   normalizePage,
+   type AdminDb,
+ } from "./admin-queries.ts";
++import {
++  getPlayerVip,
++  listVipLevelConfig,
++  setPlayerVip,
++  upsertVipLevelConfig,
++  type VipStatus,
++} from "../vip-service.ts";
++import {
++  confirmDepositOrder,
++  getDepositConfig,
++  listAdminDeposits,
++  listPaymentChannels,
++  upsertDepositConfig,
++} from "../deposit-service.ts";
++import {
++  getWithdrawalConfig,
++  listAdminWithdrawals,
++  markWithdrawalPaid,
++  reviewWithdrawal,
++  upsertWithdrawalConfig,
++} from "../withdrawal-service.ts";
++import {
++  listAdminActivities,
++  upsertActivity,
++} from "../activity-service.ts";
++import { isDevTestIdentityEnabled } from "../runtime-identity.ts";
+ 
+-<<<<<<< Updated upstream
+-export const ADMIN_API_VERSION = "r1-m7-admin-1.0.0";
+-=======
+ export const ADMIN_API_VERSION = "r1-m9-admin-1.0.0";
+ export const ADMIN_BASELINE_SHA = "9654d4194d2db801467af34cef1ddc5650fd310f";
+ 
+@@ -90,8 +96,11 @@ const DANGEROUS_PERMISSIONS: AdminPermission[] = [
+   "players:freeze",
+   "system:manage",
+   "admins:manage",
++  "deposit:manage",
++  "withdraw:review",
++  "withdraw:pay",
++  "activity:manage",
+ ];
+->>>>>>> Stashed changes
+ 
+ function json(data: unknown, status = 200): Response {
+   return Response.json(data, { status });
+@@ -425,8 +434,57 @@ function defineRoutes(): RouteSpec[] {
+   post("players/:id/unfreeze", "players:freeze", (ctx, parts) =>
+     handlePlayerFreeze(ctx, decodeURIComponent(parts[1]), false));
+ 
+-<<<<<<< Updated upstream
+-=======
++  get("vip/levels", "vip:view", async (ctx) =>
++    json({ items: await listVipLevelConfig(ctx.db) }));
++  post("vip/levels", "vip:manage", async (ctx) => {
++    const payload = (await ctx.request.json().catch(() => null)) as Record<string, unknown> | null;
++    const reason = requireReason(payload);
++    if (!reason) return err("REASON_REQUIRED", "A reason is required for this operation");
++    const level = Number(payload?.level);
++    const code = typeof payload?.code === "string" ? payload.code.trim() : "";
++    const title = (payload?.title && typeof payload.title === "object"
++      ? payload.title
++      : {}) as Record<string, string>;
++    const conditions = (payload?.conditions && typeof payload.conditions === "object"
++      ? payload.conditions
++      : {}) as Record<string, unknown>;
++    const enabled = payload?.enabled !== false;
++    if (!Number.isInteger(level) || level < 1 || level > 6 || !code) {
++      return err("INVALID_REQUEST", "level 1鈥? and code are required");
++    }
++    await upsertVipLevelConfig(ctx.db, { level, code, title, conditions, enabled });
++    await writeAuditLog(ctx, "vip.level.upsert", "vip_level", String(level), reason, {
++      code,
++      conditions,
++      enabled,
++    });
++    return json({ ok: true, level });
++  });
++  get("vip/players/:id", "vip:view", async (ctx, parts) =>
++    json({ vip: await getPlayerVip(ctx.db, decodeURIComponent(parts[2])) }));
++  post("vip/players/:id", "vip:manage", async (ctx, parts) => {
++    const payload = (await ctx.request.json().catch(() => null)) as Record<string, unknown> | null;
++    const reason = requireReason(payload);
++    if (!reason) return err("REASON_REQUIRED", "A reason is required for this operation");
++    const playerId = decodeURIComponent(parts[2]);
++    const level = Number(payload?.level);
++    const status = String(payload?.status ?? "ACTIVE") as VipStatus;
++    if (!Number.isInteger(level) || level < 0 || level > 6) {
++      return err("INVALID_REQUEST", "level must be 0鈥?");
++    }
++    if (!["ACTIVE", "EXPIRED", "PENDING", "SUSPENDED"].includes(status)) {
++      return err("INVALID_REQUEST", "invalid VIP status");
++    }
++    const vip = await setPlayerVip(ctx.db, playerId, {
++      level,
++      status,
++      vipStartedAt: typeof payload?.vipStartedAt === "string" ? payload.vipStartedAt : undefined,
++      vipExpiresAt: typeof payload?.vipExpiresAt === "string" ? payload.vipExpiresAt : undefined,
++    });
++    await writeAuditLog(ctx, "vip.player.set", "player", playerId, reason, { level, status });
++    return json({ ok: true, vip });
++  });
++
+   get("sessions", "rounds:view", async (ctx) => {
+     const params = new URL(ctx.request.url).searchParams;
+     return json(await listSessions(ctx.db, {
+@@ -440,7 +498,6 @@ function defineRoutes(): RouteSpec[] {
+     return json(detail);
+   });
+ 
+->>>>>>> Stashed changes
+   get("rounds", "rounds:view", async (ctx) => {
+     const params = new URL(ctx.request.url).searchParams;
+     const page = normalizePage(params);
+@@ -456,8 +513,6 @@ function defineRoutes(): RouteSpec[] {
+     return json(detail);
+   });
+ 
+-<<<<<<< Updated upstream
+-=======
+   // Spin is the product-facing name for a settled/pending game_round (read-only alias).
+   get("spins", "rounds:view", async (ctx) => {
+     const params = new URL(ctx.request.url).searchParams;
+@@ -475,7 +530,6 @@ function defineRoutes(): RouteSpec[] {
+ 
+   get("reports/ops", "dashboard:view", async (ctx) => json(await getOpsReport(ctx.db)));
+ 
+->>>>>>> Stashed changes
+   get("wallet/intents", "wallet:view", async (ctx) => {
+     const params = new URL(ctx.request.url).searchParams;
+     return json(await listWalletIntents(ctx.db, {
+@@ -486,6 +540,160 @@ function defineRoutes(): RouteSpec[] {
+   get("wallet/provider-ops", "wallet:view", async (ctx) =>
+     json(await listWalletProviderOps(ctx.db, normalizePage(new URL(ctx.request.url).searchParams))));
+ 
++  get("deposits", "deposit:view", async (ctx) => {
++    const params = new URL(ctx.request.url).searchParams;
++    const page = normalizePage(params);
++    return json(await listAdminDeposits(ctx.db, {
++      playerId: params.get("playerId") ?? undefined,
++      status: params.get("status") ?? undefined,
++      limit: page.pageSize,
++      offset: (page.page - 1) * page.pageSize,
++    }));
++  });
++  get("deposits/config", "deposit:view", async (ctx) =>
++    json({
++      config: await getDepositConfig(ctx.db),
++      channels: await listPaymentChannels(ctx.db),
++    }));
++  post("deposits/config", "deposit:manage", async (ctx) => {
++    const payload = (await ctx.request.json().catch(() => null)) as Record<string, unknown> | null;
++    const reason = requireReason(payload);
++    if (!reason) return err("REASON_REQUIRED", "A reason is required for this operation");
++    const config = await upsertDepositConfig(ctx.db, (payload?.config ?? {}) as Record<string, unknown>);
++    await writeAuditLog(ctx, "deposit.config.upsert", "wallet_commerce_config", "deposit", reason, config);
++    return json({ ok: true, config });
++  });
++  post("deposits/:id/confirm", "deposit:manage", async (ctx, parts) => {
++    if (!isDevTestIdentityEnabled()) {
++      return err(
++        "PROVIDER_NOT_CONFIGURED",
++        "Live provider confirm blocked (BR-007); enable test identity for harness",
++        503,
++      );
++    }
++    const payload = (await ctx.request.json().catch(() => null)) as Record<string, unknown> | null;
++    const reason = requireReason(payload);
++    if (!reason) return err("REASON_REQUIRED", "A reason is required for this operation");
++    const id = decodeURIComponent(parts[1]);
++    const result = await confirmDepositOrder(ctx.db, { orderId: id });
++    if (!result.ok) return err(result.code, result.message, result.code === "NOT_FOUND" ? 404 : 400);
++    await writeAuditLog(ctx, "deposit.confirm", "deposit_order", id, reason, {
++      status: result.order.status,
++      alreadyCredited: result.alreadyCredited ?? false,
++    });
++    return json({ ok: true, order: result.order, balanceAfterMinor: result.balanceAfterMinor });
++  });
++
++  get("withdrawals", "withdraw:view", async (ctx) => {
++    const params = new URL(ctx.request.url).searchParams;
++    const page = normalizePage(params);
++    return json(await listAdminWithdrawals(ctx.db, {
++      playerId: params.get("playerId") ?? undefined,
++      status: params.get("status") ?? undefined,
++      limit: page.pageSize,
++      offset: (page.page - 1) * page.pageSize,
++    }));
++  });
++  get("withdrawals/config", "withdraw:view", async (ctx) =>
++    json({ config: await getWithdrawalConfig(ctx.db) }));
++  post("withdrawals/config", "withdraw:review", async (ctx) => {
++    const payload = (await ctx.request.json().catch(() => null)) as Record<string, unknown> | null;
++    const reason = requireReason(payload);
++    if (!reason) return err("REASON_REQUIRED", "A reason is required for this operation");
++    const config = await upsertWithdrawalConfig(
++      ctx.db,
++      (payload?.config ?? {}) as Record<string, unknown>,
++    );
++    await writeAuditLog(ctx, "withdraw.config.upsert", "wallet_commerce_config", "withdrawal", reason, config);
++    return json({ ok: true, config });
++  });
++  post("withdrawals/:id/approve", "withdraw:review", async (ctx, parts) => {
++    const payload = (await ctx.request.json().catch(() => null)) as Record<string, unknown> | null;
++    const reason = requireReason(payload);
++    if (!reason) return err("REASON_REQUIRED", "A reason is required for this operation");
++    const id = decodeURIComponent(parts[1]);
++    const result = await reviewWithdrawal(ctx.db, {
++      id,
++      action: "APPROVE",
++      adminId: ctx.admin.adminId,
++      reason,
++    });
++    if (!result.ok) return err(result.code, result.message, result.code === "NOT_FOUND" ? 404 : 400);
++    await writeAuditLog(ctx, "withdraw.approve", "withdrawal_request", id, reason, {
++      status: result.request.status,
++    });
++    return json({ ok: true, request: result.request });
++  });
++  post("withdrawals/:id/reject", "withdraw:review", async (ctx, parts) => {
++    const payload = (await ctx.request.json().catch(() => null)) as Record<string, unknown> | null;
++    const reason = requireReason(payload);
++    if (!reason) return err("REASON_REQUIRED", "A reason is required for this operation");
++    const id = decodeURIComponent(parts[1]);
++    const result = await reviewWithdrawal(ctx.db, {
++      id,
++      action: "REJECT",
++      adminId: ctx.admin.adminId,
++      reason,
++    });
++    if (!result.ok) return err(result.code, result.message, result.code === "NOT_FOUND" ? 404 : 400);
++    await writeAuditLog(ctx, "withdraw.reject", "withdrawal_request", id, reason, {
++      status: result.request.status,
++    });
++    return json({ ok: true, request: result.request });
++  });
++  post("withdrawals/:id/pay", "withdraw:pay", async (ctx, parts) => {
++    const payload = (await ctx.request.json().catch(() => null)) as Record<string, unknown> | null;
++    const reason = requireReason(payload);
++    if (!reason) return err("REASON_REQUIRED", "A reason is required for this operation");
++    const id = decodeURIComponent(parts[1]);
++    const result = await markWithdrawalPaid(ctx.db, {
++      id,
++      adminId: ctx.admin.adminId,
++      reason,
++    });
++    if (!result.ok) return err(result.code, result.message, result.code === "NOT_FOUND" ? 404 : 400);
++    await writeAuditLog(ctx, "withdraw.pay", "withdrawal_request", id, reason, {
++      status: result.request.status,
++    });
++    return json({ ok: true, request: result.request });
++  });
++
++  get("activities", "activity:view", async (ctx) =>
++    json({ items: await listAdminActivities(ctx.db) }));
++  post("activities", "activity:manage", async (ctx) => {
++    const payload = (await ctx.request.json().catch(() => null)) as Record<string, unknown> | null;
++    const reason = requireReason(payload);
++    if (!reason) return err("REASON_REQUIRED", "A reason is required for this operation");
++    const code = typeof payload?.code === "string" ? payload.code.trim() : "";
++    const kind = typeof payload?.kind === "string" ? payload.kind.trim() : "EVENT";
++    const title = (payload?.title && typeof payload.title === "object"
++      ? payload.title
++      : {}) as Record<string, string>;
++    const rewardMinor = Number(payload?.rewardMinor ?? 0);
++    if (!code || !Number.isFinite(rewardMinor)) {
++      return err("INVALID_REQUEST", "code and rewardMinor required");
++    }
++    const saved = await upsertActivity(ctx.db, {
++      id: typeof payload?.id === "string" ? payload.id : undefined,
++      code,
++      kind,
++      title,
++      body: (payload?.body && typeof payload.body === "object"
++        ? payload.body
++        : {}) as Record<string, string>,
++      rewardMinor,
++      currency: typeof payload?.currency === "string" ? payload.currency : "MMK",
++      startsAt: typeof payload?.startsAt === "string" ? payload.startsAt : null,
++      endsAt: typeof payload?.endsAt === "string" ? payload.endsAt : null,
++      enabled: payload?.enabled !== false,
++    });
++    await writeAuditLog(ctx, "activity.upsert", "player_activity", saved.id, reason, {
++      code,
++      rewardMinor,
++    });
++    return json({ ok: true, id: saved.id });
++  });
++
+   get("ledger/accounts", "ledger:view", async (ctx) =>
+     json(await listLedgerAccounts(ctx.db, normalizePage(new URL(ctx.request.url).searchParams))));
+   get("ledger/transactions", "ledger:view", async (ctx) =>
+@@ -534,19 +742,6 @@ function defineRoutes(): RouteSpec[] {
+   post("system/announcements/:id/unpublish", "system:manage", (ctx, parts) =>
+     handleAnnouncementStatus(ctx, decodeURIComponent(parts[2]), false));
+   get("system/status", "system:view", async (ctx) => {
+-<<<<<<< Updated upstream
+-    const health = await getLedgerHealth(ctx.db);
+-    return json({
+-      version: {
+-        adminApi: ADMIN_API_VERSION,
+-        baseline: "9654d4194d2db801467af34cef1ddc5650fd310f",
+-        module: "R1-M7",
+-      },
+-      api: { ok: true },
+-      database: { ok: true },
+-      ledger: { ok: health.ok },
+-      checkedAt: new Date().toISOString(),
+-=======
+     const monitor = await getSystemMonitor(ctx.db);
+     return json({
+       version: {
+@@ -555,7 +750,6 @@ function defineRoutes(): RouteSpec[] {
+         module: "R1-M9",
+       },
+       ...monitor,
+->>>>>>> Stashed changes
+     });
+   });
+ 
+@@ -565,8 +759,6 @@ function defineRoutes(): RouteSpec[] {
+     json(await listGameAuditEvents(ctx.db, normalizePage(new URL(ctx.request.url).searchParams))));
+ 
+   get("admins", "admins:view", async (ctx) => json({ items: await listAdmins(ctx.db) }));
+-<<<<<<< Updated upstream
+-=======
+   get("admins/stats", "admins:view", async (ctx) => json(await getAdminStats(ctx.db)));
+   get("admins/matrix", "admins:view", async () =>
+     json({
+@@ -581,7 +773,6 @@ function defineRoutes(): RouteSpec[] {
+     }));
+   get("admins/:id/audit", "admins:view", async (ctx, parts) =>
+     json({ items: await getAdminAuditFor(ctx.db, decodeURIComponent(parts[1])) }));
+->>>>>>> Stashed changes
+   post("admins", "admins:manage", (ctx) => handleAdminCreate(ctx));
+   post("admins/:id", "admins:manage", (ctx, parts) => handleAdminUpdate(ctx, decodeURIComponent(parts[1])));
+ 
+@@ -629,5 +820,10 @@ export async function handleAdminApi(
+     admin,
+     ip: extractClientIp(request),
+   };
+-  return route.handler(ctx, slug);
++  try {
++    return await route.handler(ctx, slug);
++  } catch (cause) {
++    const message = cause instanceof Error ? cause.message : String(cause);
++    return err("INTERNAL_ERROR", message, 500);
++  }
+ }
+diff --git a/lib/admin/admin-queries.ts b/lib/admin/admin-queries.ts
+index df43e75..4e0bf13 100644
+--- a/lib/admin/admin-queries.ts
++++ b/lib/admin/admin-queries.ts
+@@ -164,17 +164,25 @@ export type PlayerListItem = {
+   freeSpins: number;
+   openSessions: number;
+   lastActiveAt: string | null;
+-  // Identity-provider fields (nickname/avatar/VIP/device/IP/lastLogin) are
+-  // owned by the external wallet/identity provider and are not stored in the
+-  // game database; the admin console surfaces them as null.
++  // Profile/VIP sidecar (player_profiles / player_vip) 鈥?additive commerce tables.
+   nickname: string | null;
+   avatar: string | null;
++  avatarId: string | null;
+   vipLevel: number | null;
++  vipStatus: string | null;
++  phoneMasked: string | null;
+   lastLoginAt: string | null;
+   device: string | null;
+   ip: string | null;
+ };
+ 
++function maskPhoneAdmin(phone: string | null | undefined): string | null {
++  if (!phone) return null;
++  const digits = phone.replace(/\D/g, "");
++  if (digits.length < 4) return "****";
++  return `****${digits.slice(-4)}`;
++}
++
+ export async function listPlayers(db: AdminDb, query: PageQuery) {
+   const where: string[] = [];
+   const params: string[] = [];
+@@ -203,12 +211,57 @@ export async function listPlayers(db: AdminDb, query: PageQuery) {
+   return { total, page: query.page, pageSize: query.pageSize, items: rows };
+ }
+ 
+-// Raw helpers with positional binds (drizzle sql.raw cannot bind; use $client).
++/**
++ * Raw helpers with positional binds (drizzle sql.raw cannot bind; use $client).
++ *
++ * Dual-driver:
++ * - better-sqlite3: `prepare(sql).all(...params)` 鈫?T[]
++ * - D1: `prepare(sql).bind(...params).all()` 鈫?{ results: T[] }
++ * Live Admin Players 500 was caused by treating D1's result object as an array
++ * (and/or passing binds via .all(...params), which D1 does not accept).
++ */
+ async function runRaw<T>(db: AdminDb, statement: string, params: (string | number)[]): Promise<T[]> {
+-  const client = (db as unknown as { $client: { prepare: (s: string) => { all: (...p: (string | number)[]) => Promise<T[]> | T[] } } }).$client;
++  type D1AllResult = { results?: T[] };
++  type Prepared = {
++    all: (...p: (string | number)[]) => T[] | Promise<T[] | D1AllResult>;
++    bind?: (...p: (string | number)[]) => { all: () => Promise<D1AllResult> | D1AllResult };
++  };
++  type Client = {
++    prepare: (s: string) => Prepared;
++    batch?: unknown;
++    transaction?: unknown;
++  };
++  const client = (db as unknown as { $client: Client }).$client;
++  if (!client?.prepare) {
++    throw new Error("Database $client.prepare is required for admin raw queries");
++  }
+   const prepared = client.prepare(statement);
++
++  // D1: prefer bind()+all(); detect via batch without better-sqlite3 transaction.
++  const isD1 =
++    typeof client.batch === "function" && typeof client.transaction !== "function";
++  if (isD1 || typeof prepared.bind === "function") {
++    const bound =
++      typeof prepared.bind === "function"
++        ? params.length > 0
++          ? prepared.bind(...params)
++          : prepared.bind()
++        : null;
++    if (bound) {
++      const raw = await bound.all();
++      if (Array.isArray(raw)) return raw as T[];
++      if (raw && Array.isArray(raw.results)) return raw.results;
++      return [];
++    }
++  }
++
+   const result = prepared.all(...params);
+-  return Array.isArray(result) ? result : await result;
++  const resolved = Array.isArray(result) ? result : await result;
++  if (Array.isArray(resolved)) return resolved;
++  if (resolved && typeof resolved === "object" && Array.isArray((resolved as D1AllResult).results)) {
++    return (resolved as D1AllResult).results as T[];
++  }
++  throw new Error("admin runRaw: unexpected driver result shape");
+ }
+ 
+ async function countPlayersRaw(db: AdminDb, whereSql: string, params: string[]): Promise<number> {
+@@ -232,8 +285,16 @@ async function queryPlayersRaw(
+            COALESCE(r.total_win, 0) AS total_win,
+            COALESCE(fs.free_spins, 0) AS free_spins,
+            COALESCE(fs.open_sessions, 0) AS open_sessions,
+-           r.last_active_at
++           r.last_active_at,
++           pf.nickname AS pf_nickname,
++           pf.avatar_id AS pf_avatar_id,
++           pf.phone_e164 AS pf_phone,
++           pf.last_login_at AS pf_last_login,
++           v.level AS vip_level,
++           v.status AS vip_status
+     FROM players p
++    LEFT JOIN player_profiles pf ON pf.player_id = p.id
++    LEFT JOIN player_vip v ON v.player_id = p.id
+     LEFT JOIN (
+       SELECT player_id, COUNT(*) AS round_count, SUM(total_bet_minor) AS total_bet,
+              SUM(CASE WHEN status = 'SETTLED' THEN total_win_minor ELSE 0 END) AS total_win,
+@@ -249,32 +310,46 @@ async function queryPlayersRaw(
+     ORDER BY ${orderCol} ${order === "asc" ? "ASC" : "DESC"}
+     LIMIT ${Math.floor(limit)} OFFSET ${Math.floor(offset)}
+   `, params);
+-  return rows.map((row) => ({
+-    id: String(row.id),
+-    walletAdapterRef: String(row.wallet_adapter_ref),
+-    currency: String(row.currency),
+-    status: String(row.status),
+-    createdAt: String(row.created_at),
+-    updatedAt: String(row.updated_at),
+-    roundCount: Number(row.round_count ?? 0),
+-    totalBetMinor: Number(row.total_bet ?? 0),
+-    totalWinMinor: Number(row.total_win ?? 0),
+-    freeSpins: Number(row.free_spins ?? 0),
+-    openSessions: Number(row.open_sessions ?? 0),
+-    lastActiveAt: row.last_active_at ? String(row.last_active_at) : null,
+-    nickname: null,
+-    avatar: null,
+-    vipLevel: null,
+-    lastLoginAt: null,
+-    device: null,
+-    ip: null,
+-  }));
++  return rows.map((row) => {
++    const avatarId = row.pf_avatar_id ? String(row.pf_avatar_id) : null;
++    return {
++      id: String(row.id),
++      walletAdapterRef: String(row.wallet_adapter_ref),
++      currency: String(row.currency),
++      status: String(row.status),
++      createdAt: String(row.created_at),
++      updatedAt: String(row.updated_at),
++      roundCount: Number(row.round_count ?? 0),
++      totalBetMinor: Number(row.total_bet ?? 0),
++      totalWinMinor: Number(row.total_win ?? 0),
++      freeSpins: Number(row.free_spins ?? 0),
++      openSessions: Number(row.open_sessions ?? 0),
++      lastActiveAt: row.last_active_at ? String(row.last_active_at) : null,
++      nickname: row.pf_nickname ? String(row.pf_nickname) : null,
++      avatar: avatarId,
++      avatarId,
++      vipLevel: row.vip_level == null ? null : Number(row.vip_level),
++      vipStatus: row.vip_status ? String(row.vip_status) : null,
++      phoneMasked: maskPhoneAdmin(row.pf_phone ? String(row.pf_phone) : null),
++      lastLoginAt: row.pf_last_login ? String(row.pf_last_login) : null,
++      device: null,
++      ip: null,
++    };
++  });
+ }
+ 
+ export async function getPlayerDetail(db: AdminDb, playerId: string) {
+   const playersRows = await db.all<Record<string, unknown>>(sql`
+-    SELECT id, wallet_adapter_ref, currency, status, created_at, updated_at
+-    FROM players WHERE id = ${playerId} LIMIT 1
++    SELECT p.id, p.wallet_adapter_ref, p.currency, p.status, p.created_at, p.updated_at,
++           pf.nickname AS pf_nickname, pf.avatar_id AS pf_avatar_id, pf.phone_e164 AS pf_phone,
++           pf.last_login_at AS pf_last_login, pf.registered_at AS pf_registered,
++           v.level AS vip_level, v.status AS vip_status,
++           v.vip_started_at AS vip_started_at, v.vip_expires_at AS vip_expires_at
++    FROM players p
++    LEFT JOIN player_profiles pf ON pf.player_id = p.id
++    LEFT JOIN player_vip v ON v.player_id = p.id
++    WHERE p.id = ${playerId}
++    LIMIT 1
+   `);
+   const player = playersRows[0];
+   if (!player) return null;
+@@ -301,6 +376,7 @@ export async function getPlayerDetail(db: AdminDb, playerId: string) {
+     FROM ledger_accounts WHERE player_id = ${playerId}
+   `);
+ 
++  const avatarId = player.pf_avatar_id ? String(player.pf_avatar_id) : null;
+   return {
+     player: {
+       id: String(player.id),
+@@ -309,10 +385,16 @@ export async function getPlayerDetail(db: AdminDb, playerId: string) {
+       status: String(player.status),
+       createdAt: String(player.created_at),
+       updatedAt: String(player.updated_at),
+-      nickname: null,
+-      avatar: null,
+-      vipLevel: null,
+-      lastLoginAt: null,
++      nickname: player.pf_nickname ? String(player.pf_nickname) : null,
++      avatar: avatarId,
++      avatarId,
++      vipLevel: player.vip_level == null ? null : Number(player.vip_level),
++      vipStatus: player.vip_status ? String(player.vip_status) : null,
++      vipStartedAt: player.vip_started_at ? String(player.vip_started_at) : null,
++      vipExpiresAt: player.vip_expires_at ? String(player.vip_expires_at) : null,
++      phoneMasked: maskPhoneAdmin(player.pf_phone ? String(player.pf_phone) : null),
++      lastLoginAt: player.pf_last_login ? String(player.pf_last_login) : null,
++      registeredAt: player.pf_registered ? String(player.pf_registered) : null,
+       device: null,
+       ip: null,
+     },
+@@ -956,12 +1038,6 @@ export async function listGameAuditEvents(db: AdminDb, query: PageQuery) {
+ 
+ export async function listAdmins(db: AdminDb) {
+   return db.all<Record<string, unknown>>(sql`
+-<<<<<<< Updated upstream
+-    SELECT id, username, role, status, last_login_at, created_at, updated_at
+-    FROM admin_users ORDER BY created_at ASC
+-  `);
+-}
+-=======
+     SELECT u.id, u.username, u.role, u.status, u.last_login_at, u.created_at, u.updated_at,
+            (SELECT s.ip FROM admin_sessions s WHERE s.admin_id = u.id
+             ORDER BY s.created_at DESC LIMIT 1) AS last_login_ip,
+@@ -1193,4 +1269,3 @@ export async function getSystemMonitor(db: AdminDb) {
+     checkedAt: new Date().toISOString(),
+   };
+ }
+->>>>>>> Stashed changes
+diff --git a/package.json b/package.json
+index 131dec2..d675f45 100644
+--- a/package.json
++++ b/package.json
+@@ -12,8 +12,11 @@
+     "start": "vinext start",
+     "test": "npm run build && node --experimental-strip-types --test tests/*.test.mjs",
+     "test:unit": "node --experimental-strip-types --test tests/*.test.mjs",
++    "test:win": "node --experimental-strip-types --test tests/*.test.mjs",
+     "validate:artifact": "bash scripts/validate-artifact.sh",
+     "lint": "bash scripts/sites-env.sh -- eslint . --ignore-pattern dist --ignore-pattern .next",
++    "lint:win": "eslint . --ignore-pattern dist --ignore-pattern .next",
++    "build:win": "vinext build",
+     "db:generate": "bash scripts/sites-env.sh -- drizzle-kit generate"
+   },
+   "dependencies": {
+@@ -43,5 +46,5 @@
+     "wrangler": "4.92.0"
+   },
+   "type": "module",
+-  "displayName": "Asian Buffalo Web Game"
++  "displayName": "Bull Demon King"
+ }

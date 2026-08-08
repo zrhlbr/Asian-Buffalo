@@ -1,0 +1,9 @@
+# New / updated keys — Mythic Visual (must exist in zh-CN, en, my-MM)
+
+lobby.hero.journey
+lobby.bdk.hubTag
+lobby.bdk.decree
+lobby.bdk.ambientHint
+
+# Existing key value update (slot)
+loading  # zh: 正在进入火焰山… / en: Entering Flame Mountain… / my: မီးတောင်သို့ ဝင်ရောက်နေသည်…

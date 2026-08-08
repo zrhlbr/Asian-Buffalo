@@ -1,0 +1,66 @@
+{
+  "results": [
+    {
+      "path": "/xi",
+      "status": 200,
+      "ok": true,
+      "shot": "01-lobby-phone.png"
+    },
+    {
+      "path": "/xi",
+      "status": 200,
+      "ok": true,
+      "shot": "06-lobby-en.png"
+    },
+    {
+      "path": "/xi",
+      "status": 200,
+      "ok": true,
+      "shot": "07-lobby-my.png"
+    },
+    {
+      "path": "/xi",
+      "status": 200,
+      "ok": true,
+      "shot": "05-lobby-zh.png"
+    },
+    {
+      "path": "/xi/bdk",
+      "status": 200,
+      "ok": true,
+      "shot": "02-bdk-hub-phone.png"
+    },
+    {
+      "path": "/",
+      "status": 200,
+      "ok": true,
+      "stacking": {
+        "ok": true,
+        "glTransform": "matrix(1, 0, 0, 1, 0, 0)",
+        "hudTransform": "none",
+        "hudIsNone": true,
+        "hasChrome": true
+      },
+      "shot": "03-slot-root.png"
+    },
+    {
+      "path": "/game",
+      "status": 200,
+      "ok": true,
+      "stacking": {
+        "ok": true,
+        "glTransform": "matrix(1, 0, 0, 1, 0, 0)",
+        "hudTransform": "none",
+        "hudIsNone": true,
+        "hasChrome": true
+      },
+      "shot": "04-slot-game.png"
+    },
+    {
+      "path": "/xi",
+      "status": 200,
+      "ok": true,
+      "shot": "01b-lobby-pc.png"
+    }
+  ]
+}

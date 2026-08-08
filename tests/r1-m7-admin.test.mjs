@@ -337,8 +337,6 @@ test("i18n dictionaries have identical, non-empty key sets (zh/en/my)", () => {
     }
   }
 });
-<<<<<<< Updated upstream
-=======
 
 test("session and spin query endpoints are read-only and return seeded data", async () => {
   const { db, sqlite } = await freshDb();
@@ -394,4 +392,3 @@ test("ops report, system monitor and admin stats endpoints work on M5 baseline",
   assert.ok(matrix.data.permissions.includes("players:freeze"));
   assert.ok(matrix.data.roles.some((row) => row.role === "SUPER_ADMIN"));
 });
->>>>>>> Stashed changes

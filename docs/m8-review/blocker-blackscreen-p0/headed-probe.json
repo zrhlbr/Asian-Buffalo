@@ -1,0 +1,35 @@
+{
+  "metrics": {
+    "attrs": {
+      "alpha": true,
+      "antialias": true,
+      "depth": true,
+      "desynchronized": false,
+      "failIfMajorPerformanceCaveat": false,
+      "powerPreference": "high-performance",
+      "premultipliedAlpha": true,
+      "preserveDrawingBuffer": false,
+      "stencil": false,
+      "xrCompatible": false
+    },
+    "glCss": {
+      "opacity": "1",
+      "visibility": "visible",
+      "z": "0",
+      "pe": "none",
+      "mix": "normal",
+      "filter": "none",
+      "transform": "none"
+    },
+    "hudCss": {
+      "z": "1",
+      "transform": "matrix(1, 0, 0, 1, 0, 0)",
+      "bg": "rgba(0, 0, 0, 0)",
+      "isolation": "auto"
+    },
+    "appBg": "rgb(11, 7, 3)"
+  },
+  "pngAnalysis": {
+    "err": "Error [ERR_MODULE_NOT_FOUND]: Cannot find package 'pngjs' imported from D:\\Asian-Buffalo-R1-M8-Cursor-Clean\\docs\\m8-review\\blocker-blackscreen-p0\\_probe-headed.mjs"
+  }
+}

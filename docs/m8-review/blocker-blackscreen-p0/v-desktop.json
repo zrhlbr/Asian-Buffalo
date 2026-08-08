@@ -1,0 +1,52 @@
+{
+  "bright": {
+    "avg": 0,
+    "nz": 0,
+    "max": 0,
+    "n": 9600,
+    "hasGame": true,
+    "clarity": {
+      "cssW": 1280,
+      "cssH": 720,
+      "drawingBufferW": 1280,
+      "drawingBufferH": 720,
+      "pixelRatio": 1,
+      "renderScale": 1,
+      "toneMappingExposure": 1.02,
+      "bloomStrength": 0.2,
+      "bloomRadius": 0.4,
+      "bloomThreshold": 0.92,
+      "bloomEnabled": true,
+      "maxAnisotropy": 16,
+      "maxTextureSize": 8192,
+      "tier": "high"
+    },
+    "edge": {
+      "leftNdc": -0.8787032102740777,
+      "rightNdc": 0.881289823062403,
+      "fill": 0.8799965166682404,
+      "scale": 1.95189101144932
+    },
+    "meshStats": {
+      "tiles": 30,
+      "visibleTiles": 20,
+      "avgOp": 0.6666666666666666,
+      "groupVis": true
+    },
+    "disposed": false,
+    "sceneN": 47
+  },
+  "errors": [
+    "Failed to load resource: the server responded with a status of 404 (Not Found)",
+    "Failed to load resource: the server responded with a status of 404 (Not Found)",
+    "Failed to load resource: the server responded with a status of 404 (Not Found)",
+    "Failed to load resource: the server responded with a status of 404 (Not Found)",
+    "Failed to load resource: the server responded with a status of 404 (Not Found)",
+    "Failed to load resource: the server responded with a status of 404 (Not Found)",
+    "Failed to load resource: the server responded with a status of 404 (Not Found)",
+    "Failed to load resource: the server responded with a status of 404 (Not Found)",
+    "Failed to load resource: the server responded with a status of 404 (Not Found)",
+    "Failed to load resource: the server responded with a status of 404 (Not Found)",
+    "Failed to load resource: the server responded with a status of 404 (Not Found)"
+  ]
+}

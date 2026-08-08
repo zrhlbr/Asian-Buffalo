@@ -1,0 +1,467 @@
+/* Wallet Center（钱包中心）— scoped mythic black-gold; does not restyle Lobby home/Hub/Play/Me */
+
+.xi-wc {
+  --wc-ink: #0a0d14;
+  --wc-panel: rgba(16, 20, 30, 0.92);
+  --wc-gold: #e8c56a;
+  --wc-gold-dim: rgba(232, 197, 106, 0.22);
+  --wc-mist: rgba(232, 220, 190, 0.9);
+  --wc-muted: rgba(232, 220, 190, 0.55);
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 0.15rem 0 1.25rem;
+  min-width: 0;
+}
+
+.xi-wc-hero {
+  padding: 0.9rem 0.95rem;
+  border-radius: 14px;
+  border: 1px solid var(--wc-gold-dim);
+  background:
+    linear-gradient(145deg, rgba(40, 32, 18, 0.55) 0%, transparent 42%),
+    linear-gradient(180deg, rgba(22, 26, 38, 0.95), var(--wc-panel));
+  box-shadow: inset 0 1px 0 rgba(232, 197, 106, 0.12);
+}
+
+.xi-wc-hero-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem 0.75rem;
+  margin-bottom: 0.45rem;
+}
+
+.xi-wc-title {
+  margin: 0;
+  font-family: var(--xi-font-display, "Cinzel", Georgia, serif);
+  font-size: 1.05rem;
+  color: var(--wc-gold);
+  font-weight: 600;
+}
+
+.xi-wc-badge {
+  border: 1px solid rgba(232, 160, 144, 0.45);
+  border-radius: 999px;
+  padding: 0.12rem 0.55rem;
+  color: #e8a090;
+  font-size: 0.68rem;
+  letter-spacing: 0.03em;
+}
+
+.xi-wc-total-label {
+  margin: 0;
+  color: var(--wc-muted);
+  font-size: 0.72rem;
+}
+
+.xi-wc-total {
+  margin: 0.15rem 0 0.55rem;
+  color: var(--wc-mist);
+  font-size: 1.45rem;
+  font-variant-numeric: tabular-nums;
+  font-family: var(--xi-font-display, "Cinzel", Georgia, serif);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.xi-wc-summary-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.45rem;
+}
+
+.xi-wc-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.45rem 0.55rem;
+  border-radius: 10px;
+  border: 1px solid var(--wc-gold-dim);
+  background: linear-gradient(180deg, rgba(30, 36, 50, 0.9), rgba(12, 14, 20, 0.9));
+  min-width: 0;
+}
+
+.xi-wc-summary strong {
+  color: var(--wc-mist);
+  font-size: 0.95rem;
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.xi-wc-code {
+  color: var(--wc-muted);
+  font-size: 0.68rem;
+  letter-spacing: 0.06em;
+}
+
+.xi-wc-trend {
+  margin-top: 0.65rem;
+  padding: 0.65rem 0.7rem;
+  border-radius: 10px;
+  border: 1px dashed var(--wc-gold-dim);
+  background: rgba(8, 10, 14, 0.45);
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-height: 72px;
+  justify-content: center;
+}
+
+.xi-wc-trend-label {
+  color: var(--wc-muted);
+  font-size: 0.72rem;
+}
+
+.xi-wc-nodata {
+  color: var(--wc-mist);
+  font-size: 0.85rem;
+  opacity: 0.85;
+}
+
+.xi-wc-cards {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.65rem;
+}
+
+.xi-wc-card {
+  border-radius: 14px;
+  border: 1px solid var(--wc-gold-dim);
+  background: var(--wc-panel);
+  padding: 0.8rem 0.85rem;
+}
+
+.xi-wc-card-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.25rem 0.5rem;
+}
+
+.xi-wc-card-head h3 {
+  margin: 0;
+  font-family: var(--xi-font-display, "Cinzel", Georgia, serif);
+  font-size: 0.95rem;
+  color: var(--wc-gold);
+}
+
+.xi-wc-muted {
+  color: var(--wc-muted);
+  font-size: 0.72rem;
+}
+
+.xi-wc-card-amt {
+  margin: 0.35rem 0 0.65rem;
+  color: var(--wc-mist);
+  font-size: 1.2rem;
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.xi-wc-card-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.4rem;
+}
+
+.xi-wc-btn {
+  min-height: 38px;
+  border-radius: 10px;
+  border: 1px solid var(--wc-gold-dim);
+  background: linear-gradient(180deg, rgba(48, 40, 22, 0.55), rgba(16, 18, 26, 0.85));
+  color: var(--wc-mist);
+  font-size: 0.72rem;
+  padding: 0.35rem 0.25rem;
+  cursor: pointer;
+}
+
+.xi-wc-btn.primary {
+  background: linear-gradient(180deg, rgba(184, 137, 45, 0.55), rgba(40, 28, 12, 0.9));
+  color: #fff8e8;
+  border-color: rgba(232, 197, 106, 0.45);
+}
+
+.xi-wc-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.xi-wc-btn:active:not(:disabled) {
+  transform: translateY(1px);
+  filter: brightness(1.08);
+}
+
+.xi-wc-records {
+  border-radius: 14px;
+  border: 1px solid var(--wc-gold-dim);
+  background: var(--wc-panel);
+  padding: 0.8rem 0.85rem;
+}
+
+.xi-wc-section-title {
+  margin: 0 0 0.55rem;
+  font-family: var(--xi-font-display, "Cinzel", Georgia, serif);
+  font-size: 0.95rem;
+  color: var(--wc-gold);
+  font-weight: 600;
+}
+
+.xi-wc-tabs {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 0.35rem;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 0.25rem;
+  margin-bottom: 0.55rem;
+}
+
+.xi-wc-tab {
+  flex: 0 0 auto;
+  min-height: 34px;
+  padding: 0.3rem 0.65rem;
+  border-radius: 999px;
+  border: 1px solid var(--wc-gold-dim);
+  background: rgba(12, 14, 20, 0.65);
+  color: var(--wc-muted);
+  font-size: 0.72rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.xi-wc-tab.is-active {
+  color: var(--wc-gold);
+  background: linear-gradient(180deg, rgba(184, 137, 45, 0.28), rgba(20, 16, 10, 0.7));
+}
+
+.xi-wc-filters {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.45rem;
+  margin-bottom: 0.65rem;
+}
+
+.xi-wc-filter {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-width: 0;
+  color: var(--wc-muted);
+  font-size: 0.68rem;
+}
+
+.xi-wc-filter-search {
+  grid-column: 1 / -1;
+}
+
+.xi-wc-filter input {
+  min-height: 36px;
+  border-radius: 8px;
+  border: 1px solid var(--wc-gold-dim);
+  background: rgba(8, 10, 14, 0.75);
+  color: var(--wc-mist);
+  padding: 0.3rem 0.5rem;
+  font-size: 0.8rem;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.xi-wc-empty,
+.xi-wc-status-shell,
+.xi-wc-rail-note {
+  margin: 0.35rem 0;
+  color: var(--wc-muted);
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+.xi-wc-status-shell {
+  padding: 0.45rem 0.55rem;
+  border-radius: 8px;
+  border: 1px dashed rgba(232, 160, 144, 0.35);
+  color: #e8a090;
+}
+
+.xi-wc-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.xi-wc-list li {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.55rem 0.6rem;
+  border-radius: 10px;
+  border: 1px solid rgba(232, 197, 106, 0.12);
+  background: rgba(8, 10, 14, 0.45);
+}
+
+.xi-wc-list strong {
+  color: var(--wc-mist);
+  font-size: 0.82rem;
+}
+
+.xi-wc-list span {
+  color: var(--wc-muted);
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.xi-wc-pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-top: 0.65rem;
+  color: var(--wc-muted);
+  font-size: 0.75rem;
+}
+
+.xi-wc-pager .xi-wc-btn {
+  min-width: 72px;
+}
+
+.xi-wc-sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  background: rgba(4, 6, 10, 0.72);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 0.75rem;
+}
+
+.xi-wc-sheet {
+  width: min(520px, 100%);
+  max-height: min(86vh, 720px);
+  overflow: auto;
+  border-radius: 16px 16px 12px 12px;
+  border: 1px solid var(--wc-gold-dim);
+  background: linear-gradient(180deg, rgba(22, 26, 38, 0.98), rgba(10, 12, 18, 0.98));
+  padding: 0.85rem 0.9rem 1rem;
+  box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.45);
+}
+
+.xi-wc-sheet-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.65rem;
+}
+
+.xi-wc-sheet-head h3 {
+  margin: 0;
+  font-family: var(--xi-font-display, "Cinzel", Georgia, serif);
+  color: var(--wc-gold);
+  font-size: 1rem;
+}
+
+.xi-wc-rails {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin: 0.35rem 0 0.75rem;
+}
+
+.xi-wc-rail {
+  border-radius: 999px;
+  border: 1px solid var(--wc-gold-dim);
+  padding: 0.22rem 0.6rem;
+  font-size: 0.7rem;
+  color: var(--wc-muted);
+}
+
+.xi-wc-rail.is-active {
+  color: var(--wc-gold);
+  background: rgba(184, 137, 45, 0.22);
+}
+
+.xi-wc-rail.is-reserved {
+  opacity: 0.75;
+}
+
+.xi-wc-type-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-bottom: 0.55rem;
+}
+
+.xi-wc-chip {
+  min-height: 32px;
+  padding: 0.25rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid var(--wc-gold-dim);
+  background: rgba(12, 14, 20, 0.65);
+  color: var(--wc-muted);
+  font-size: 0.7rem;
+  cursor: pointer;
+}
+
+.xi-wc-chip.is-active {
+  color: var(--wc-gold);
+  background: linear-gradient(180deg, rgba(184, 137, 45, 0.28), rgba(20, 16, 10, 0.7));
+}
+
+.xi-wc-wd-history {
+  margin-top: 0.85rem;
+  padding-top: 0.65rem;
+  border-top: 1px solid rgba(232, 197, 106, 0.12);
+}
+
+/* Mobile 320–430 */
+@media (max-width: 430px) {
+  .xi-wc-total {
+    font-size: 1.25rem;
+  }
+
+  .xi-wc-card-actions {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.3rem;
+  }
+
+  .xi-wc-btn {
+    font-size: 0.68rem;
+    min-height: 36px;
+  }
+
+  .xi-wc-sheet {
+    max-height: 90vh;
+    padding: 0.75rem 0.7rem 0.9rem;
+  }
+}
+
+@media (min-width: 640px) {
+  .xi-wc-cards {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .xi-wc-sheet-backdrop {
+    align-items: center;
+  }
+
+  .xi-wc-sheet {
+    border-radius: 14px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .xi-wc-btn:active:not(:disabled) {
+    transform: none;
+  }
+}

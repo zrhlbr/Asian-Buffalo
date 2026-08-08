@@ -17,9 +17,13 @@ test("Phase3 symbol plate is 1024 (not 512 downscale)", () => {
 
 test("Phase3 quality keeps high DPR on low/medium (never DPR 1 for clarity)", () => {
   const q = read("client/m5/quality.ts");
-  assert.match(q, /pixelRatio: 3/); // high
-  assert.match(q, /pixelRatio: 2/); // medium + low
-  assert.doesNotMatch(q, /low:\s*\{[^}]*pixelRatio: 1/);
+  // Fluency V1: ultra3 / high2.5 / mid2 / low1.5
+  assert.match(q, /ultra:\s*3/);
+  assert.match(q, /high:\s*2\.5/);
+  assert.match(q, /medium:\s*2/);
+  assert.match(q, /low:\s*1\.5/);
+  assert.match(q, /pixelRatio:\s*PIXEL_RATIO_CAPS\.(ultra|high|medium|low)/);
+  assert.doesNotMatch(q, /low:\s*\{[^}]*pixelRatio:\s*1[,}]/);
   assert.match(q, /enableDof: false/);
 });
 

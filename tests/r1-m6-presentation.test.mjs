@@ -63,15 +63,18 @@ test("quality profiles scale down on low tier", () => {
   assert.equal(low.enableDof, false);
   assert.equal(low.furShells, 0);
   assert.equal(resolveTier("high"), "high");
-  assert.ok(["low", "medium", "high"].includes(detectInitialTier()));
+  assert.ok(["low", "medium", "high", "ultra"].includes(detectInitialTier()));
 });
 
 test("FpsGovernor can drop tier under sustained low FPS", () => {
   const changes = [];
-  const gov = new FpsGovernor("high", (t) => changes.push(t), 42, 55);
-  // Seed 60 samples of ~30 FPS (dt≈33ms)
+  const gov = new FpsGovernor("high", (t) => changes.push(t), 42, 55, {
+    sustainMs: 400,
+    allowStepUp: false,
+  });
+  // Seed samples of ~30 FPS (dt≈33ms) past sustain window
   let now = 1000;
-  for (let i = 0; i < 70; i++) {
+  for (let i = 0; i < 90; i++) {
     now += 33;
     gov.tick(now);
   }

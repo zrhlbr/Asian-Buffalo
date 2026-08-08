@@ -166,10 +166,7 @@ export default function SystemModule() {
             <StatCard
               label={t("system.buildTime")}
               value={String((status.version as { adminApi?: string })?.adminApi ?? "-")}
-<<<<<<< Updated upstream
-=======
               sub={String((status.version as { baseline?: string })?.baseline ?? "").slice(0, 12)}
->>>>>>> Stashed changes
             />
             <StatCard
               label={t("system.apiStatus")}
@@ -186,8 +183,6 @@ export default function SystemModule() {
               value={(status.ledger as { ok?: boolean })?.ok ? t("ledger.healthOk") : t("ledger.healthIssues")}
               tone={(status.ledger as { ok?: boolean })?.ok ? "ok" : "bad"}
             />
-<<<<<<< Updated upstream
-=======
             <StatCard
               label={t("system.openSessions")}
               value={String((status.sessions as { open?: number })?.open ?? 0)}
@@ -220,7 +215,6 @@ export default function SystemModule() {
               label={t("admins.disabledCount")}
               value={String((status.admins as { disabled?: number })?.disabled ?? 0)}
             />
->>>>>>> Stashed changes
           </div>
         )
       ) : null}

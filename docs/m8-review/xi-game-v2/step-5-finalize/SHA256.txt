@@ -1,0 +1,17 @@
+﻿# SHA256 — Step 5 code + key docs
+76299a94f9086f53eab33cb23c6a86302025a48b148fd14f286df5076da17d01  lib/payment-readiness.ts
+cf44b7f3d58c4cf1755baf74df95077f38744d108470a2c021f910a6f220ef06  lib/deposit-service.ts
+9dbcb1cd57f4d3f9b31ef8881db8dc41e22e554f3b25e3958652eac770475dbe  lib/withdrawal-service.ts
+909a196c26f4d557be1cd5dc7bdb2e85e3b96b5ae0a350f317897937674b3798  lib/wallet-commerce-bootstrap.ts
+2a35a4ec27585e73fb9bc649332cbcd36d542b969c03ce41489c936d7bc4f7a1  app/api/v1/game/deposit/channels/route.ts
+64b9307a946d81c52195e10109a4b2c867a6a8bf83e8d1b9093e70ede70b91b3  app/api/v1/game/withdraw/route.ts
+aa94ccf0e69b2bb0e5ce4ce52756fa84dceb38762850d7e8b3c12603a61b9ca6  client/xi-lobby/api.ts
+e4cbba31f2c3d13412918fc1168b14d2f51997cce0619f5f5d56a29dbd505a65  client/xi-lobby/commerce-panels.tsx
+e439eb8e630f84986b207b6bf35af2d3975b9b0a0d977a957395d26deaf115bb  client/xi-lobby/i18n.ts
+c7c9f516380d36bedee574cb09a0c1c42edace8b1c0ddc5b8f936c4d19f04b4d  client/xi-lobby/lobby.css
+e95c72412dabfdad41e98ab594e041c73c37e28a8bdc0708f6099f34078b4cd6  tests/step5-finalize.test.mjs
+d3dc76e54b5f59b846bf3c73696337033f262c724fa9a524856df844e1183bf3  docs/m8-review/xi-game-v2/step-5-finalize/STEP5_FINAL_REPORT.md
+794e694a0644698d136e6113b93ac86143bf16128819e0677fc469e2302ff94e  docs/m8-review/xi-game-v2/step-5-finalize/BR_005_007_STATUS.md
+1212c63a04ae59fadf2e32356f761893b742b5aa8f9c71407429ca97324509db  docs/m8-review/xi-game-v2/step-5-finalize/PAYMENT_PRODUCTION_READINESS.md
+5870abc5af7d28807cc63d162a7957e326649856dd798c83232ccfcf427744a2  docs/m8-review/xi-game-v2/step-5-finalize/MODULE_IMPACT_ANALYSIS.md
+b097e667d5868ac502b5fd5258c4e9bf03f4b301b617d091ca8d45516fe997d4  docs/m8-review/xi-game-v2/step-5-finalize/ACCEPTANCE_NOTE.md

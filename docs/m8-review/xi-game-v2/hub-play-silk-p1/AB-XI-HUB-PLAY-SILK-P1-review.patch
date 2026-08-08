@@ -1,0 +1,1819 @@
+diff --git a/app/game-client.tsx b/app/game-client.tsx
+index 13d660a..4d7cc3f 100644
+--- a/app/game-client.tsx
++++ b/app/game-client.tsx
+@@ -1,44 +1,145 @@
+ "use client";
+ 
+ import { useEffect, useRef, type CSSProperties } from "react";
++import {
++  notifyBootReady,
++  notifyBootStarted,
++  registerBootBridge,
++} from "../client/xi-lobby/game-lifecycle.ts";
++
++type BootHandle = {
++  destroy: () => void;
++  pause: (opts?: { releaseHeavyFx?: boolean }) => void;
++  resume: () => void;
++  ensureBootstrap: () => void;
++  isBootstrapped: () => boolean;
++};
++
++/** Module singleton — at most one live M5 boot (no dual renderer / AudioContext). */
++let activeHandle: BootHandle | null = null;
++let bootSeq = 0;
++
++function bumpGameClientCount(delta: number): void {
++  if (typeof window === "undefined") return;
++  const w = window as unknown as {
++    __xiGameClientCount?: number;
++    __xiCanvasCount?: number;
++    __xiRafAlive?: number;
++  };
++  w.__xiGameClientCount = Math.max(0, (w.__xiGameClientCount ?? 0) + delta);
++  w.__xiCanvasCount = document.querySelectorAll("canvas#gl").length;
++  w.__xiRafAlive = w.__xiGameClientCount;
++}
++
++export type GameClientProps = {
++  /** When true, WebGL boots without Session/Spin/Round until ensureBootstrap(). */
++  deferBootstrap?: boolean;
++};
+ 
+ /**
+  * Formal commercial shell (M8) — mounts Three.js client.
+  * Mobile-first full-bleed reels + commercial HUD. IDs preserved for Hud/boot.
+  * No demo RNG / Mock on this path.
++ * Soft-nav pause/resume via lifecycle bridge + `xi-game-pause` / `xi-game-resume`.
+  */
+-export default function GameClient() {
++export default function GameClient({ deferBootstrap = false }: GameClientProps) {
+   const rootRef = useRef<HTMLDivElement>(null);
++  const deferRef = useRef(deferBootstrap);
++  deferRef.current = deferBootstrap;
+ 
+   useEffect(() => {
+     const root = rootRef.current;
+     if (!root) return;
++    const seq = ++bootSeq;
+     let destroyed = false;
+-    let handle: { destroy: () => void } | null = null;
++    let handle: BootHandle | null = null;
++
++    // Tear down any leaked prior instance before re-boot
++    if (activeHandle) {
++      try {
++        activeHandle.destroy();
++      } catch {
++        /* ignore */
++      }
++      activeHandle = null;
++      bumpGameClientCount(-1);
++    }
+ 
++    notifyBootStarted();
+     void import("../client/m5/boot.ts").then(({ bootM5 }) => {
+-      if (destroyed || !rootRef.current) return;
+-      handle = bootM5(rootRef.current);
++      if (destroyed || seq !== bootSeq || !rootRef.current) return;
++      handle = bootM5(rootRef.current, {
++        deferBootstrap: deferRef.current,
++      }) as BootHandle;
++      activeHandle = handle;
++      bumpGameClientCount(1);
++      registerBootBridge({
++        pause: (opts) => handle?.pause(opts),
++        resume: () => handle?.resume(),
++        ensureBootstrap: () => handle?.ensureBootstrap(),
++        destroy: () => handle?.destroy(),
++        isBootstrapped: () => handle?.isBootstrapped() ?? false,
++      });
++      notifyBootReady();
+     });
+ 
++    const onPause = () => {
++      (handle ?? activeHandle)?.pause();
++    };
++    const onResume = () => {
++      (handle ?? activeHandle)?.resume();
++    };
++    window.addEventListener("xi-game-pause", onPause);
++    window.addEventListener("xi-game-resume", onResume);
++
+     return () => {
+       destroyed = true;
+-      handle?.destroy();
++      window.removeEventListener("xi-game-pause", onPause);
++      window.removeEventListener("xi-game-resume", onResume);
++      registerBootBridge(null);
++      try {
++        handle?.destroy();
++      } catch {
++        /* ignore */
++      }
++      if (activeHandle === handle) activeHandle = null;
++      if (handle) bumpGameClientCount(-1);
+     };
+   }, []);
+ 
+   return (
+-    <div id="app" ref={rootRef} className="m5-root m7-commercial m8-commercial">
++    <div id="app" ref={rootRef} className="m5-root m7-commercial m8-commercial xi-mythic-slot">
+       <canvas id="gl" />
+ 
+       <div id="hud">
++        {/* Mythic frame chrome — pointer-events none; never covers reel center; no #hud translateZ */}
++        <div id="xi-mythic-chrome" aria-hidden>
++          <div className="xi-slot-sky" />
++          <div className="xi-slot-mountains" />
++          <div className="xi-slot-cloudsea" />
++          <div className="xi-slot-palace" />
++          <div className="xi-slot-flame-base" />
++          <div className="xi-slot-thunder" />
++          <div className="xi-slot-godlight" />
++          <div className="xi-slot-spirit" />
++          <div className="xi-slot-frame">
++            <span className="xi-node n-tl" />
++            <span className="xi-node n-tr" />
++            <span className="xi-node n-bl" />
++            <span className="xi-node n-br" />
++            <span className="xi-horn left" />
++            <span className="xi-horn right" />
++            <span className="xi-array-edge" />
++          </div>
++        </div>
++
+         {/* ===== TOP COMMERCIAL HUD ===== */}
+         <div id="topbar" className="hud-panel top-commercial">
+           <div className="top-left-cluster">
+-            <div id="logo" className="brand-seal" aria-label="Asian Buffalo">
++            <div id="logo" className="brand-seal" aria-label="Bull Demon King">
+               <span className="logo-horn" />
+               <span id="logo-text" className="brand-title" data-i18n="gameTitle">
+-                亚洲水牛
++                牛魔王
+               </span>
+             </div>
+             <div className="meter-chip balance-chip">
+@@ -93,6 +194,56 @@ export default function GameClient() {
+               </div>
+             </div>
+             <div className="top-actions">
++              <button
++                id="btn-profile"
++                className="icon-btn metal"
++                data-i18n-title="profile"
++                title="个人中心"
++                type="button"
++                aria-label="Profile"
++              >
++                ☺
++              </button>
++              <button
++                id="btn-vip"
++                className="icon-btn metal"
++                data-i18n-title="vip"
++                title="VIP"
++                type="button"
++                aria-label="VIP"
++              >
++                ♛
++              </button>
++              <button
++                id="btn-wallet"
++                className="icon-btn metal"
++                data-i18n-title="wallet"
++                title="钱包"
++                type="button"
++                aria-label="Wallet"
++              >
++                ₮
++              </button>
++              <button
++                id="btn-help"
++                className="icon-btn metal"
++                data-i18n-title="help"
++                title="帮助"
++                type="button"
++                aria-label="Help"
++              >
++                ?
++              </button>
++              <button
++                id="btn-back"
++                className="icon-btn metal"
++                data-i18n-title="back"
++                title="返回"
++                type="button"
++                aria-label="Back"
++              >
++                ←
++              </button>
+               <button
+                 id="btn-paytable"
+                 className="icon-btn metal"
+@@ -186,6 +337,13 @@ export default function GameClient() {
+         <div id="celebration" className="hidden">
+           <div className="celebration-rays" aria-hidden />
+           <div className="celebration-glow" />
++          <div className="xi-mythic-win" aria-hidden>
++            <span className="xi-win-cloud" />
++            <span className="xi-win-lotus" />
++            <span className="xi-win-array" />
++            <span className="xi-win-pillars" />
++            <span className="xi-win-gate" />
++          </div>
+           <div className="celebration-coins" aria-hidden>
+             {Array.from({ length: 28 }).map((_, i) => (
+               <span key={i} className="celebration-coin" style={{ "--i": i } as CSSProperties} />
+@@ -244,6 +402,9 @@ export default function GameClient() {
+                   <button className="quality-btn" data-quality="auto" type="button" data-i18n="qualityAuto">
+                     自动
+                   </button>
++                  <button className="quality-btn" data-quality="ultra" type="button" data-i18n="qualityUltra">
++                    旗舰
++                  </button>
+                   <button className="quality-btn" data-quality="high" type="button" data-i18n="qualityHigh">
+                     高
+                   </button>
+@@ -255,6 +416,42 @@ export default function GameClient() {
+                   </button>
+                 </div>
+               </div>
++              <div className="settings-row">
++                <label data-i18n="fxEffects">特效</label>
++                <div className="quality-switch">
++                  <button className="quality-btn" data-fx="on" type="button" data-i18n="fxOn">
++                    开
++                  </button>
++                  <button className="quality-btn" data-fx="off" type="button" data-i18n="fxOff">
++                    关
++                  </button>
++                </div>
++              </div>
++              <div className="settings-row">
++                <label data-i18n="animalAnim">动物动画</label>
++                <div className="quality-switch">
++                  <button className="quality-btn" data-animal="full" type="button" data-i18n="animalFull">
++                    完整
++                  </button>
++                  <button className="quality-btn" data-animal="simple" type="button" data-i18n="animalSimple">
++                    简化
++                  </button>
++                </div>
++              </div>
++              <div className="settings-row">
++                <label data-i18n="fpsTarget">帧率</label>
++                <div className="quality-switch">
++                  <button className="quality-btn" data-fps="auto" type="button" data-i18n="fpsAuto">
++                    自动
++                  </button>
++                  <button className="quality-btn" data-fps="30" type="button" data-i18n="fps30">
++                    30
++                  </button>
++                  <button className="quality-btn" data-fps="60" type="button" data-i18n="fps60">
++                    60
++                  </button>
++                </div>
++              </div>
+               <div className="settings-row">
+                 <label data-i18n="language">语言</label>
+                 <div className="settings-hint" data-i18n="tapToContinue">
+@@ -265,6 +462,124 @@ export default function GameClient() {
+           </div>
+         </div>
+ 
++        {/* Profile / VIP / Wallet / Help — close hides DOM only; never dispose #gl */}
++        <div id="profile-modal" className="modal ab-commerce-modal hidden">
++          <div className="modal-card glass-metal ab-purple-gold">
++            <div className="modal-head">
++              <span data-i18n="profile">个人中心</span>
++              <button id="profile-close" className="icon-btn metal" type="button">
++                ✕
++              </button>
++            </div>
++            <div className="modal-body profile-body">
++              <div className="profile-hero">
++                <img id="profile-avatar-img" src="/avatars/ab-avatar-01.svg" alt="" width={72} height={72} />
++                <div>
++                  <div id="profile-nickname-display" className="profile-nick">
++                    —
++                  </div>
++                  <div className="profile-meta">
++                    <span data-i18n="profilePlayerId">玩家ID</span>: <b id="profile-playerid">—</b>
++                  </div>
++                </div>
++              </div>
++              <div className="profile-grid">
++                <div>
++                  <label data-i18n="profilePhone">手机</label>
++                  <div id="profile-phone-display">—</div>
++                </div>
++                <div>
++                  <label data-i18n="profileCurrency">币种</label>
++                  <div id="profile-currency">MMK</div>
++                </div>
++                <div>
++                  <label data-i18n="vip">VIP</label>
++                  <div id="profile-vip">—</div>
++                </div>
++                <div>
++                  <label data-i18n="profileStatus">状态</label>
++                  <div id="profile-status">—</div>
++                </div>
++                <div>
++                  <label data-i18n="profileRegistered">注册</label>
++                  <div id="profile-registered">—</div>
++                </div>
++                <div>
++                  <label data-i18n="profileLastLogin">最近登录</label>
++                  <div id="profile-lastlogin">—</div>
++                </div>
++              </div>
++              <div className="profile-edit">
++                <label data-i18n="profileNickname">昵称</label>
++                <div className="profile-edit-row">
++                  <input id="profile-nickname-input" className="overlay-input" maxLength={24} />
++                  <button id="profile-save-nick" className="console-btn metal" type="button" data-i18n="profileSave">
++                    保存
++                  </button>
++                </div>
++                <label data-i18n="profilePhone">手机 (E.164)</label>
++                <div className="profile-edit-row">
++                  <input id="profile-phone-input" className="overlay-input" placeholder="+959…" />
++                  <button id="profile-save-phone" className="console-btn metal" type="button" data-i18n="profileBindPhone">
++                    绑定
++                  </button>
++                </div>
++                <label data-i18n="profileChooseAvatar">选择头像</label>
++                <div id="avatar-grid" className="avatar-grid" />
++              </div>
++            </div>
++          </div>
++        </div>
++
++        <div id="vip-modal" className="modal ab-commerce-modal hidden">
++          <div className="modal-card glass-metal ab-purple-gold">
++            <div className="modal-head">
++              <span data-i18n="vipCenter">VIP 中心</span>
++              <button id="vip-close" className="icon-btn metal" type="button">
++                ✕
++              </button>
++            </div>
++            <div className="modal-body">
++              <div id="vip-status-line" className="vip-status-line">
++                —
++              </div>
++              <div id="vip-level-switcher" className="vip-level-switcher" />
++              <div id="vip-level-detail" />
++              <h4 data-i18n="vipChests">奖励宝箱</h4>
++              <div id="vip-chests" className="vip-chests" />
++            </div>
++          </div>
++        </div>
++
++        <div id="wallet-modal" className="modal ab-commerce-modal hidden">
++          <div className="modal-card glass-metal ab-purple-gold">
++            <div className="modal-head">
++              <span data-i18n="wallet">钱包</span>
++              <button id="wallet-close" className="icon-btn metal" type="button">
++                ✕
++              </button>
++            </div>
++            <div id="wallet-modal-body" className="modal-body" />
++          </div>
++        </div>
++
++        <div id="help-modal" className="modal ab-commerce-modal hidden">
++          <div className="modal-card glass-metal ab-purple-gold">
++            <div className="modal-head">
++              <span data-i18n="help">帮助中心</span>
++              <button id="help-close" className="icon-btn metal" type="button">
++                ✕
++              </button>
++            </div>
++            <div className="modal-body">
++              <p data-i18n="helpIntro">牛魔王正式规则与客服入口。旋转结算以服务器为准。</p>
++              <p className="overlay-note" data-i18n="helpPending">
++                工单系统 Phase 8 — 规则详见赔付表与公告。
++              </p>
++            </div>
++          </div>
++        </div>
++
+         <div id="loading">
+           <div className="loading-emblem" />
+           <div id="loading-text" data-i18n="loading">
+diff --git a/client/m5/audio.ts b/client/m5/audio.ts
+index 7502e4f..dca1b3c 100644
+--- a/client/m5/audio.ts
++++ b/client/m5/audio.ts
+@@ -17,6 +17,9 @@ export class AudioEngine {
+   private volume = 0.8;
+   private backgroundDimmed = false;
+   private spinNoise: { src: AudioBufferSourceNode; gain: GainNode } | null = null;
++  private activeSfx = 0;
++  private maxConcurrentSfx = 8;
++  private bgmWasRunning = false;
+ 
+   constructor() {
+     try {
+@@ -60,6 +63,22 @@ export class AudioEngine {
+     if (ctx && ctx.state === "suspended") void ctx.resume();
+   }
+ 
++  /**
++   * Lightweight warmup from a user gesture — creates AudioContext once if needed,
++   * then immediately suspends. Never tears down / recreates.
++   */
++  warmupFromGesture(): void {
++    const ctx = this.ensure();
++    if (!ctx) return;
++    if (ctx.state === "running") {
++      void ctx.suspend();
++    }
++    if (typeof window !== "undefined") {
++      const w = window as unknown as { __xiAudioContextCount?: number };
++      w.__xiAudioContextCount = 1;
++    }
++  }
++
+   setMuted(m: boolean): void {
+     this.muted = m;
+     this.applyMaster();
+@@ -85,6 +104,34 @@ export class AudioEngine {
+     this.applyMaster();
+   }
+ 
++  /** Cap overlapping one-shot SFX voices (presentation LOD). */
++  setMaxConcurrentSfx(n: number): void {
++    this.maxConcurrentSfx = Math.max(2, Math.min(16, Math.floor(n)));
++  }
++
++  /**
++   * Background tab: suspend context + pause BGM timers.
++   * Keeps single AudioContext — never recreate.
++   */
++  pauseForBackground(): void {
++    this.bgmWasRunning = this.bgmTimer !== null;
++    this.stopBgm();
++    this.stopSpinLoop();
++    if (this.ctx && this.ctx.state === "running") {
++      void this.ctx.suspend();
++    }
++  }
++
++  resumeFromBackground(): void {
++    if (this.ctx && this.ctx.state === "suspended") {
++      void this.ctx.resume();
++    }
++    if (this.bgmWasRunning) {
++      this.startBgm();
++      this.bgmWasRunning = false;
++    }
++  }
++
+   private applyMaster(): void {
+     if (this.master && this.ctx) {
+       this.master.gain.cancelScheduledValues(this.ctx.currentTime);
+@@ -190,16 +237,27 @@ export class AudioEngine {
+   }
+ 
+   // ---------------- SFX helpers ----------------
+-  private sfxGain(vol: number): GainNode | null {
++  private sfxGain(vol: number, holdMs = 400): GainNode | null {
+     if (!this.ensure() || !this.master) return null;
++    if (this.activeSfx >= this.maxConcurrentSfx) return null;
+     const g = this.ctx!.createGain();
+     g.gain.value = vol;
+     g.connect(this.master);
++    this.activeSfx++;
++    window.setTimeout(() => {
++      this.activeSfx = Math.max(0, this.activeSfx - 1);
++      try {
++        g.disconnect();
++      } catch {
++        /* ignore */
++      }
++    }, holdMs);
+     return g;
+   }
+ 
+   private blip(freqs: number[], stepDur: number, vol: number, type: OscillatorType = "triangle"): void {
+-    const out = this.sfxGain(vol);
++    const hold = Math.ceil((freqs.length * stepDur + 0.25) * 1000);
++    const out = this.sfxGain(vol, hold);
+     if (!out || !this.ctx) return;
+     const t0 = this.ctx.currentTime;
+     freqs.forEach((f, i) => {
+@@ -273,9 +331,58 @@ export class AudioEngine {
+     this.noiseBurst(0.08, 0.12, 2400, "highpass");
+   }
+ 
+-  winSmall(): void { this.blip([523, 659, 784, 1047], 0.09, 0.3); }
++  winSmall(): void { this.winNormal(); }
+   scatterLand(): void { this.blip([1568, 2093], 0.08, 0.3, "sine"); }
+ 
++  /** Distinct per-tier cues — never share one win sound across all tiers. */
++  coinDrop(): void {
++    this.blip([880, 660, 440], 0.05, 0.22, "triangle");
++    this.noiseBurst(0.12, 0.08, 1800, "bandpass");
++  }
++  winNormal(): void {
++    this.blip([523, 659, 784, 1047], 0.08, 0.28);
++    this.coinDrop();
++  }
++  winMedium(): void {
++    this.blip([392, 523, 659, 784, 988], 0.09, 0.32);
++    setTimeout(() => this.blip([784, 988], 0.07, 0.2), 280);
++  }
++  winStrong(): void {
++    this.blip([330, 392, 523, 659, 784, 1047], 0.09, 0.36, "triangle");
++    setTimeout(() => this.thunder(), 200);
++  }
++  fullscreenCommon(): void {
++    this.blip([440, 554, 659, 880], 0.1, 0.34, "sine");
++    setTimeout(() => this.blip([659, 880, 1108], 0.08, 0.28), 350);
++  }
++  fullscreenHigh(): void {
++    this.blip([294, 370, 440, 554, 740], 0.1, 0.38, "sawtooth");
++    setTimeout(() => this.noiseBurst(0.35, 0.14, 600, "lowpass"), 180);
++    setTimeout(() => this.blip([554, 740, 880, 1175], 0.09, 0.3), 500);
++  }
++  fullscreenBuffalo(): void {
++    this.roar();
++    setTimeout(() => this.blip([196, 247, 330, 392, 523], 0.12, 0.4, "sawtooth"), 200);
++    setTimeout(() => this.thunder(), 400);
++    setTimeout(() => this.blip([523, 659, 784, 1047, 1319], 0.1, 0.35), 900);
++  }
++  thunder(): void {
++    this.noiseBurst(0.55, 0.22, 180, "lowpass");
++    setTimeout(() => this.noiseBurst(0.25, 0.12, 900, "bandpass"), 120);
++  }
++  superWin(): void {
++    this.blip([392, 523, 659, 784, 988, 1319], 0.11, 0.42);
++    setTimeout(() => this.blip([659, 831, 1047, 1319, 1661], 0.1, 0.38), 600);
++    setTimeout(() => this.blip([1047, 1319, 1661, 2093], 0.09, 0.35, "sine"), 1400);
++    setTimeout(() => this.noiseBurst(0.8, 0.14, 3200, "highpass"), 900);
++  }
++  epicWin(): void {
++    this.superWin();
++    setTimeout(() => this.thunder(), 500);
++    setTimeout(() => this.roar(), 800);
++    setTimeout(() => this.blip([523, 784, 1047, 1568, 2093, 2637], 0.1, 0.4), 1600);
++  }
++
+   /** Soft animal / special SFX — presentation only, never blocks gameplay. */
+   animalCue(kind: "buffalo" | "lion" | "elephant" | "zebra" | "antelope" | "wild" | "scatter"): void {
+     try {
+@@ -311,25 +418,96 @@ export class AudioEngine {
+   bigWin(): void {
+     this.blip([523, 659, 784, 1047, 1319, 1568], 0.11, 0.4);
+     setTimeout(() => this.blip([784, 988, 1175, 1568, 2093], 0.11, 0.35), 500);
++    setTimeout(() => this.coinDrop(), 200);
+   }
+   megaWin(): void {
+-    this.bigWin();
+-    setTimeout(() => this.blip([659, 831, 988, 1319, 1661, 2093, 2637], 0.1, 0.4), 900);
++    // Distinct from big — wider chord + delayed fanfare (not a bigWin() call).
++    this.blip([392, 523, 659, 831, 1047, 1319], 0.1, 0.42);
++    setTimeout(() => this.blip([659, 831, 988, 1319, 1661, 2093, 2637], 0.1, 0.4), 700);
++    setTimeout(() => this.noiseBurst(0.6, 0.14, 2400, "bandpass"), 400);
+   }
+   ultraWin(): void {
+-    this.megaWin();
+-    setTimeout(() => this.noiseBurst(1.2, 0.2, 5000, "highpass"), 800);
+-    setTimeout(() => this.blip([1047, 1319, 1568, 2093, 2637, 3136], 0.09, 0.42), 1400);
++    // Distinct from mega — brighter stack + thunder wash.
++    this.blip([330, 440, 554, 740, 988, 1319], 0.1, 0.44, "triangle");
++    setTimeout(() => this.noiseBurst(1.2, 0.2, 5000, "highpass"), 600);
++    setTimeout(() => this.blip([1047, 1319, 1568, 2093, 2637, 3136], 0.09, 0.42), 1100);
++    setTimeout(() => this.thunder(), 300);
+   }
+   jackpot(): void {
+-    this.ultraWin();
+-    for (let i = 0; i < 4; i++) {
+-      setTimeout(() => this.blip([523, 784, 1047, 1568], 0.08, 0.35), 400 + i * 350);
++    // Ultimate — longest layered fanfare; never delegates to ultra/mega/big.
++    this.blip([196, 247, 330, 392, 523, 659], 0.12, 0.48, "sawtooth");
++    setTimeout(() => this.roar(), 250);
++    setTimeout(() => this.thunder(), 400);
++    setTimeout(() => this.blip([523, 659, 784, 1047, 1319, 1661], 0.1, 0.42), 800);
++    for (let i = 0; i < 5; i++) {
++      setTimeout(() => this.blip([523, 784, 1047, 1568, 2093], 0.08, 0.36), 1200 + i * 380);
+     }
++    setTimeout(() => this.noiseBurst(1.4, 0.22, 4000, "highpass"), 1000);
+   }
+ 
+   freeSpinTrigger(): void {
+-    this.blip([392, 523, 659, 784, 1047, 1319, 1568, 2093], 0.12, 0.4, "sine");
++    this.freeSpinEnter();
++  }
++
++  /** Scatter free-spin enter — temple open / beam / roar stack. */
++  freeSpinEnter(): void {
++    this.roar();
++    this.blip([392, 523, 659, 784, 1047, 1319, 1568, 2093], 0.11, 0.42, "sine");
++    setTimeout(() => this.blip([784, 1047, 1319, 1661], 0.1, 0.35), 500);
++    setTimeout(() => this.noiseBurst(0.7, 0.16, 2800, "bandpass"), 280);
++  }
++
++  /** Play a named presentation cue (choreography-driven). */
++  playCue(cue: string): void {
++    switch (cue) {
++      case "winNormal":
++        this.winNormal();
++        break;
++      case "winMedium":
++        this.winMedium();
++        break;
++      case "winStrong":
++        this.winStrong();
++        break;
++      case "fullscreenCommon":
++        this.fullscreenCommon();
++        break;
++      case "fullscreenHigh":
++        this.fullscreenHigh();
++        break;
++      case "fullscreenBuffalo":
++        this.fullscreenBuffalo();
++        break;
++      case "bigWin":
++        this.bigWin();
++        break;
++      case "megaWin":
++        this.megaWin();
++        break;
++      case "ultraWin":
++        this.ultraWin();
++        break;
++      case "superWin":
++        this.superWin();
++        break;
++      case "epicWin":
++        this.epicWin();
++        break;
++      case "jackpot":
++        this.jackpot();
++        break;
++      case "freeSpinEnter":
++        this.freeSpinEnter();
++        break;
++      case "coinDrop":
++        this.coinDrop();
++        break;
++      case "thunder":
++        this.thunder();
++        break;
++      default:
++        break;
++    }
+   }
+ 
+   /** buffalo roar: low sawtooth + growl noise, pitch envelope */
+diff --git a/client/m5/boot.ts b/client/m5/boot.ts
+index c176699..7d43669 100644
+--- a/client/m5/boot.ts
++++ b/client/m5/boot.ts
+@@ -15,39 +15,66 @@ import { validateDicts, getLang, setLang, type Lang } from "./i18n.ts";
+ import { preloadSymbolArt } from "./game/symbols.ts";
+ import {
+   allowDebugHooks,
++  applyDocumentTierAttrs,
++  applySettingsToProfile,
++  FramePacer,
+   FpsGovernor,
+   profileFor,
+-  readStoredQualityMode,
++  readStoredQualitySettings,
+   resolveTier,
+-  storeQualityMode,
++  storeQualitySettings,
++  withSoftRenderScale,
+   type QualityMode,
++  type QualitySettings,
+   type QualityTier,
+ } from "./quality.ts";
+ import { audio } from "./audio.ts";
+ import type { SymbolId } from "./adapter.ts";
+ 
++export type BootM5Options = {
++  /** Warm WebGL without Session/Spin/Round until ensureBootstrap(). */
++  deferBootstrap?: boolean;
++};
++
+ export type M5Handle = {
+   destroy: () => void;
++  /** Pause rAF + audio for soft nav (keep WebGL context). */
++  pause: (opts?: { releaseHeavyFx?: boolean }) => void;
++  /** Resume after soft nav / tab return. */
++  resume: () => void;
++  /** Start formal session bootstrap once (idempotent). */
++  ensureBootstrap: () => void;
++  isBootstrapped: () => boolean;
+   game: Game;
+ };
+ 
+-export function bootM5(root: HTMLElement): M5Handle {
++function buildProfile(tier: QualityTier, settings: QualitySettings) {
++  return applySettingsToProfile(profileFor(tier), settings);
++}
++
++export function bootM5(root: HTMLElement, opts?: BootM5Options): M5Handle {
+   const i18nProblems = validateDicts();
+   if (i18nProblems.length) console.warn("[i18n] dictionary issues:", i18nProblems);
+ 
+   const canvas = root.querySelector<HTMLCanvasElement>("#gl");
+   if (!canvas) throw new Error("M5 canvas #gl missing");
+ 
+-  let qualityMode = readStoredQualityMode();
++  let qualitySettings = readStoredQualitySettings();
++  let qualityMode = qualitySettings.mode;
+   let activeTier = resolveTier(qualityMode);
+-  let profile = profileFor(activeTier);
++  let profile = buildProfile(activeTier, qualitySettings);
++  let sessionBootstrapped = false;
++  let savedCoinBudget = profile.coinBudget;
++  let savedParticleBudget = profile.particleBudget;
+ 
+   const world = new World(canvas, profile);
+   const particles = new Particles(world.scene);
+   particles.setBudgets(profile.coinBudget, profile.particleBudget);
+   const buffalo = new Buffalo(profile.furShells);
++  buffalo.setAnimMode(qualitySettings.animalMode);
+   buffalo.setParticles(particles);
+   world.scene.add(buffalo.group);
++  audio.setMaxConcurrentSfx(activeTier === "low" ? 4 : activeTier === "medium" ? 6 : 8);
+ 
+   const rig = new ReelRig();
+   world.scene.add(rig.group);
+@@ -95,31 +122,78 @@ export function bootM5(root: HTMLElement): M5Handle {
+ 
+   const provider = new FormalGameProvider();
+   const game = new Game(provider, rig, buffalo, particles, world);
++  const pacer = new FramePacer(qualitySettings.fpsTarget);
++  let governor!: FpsGovernor;
++
++  const applyQualityBundle = (tier: QualityTier, settings: QualitySettings, softScale = 1) => {
++    activeTier = tier;
++    profile = withSoftRenderScale(buildProfile(tier, settings), softScale);
++    world.applyQuality(profile);
++    buffalo.setFurShells(profile.furShells);
++    buffalo.setAnimMode(settings.animalMode);
++    particles.setBudgets(profile.coinBudget, profile.particleBudget);
++    savedCoinBudget = profile.coinBudget;
++    savedParticleBudget = profile.particleBudget;
++    rig.setSymbolAnimIntensity(profile.symbolAnimIntensity);
++    audio.setMaxConcurrentSfx(tier === "low" ? 4 : tier === "medium" ? 6 : 8);
++    pacer.setTarget(settings.fpsTarget);
++    applyDocumentTierAttrs(tier, settings);
++  };
++  applyDocumentTierAttrs(activeTier, qualitySettings);
++
++  governor = new FpsGovernor(
++    activeTier,
++    (tier: QualityTier, softScale = 1) => {
++      if (qualityMode !== "auto") return;
++      // Soft scale is DEGRADE_ORDER last step — only low tier, never Symbol plate
++      applyQualityBundle(tier, qualitySettings, softScale);
++    },
++    35,
++    55,
++    { sustainMs: 3800, allowStepUp: false },
++  );
++
+   const hud = new Hud(game, {
+     getQualityMode: () => qualityMode,
++    getQualitySettings: () => qualitySettings,
+     setQualityMode: (mode: QualityMode) => {
++      qualitySettings = { ...qualitySettings, mode };
+       qualityMode = mode;
+-      storeQualityMode(mode);
+-      activeTier = resolveTier(mode);
+-      profile = profileFor(activeTier);
+-      world.applyQuality(profile);
+-      buffalo.setFurShells(profile.furShells);
+-      particles.setBudgets(profile.coinBudget, profile.particleBudget);
+-      rig.setSymbolAnimIntensity(profile.symbolAnimIntensity);
++      storeQualitySettings(qualitySettings);
++      const tier = resolveTier(mode);
++      applyQualityBundle(tier, qualitySettings);
+       if (qualityMode === "auto") {
+-        governor.setAutoCeiling(activeTier);
++        governor.setAutoCeiling(tier);
+       } else {
+-        governor.setManual(activeTier);
++        governor.setManual(tier);
++      }
++    },
++    setQualitySettings: (partial: Partial<QualitySettings>) => {
++      qualitySettings = { ...qualitySettings, ...partial };
++      qualityMode = qualitySettings.mode;
++      storeQualitySettings(qualitySettings);
++      const tier =
++        qualityMode === "auto" ? governor.current : resolveTier(qualityMode);
++      applyQualityBundle(tier, qualitySettings);
++      if (qualityMode === "auto") {
++        governor.setAutoCeiling(resolveTier("auto"));
++      } else {
++        governor.setManual(tier);
+       }
+     },
+   });
+   void hud;
+ 
+-  void game.bootstrap().catch((err) => {
+-    console.error("[m5] bootstrap failed", err);
+-    const loading = root.querySelector("#loading-text");
+-    if (loading) loading.textContent = String(err?.message ?? err);
+-  });
++  const ensureBootstrap = () => {
++    if (sessionBootstrapped) return;
++    sessionBootstrapped = true;
++    void game.bootstrap().catch((err) => {
++      console.error("[m5] bootstrap failed", err);
++      const loading = root.querySelector("#loading-text");
++      if (loading) loading.textContent = String(err?.message ?? err);
++    });
++  };
++  if (!opts?.deferBootstrap) ensureBootstrap();
+ 
+   if (allowDebugHooks()) {
+     const debug = {
+@@ -143,11 +217,13 @@ export function bootM5(root: HTMLElement): M5Handle {
+         turbo: game.turbo,
+         qualityMode,
+         qualityTier: activeTier,
++        qualitySettings,
+         reelScale: rig.scaleFactor,
+         reelX: rig.group.position.x,
+         camZ: world.getCameraZ(),
+         fov: world.camera.fov,
+         edge: rig.measureScreenFill(world.camera),
++        clarity: world.getClarityProbe(),
+       }),
+     };
+     (window as unknown as { __game: typeof debug }).__game = debug;
+@@ -164,16 +240,6 @@ export function bootM5(root: HTMLElement): M5Handle {
+   let alive = true;
+   let pageVisible = !document.hidden;
+ 
+-  const governor = new FpsGovernor(activeTier, (tier: QualityTier) => {
+-    if (qualityMode !== "auto") return;
+-    activeTier = tier;
+-    profile = profileFor(tier);
+-    world.applyQuality(profile);
+-    buffalo.setFurShells(profile.furShells);
+-    particles.setBudgets(profile.coinBudget, profile.particleBudget);
+-    rig.setSymbolAnimIntensity(profile.symbolAnimIntensity);
+-  });
+-
+   // Initial symbol-life LOD from quality profile
+   rig.setSymbolAnimIntensity(profile.symbolAnimIntensity);
+ 
+@@ -187,10 +253,14 @@ export function bootM5(root: HTMLElement): M5Handle {
+     pageVisible = !document.hidden;
+     if (document.hidden) {
+       audio.setBackgroundDimmed(true);
++      audio.pauseForBackground();
+       clock.getDelta(); // discard large dt on resume
+     } else {
++      audio.resumeFromBackground();
+       audio.setBackgroundDimmed(false);
+       clock.getDelta();
++      // Formal balance refresh on page resume (wallet is source of truth).
++      void game.refreshBalanceFromWallet();
+     }
+   };
+   document.addEventListener("visibilitychange", onVisibility);
+@@ -199,6 +269,11 @@ export function bootM5(root: HTMLElement): M5Handle {
+     if (!alive) return;
+     raf = requestAnimationFrame(frame);
+     if (!pageVisible) return;
++    const now = performance.now();
++    if (!pacer.shouldDraw(now)) {
++      if (qualityMode === "auto") governor.tick(now);
++      return;
++    }
+     const dt = Math.min(clock.getDelta(), 0.05);
+     const time = clock.elapsedTime;
+     world.update(dt);
+@@ -207,20 +282,50 @@ export function bootM5(root: HTMLElement): M5Handle {
+     particles.update(dt, time);
+     world.render();
+     if (qualityMode === "auto") {
+-      governor.tick(performance.now());
++      governor.tick(now);
+     }
+   }
+   frame();
+ 
+   const loading = root.querySelector("#loading");
++  // Always release the loading trap — never leave a full-screen blocker on HUD
+   void artReady.finally(() => {
+     window.setTimeout(() => loading?.classList.add("done"), 200);
+   });
++  window.setTimeout(() => loading?.classList.add("done"), 4000);
+ 
+   return {
+     game,
++    ensureBootstrap,
++    isBootstrapped: () => sessionBootstrapped,
++    pause: (pauseOpts?: { releaseHeavyFx?: boolean }) => {
++      pageVisible = false;
++      try {
++        audio.pauseForBackground();
++      } catch {
++        /* ignore */
++      }
++      // LOW tier: drop heavy FX budgets while suspended (keep WebGL context)
++      if (pauseOpts?.releaseHeavyFx) {
++        savedCoinBudget = profile.coinBudget;
++        savedParticleBudget = profile.particleBudget;
++        particles.setBudgets(0, 0);
++      }
++    },
++    resume: () => {
++      pageVisible = true;
++      clock.getDelta();
++      try {
++        particles.setBudgets(savedCoinBudget, savedParticleBudget);
++        audio.resumeFromBackground();
++        audio.setBackgroundDimmed(false);
++      } catch {
++        /* ignore */
++      }
++    },
+     destroy: () => {
+       alive = false;
++      pageVisible = false;
+       cancelAnimationFrame(raf);
+       window.removeEventListener("resize", onResize);
+       document.removeEventListener("visibilitychange", onVisibility);
+@@ -230,6 +335,12 @@ export function bootM5(root: HTMLElement): M5Handle {
+         /* ignore */
+       }
+       try {
++        audio.pauseForBackground();
++      } catch {
++        /* ignore */
++      }
++      try {
++        // Safe dispose — host unmount only (not routine Play→Hub suspend)
+         world.dispose();
+       } catch {
+         /* ignore */
+diff --git a/client/m5/game/symbols.ts b/client/m5/game/symbols.ts
+index 1280ad1..2511fcb 100644
+--- a/client/m5/game/symbols.ts
++++ b/client/m5/game/symbols.ts
+@@ -20,8 +20,20 @@ import jArt from "../assets/symbols/j.png?url";
+ import tenArt from "../assets/symbols/ten.png?url";
+ import nineArt from "../assets/symbols/nine.png?url";
+ 
+-/** Runtime plate resolution — M8 Phase3: 1024 minimum (never downscale commercial PNGs to 512). */
++/**
++ * Runtime plate resolution — native master max (1024).
++ * Do NOT load upsampled 2048 review files; they add no real detail.
++ * See docs/m8-review/clarity-v2/TEXTURE_AUDIT.md ASSET_SOURCE_LIMITATION.
++ */
+ const SIZE = 1024;
++/** Expected on-disk / plate dimensions for the 13 official symbols. */
++export const SYMBOL_TEXTURE_EXPECTATIONS = {
++  plateSize: SIZE,
++  nativeMaster: 1024,
++  fakeUpsample: 2048,
++  atlasTileUnsafeForHighDpr: 512,
++  count: 13,
++} as const;
+ /** Logical size for procedural fallback painters (scaled up onto SIZE). */
+ const LOGIC = 512;
+ 
+@@ -270,36 +282,40 @@ async function ensureArt(id: SymbolId): Promise<void> {
+       img.crossOrigin = "anonymous";
+       img.onload = () => {
+         const [canvas, g] = makeCanvas();
+-        // M8 commercial 3D symbols already include metal frames — keep plate light
++        // Native 1:1 when source is already SIZE — avoid needless resample blur
+         g.fillStyle = "#0a0603";
+         g.fillRect(0, 0, SIZE, SIZE);
+-        const pad = 10;
++        const pad = 8;
+         g.save();
+-        roundRect(g, pad, pad, SIZE - pad * 2, SIZE - pad * 2, 28);
++        roundRect(g, pad, pad, SIZE - pad * 2, SIZE - pad * 2, 26);
+         g.clip();
++        // Prefer crisp copy when dimensions match plate
++        g.imageSmoothingEnabled = img.width !== SIZE || img.height !== SIZE;
++        g.imageSmoothingQuality = "high";
+         g.drawImage(img, pad, pad, SIZE - pad * 2, SIZE - pad * 2);
+-        // warm key-light wash (unify light direction across the set)
++        // M8 commercial 3D symbols already include metal frames — keep plate light
++        // warm key-light wash (Clarity V2: lighter — keep dimension without mushing fur/horn)
+         const wash = g.createLinearGradient(0, pad, 0, SIZE - pad);
+-        wash.addColorStop(0, "rgba(255, 230, 160, 0.10)");
+-        wash.addColorStop(0.5, "rgba(180, 120, 255, 0.03)");
+-        wash.addColorStop(1, "rgba(20, 8, 0, 0.18)");
++        wash.addColorStop(0, "rgba(255, 230, 160, 0.05)");
++        wash.addColorStop(0.5, "rgba(180, 120, 255, 0.015)");
++        wash.addColorStop(1, "rgba(20, 8, 0, 0.10)");
+         g.fillStyle = wash;
+         g.fillRect(pad, pad, SIZE - pad * 2, SIZE - pad * 2);
+-        // subtle contact AO at bottom edge (thickness read)
+-        const ao = g.createLinearGradient(0, SIZE * 0.72, 0, SIZE - pad);
++        // lighter contact AO (was crushing blacks)
++        const ao = g.createLinearGradient(0, SIZE * 0.78, 0, SIZE - pad);
+         ao.addColorStop(0, "rgba(0,0,0,0)");
+-        ao.addColorStop(1, "rgba(0,0,0,0.28)");
++        ao.addColorStop(1, "rgba(0,0,0,0.16)");
+         g.fillStyle = ao;
+-        g.fillRect(pad, SIZE * 0.72, SIZE - pad * 2, SIZE * 0.28 - pad);
++        g.fillRect(pad, SIZE * 0.78, SIZE - pad * 2, SIZE * 0.22 - pad);
+         g.restore();
+-        // outer specular rim — black-gold unify
++        // outer specular rim — black-gold unify (thinner — less blown buffalo face)
+         const rim = g.createLinearGradient(0, 0, SIZE, SIZE);
+-        rim.addColorStop(0, "rgba(255, 245, 200, 0.9)");
+-        rim.addColorStop(0.45, "rgba(224, 179, 74, 0.75)");
+-        rim.addColorStop(1, "rgba(40, 24, 8, 0.95)");
++        rim.addColorStop(0, "rgba(255, 245, 200, 0.78)");
++        rim.addColorStop(0.45, "rgba(224, 179, 74, 0.62)");
++        rim.addColorStop(1, "rgba(40, 24, 8, 0.9)");
+         g.strokeStyle = rim;
+-        g.lineWidth = 8;
+-        roundRect(g, 8, 8, SIZE - 16, SIZE - 16, 30);
++        g.lineWidth = 6;
++        roundRect(g, 6, 6, SIZE - 12, SIZE - 12, 28);
+         g.stroke();
+         canvasCache.set(id, canvas);
+         // refresh texture if already created from fallback
+@@ -321,6 +337,11 @@ async function ensureArt(id: SymbolId): Promise<void> {
+   await job;
+ }
+ 
++/** Priority-1 symbol image URLs for Hub idle prefetch (no WebGL / Session). */
++export function listSymbolArtUrls(): string[] {
++  return Object.values(ART_URL).filter((u): u is string => typeof u === "string" && u.length > 0);
++}
++
+ /** Kick off commercial art preload; resolves when all PNG slots settle (or fail). */
+ export function preloadSymbolArt(): Promise<void> {
+   const ids = Object.keys(ART_URL) as SymbolId[];
+diff --git a/client/xi-lobby/game-lifecycle.ts b/client/xi-lobby/game-lifecycle.ts
+new file mode 100644
+index 0000000..7dfbd2e
+--- /dev/null
++++ b/client/xi-lobby/game-lifecycle.ts
+@@ -0,0 +1,381 @@
++/**
++ * Hub↔Play GameClient lifecycle — presentation only.
++ * State machine + perf trace. Never creates Round/Spin/Session APIs here.
++ */
++
++export type GameLifecycleState =
++  | "UNINITIALIZED"
++  | "PRELOADING"
++  | "READY"
++  | "ACTIVE"
++  | "SUSPENDED"
++  | "DISPOSING"
++  | "DISPOSED";
++
++export type XiPerfMarkName =
++  | "routeClickAt"
++  | "clickFeedbackAt"
++  | "preloadStart"
++  | "preloadReady"
++  | "bootStart"
++  | "bootReady"
++  | "activateStart"
++  | "activateReady"
++  | "suspendStart"
++  | "suspendDone"
++  | "overlayShown"
++  | "transitionEnd";
++
++export type XiPerfMark = {
++  name: XiPerfMarkName;
++  t: number;
++  detail?: string;
++};
++
++type HostController = {
++  requestMount: (opts?: { deferBootstrap?: boolean }) => void;
++  requestUnmount: () => void;
++  setVisible: (active: boolean) => void;
++};
++
++type BootBridge = {
++  pause: (opts?: { releaseHeavyFx?: boolean }) => void;
++  resume: () => void;
++  ensureBootstrap: () => void;
++  destroy: () => void;
++  isBootstrapped: () => boolean;
++};
++
++const PERF_KEY = "xi-perf-trace";
++const listeners = new Set<() => void>();
++
++let state: GameLifecycleState = "UNINITIALIZED";
++let host: HostController | null = null;
++let boot: BootBridge | null = null;
++let preloadPromise: Promise<void> | null = null;
++let bootPromise: Promise<void> | null = null;
++let overlayTimer: number | null = null;
++let loadingOverlay: HTMLElement | null = null;
++let opSeq = 0;
++let deferPending = true;
++
++function emit(): void {
++  for (const l of listeners) l();
++}
++
++function setState(next: GameLifecycleState): void {
++  if (state === next) return;
++  state = next;
++  if (typeof window !== "undefined") {
++    const w = window as unknown as { __xiGameLifecycle?: string };
++    w.__xiGameLifecycle = next;
++  }
++  emit();
++}
++
++export function getGameLifecycleState(): GameLifecycleState {
++  return state;
++}
++
++export function subscribeGameLifecycle(onChange: () => void): () => void {
++  listeners.add(onChange);
++  return () => {
++    listeners.delete(onChange);
++  };
++}
++
++export function registerGameHostController(ctrl: HostController | null): void {
++  host = ctrl;
++}
++
++export function registerBootBridge(bridge: BootBridge | null): void {
++  boot = bridge;
++  if (bridge && (state === "PRELOADING" || state === "UNINITIALIZED" || state === "READY")) {
++    setState("READY");
++    markXiPerf("bootReady");
++    // Warm path on Hub: keep RAF/audio paused until activate()
++    if (state !== "ACTIVE") {
++      try {
++        bridge.pause();
++      } catch {
++        /* ignore */
++      }
++    }
++  }
++}
++
++export function isXiPerfTraceEnabled(): boolean {
++  if (typeof window === "undefined") return false;
++  try {
++    if (new URLSearchParams(window.location.search).get("xiPerf") === "1") {
++      return true;
++    }
++    return window.localStorage.getItem(PERF_KEY) === "1";
++  } catch {
++    return false;
++  }
++}
++
++export function setXiPerfTraceEnabled(on: boolean): void {
++  try {
++    window.localStorage.setItem(PERF_KEY, on ? "1" : "0");
++  } catch {
++    /* ignore */
++  }
++}
++
++export function markXiPerf(name: XiPerfMarkName, detail?: string): void {
++  if (typeof window === "undefined") return;
++  const w = window as unknown as {
++    __xiPerfMarks?: XiPerfMark[];
++    __xiPerfEnabled?: boolean;
++  };
++  const enabled = isXiPerfTraceEnabled();
++  w.__xiPerfEnabled = enabled;
++  if (!enabled && !w.__xiPerfMarks) return;
++  if (!w.__xiPerfMarks) w.__xiPerfMarks = [];
++  const entry: XiPerfMark = { name, t: performance.now(), detail };
++  w.__xiPerfMarks.push(entry);
++  if (enabled) {
++    console.info(`[xi-perf] ${name}`, detail ?? "", entry.t.toFixed(1));
++  }
++}
++
++export function clearXiPerfMarks(): void {
++  if (typeof window === "undefined") return;
++  (window as unknown as { __xiPerfMarks?: XiPerfMark[] }).__xiPerfMarks = [];
++}
++
++function clearOverlayTimer(): void {
++  if (overlayTimer != null) {
++    window.clearTimeout(overlayTimer);
++    overlayTimer = null;
++  }
++}
++
++export function hideXiPlayLoadingOverlay(): void {
++  clearOverlayTimer();
++  if (loadingOverlay) {
++    loadingOverlay.classList.add("is-exit");
++    const el = loadingOverlay;
++    loadingOverlay = null;
++    window.setTimeout(() => el.remove(), 220);
++  }
++}
++
++export function showXiPlayLoadingOverlay(label: string): void {
++  if (typeof document === "undefined") return;
++  if (loadingOverlay) return;
++  markXiPerf("overlayShown");
++  const el = document.createElement("div");
++  el.className = "xi-play-loading is-active";
++  el.setAttribute("data-testid", "xi-play-loading");
++  el.setAttribute("role", "status");
++  el.setAttribute("aria-live", "polite");
++  el.innerHTML = `<div class="xi-play-loading-card"><span class="xi-play-loading-brand">西游戏</span><span class="xi-play-loading-text">${label}</span></div>`;
++  document.documentElement.appendChild(el);
++  loadingOverlay = el;
++}
++
++/** Schedule light loading overlay if enter path exceeds 150ms. */
++export function armXiPlayLoadingOverlay(label: string): void {
++  clearOverlayTimer();
++  overlayTimer = window.setTimeout(() => {
++    overlayTimer = null;
++    if (state !== "ACTIVE") showXiPlayLoadingOverlay(label);
++  }, 150);
++}
++
++/**
++ * Priority-1 asset prefetch only (chunks / images). No WebGL, no Session.
++ * Does not advance the GameClient state machine (warmGameClient owns PRELOADING).
++ */
++export async function prefetchPlayCoreAssets(
++  run: () => Promise<void>,
++): Promise<void> {
++  if (preloadPromise) return preloadPromise;
++  markXiPerf("preloadStart");
++  preloadPromise = (async () => {
++    try {
++      await run();
++      markXiPerf("preloadReady");
++    } catch {
++      /* ignore — navigation / warm will retry */
++    } finally {
++      preloadPromise = null;
++    }
++  })();
++  return preloadPromise;
++}
++
++/**
++ * Warm hidden GameClient (WebGL/shaders) without Session/Spin/Round.
++ * Safe on hub idle after hover/touchstart / idle timer.
++ */
++export function warmGameClient(opts?: { deferBootstrap?: boolean }): void {
++  if (typeof window === "undefined") return;
++  if (
++    state === "READY" ||
++    state === "ACTIVE" ||
++    state === "SUSPENDED" ||
++    state === "DISPOSING"
++  ) {
++    return;
++  }
++  deferPending = opts?.deferBootstrap !== false;
++  markXiPerf("bootStart");
++  setState("PRELOADING");
++  host?.requestMount({ deferBootstrap: deferPending });
++}
++
++export function notifyBootStarted(): void {
++  markXiPerf("bootStart");
++}
++
++export function notifyBootReady(): void {
++  if (state === "DISPOSING" || state === "DISPOSED") return;
++  markXiPerf("bootReady");
++  if (state !== "ACTIVE") {
++    setState("READY");
++    try {
++      boot?.pause();
++    } catch {
++      /* ignore */
++    }
++  }
++}
++
++function isPlayIntent(): boolean {
++  if (typeof window === "undefined") return false;
++  const opt = (window as unknown as { __xiOptimisticLayer?: string | null })
++    .__xiOptimisticLayer;
++  if (opt === "hub" || opt === "lobby") return false;
++  if (opt === "play") return true;
++  return window.location.pathname.includes("/play");
++}
++
++/**
++ * Enter Play visually — show host, resume RAF/audio, bootstrap session if deferred.
++ */
++export async function activateGameLifecycle(loadingLabel: string): Promise<void> {
++  const seq = ++opSeq;
++  markXiPerf("activateStart");
++  armXiPlayLoadingOverlay(loadingLabel);
++
++  if (state === "DISPOSING") {
++    // Wait out dispose — rare
++    await new Promise((r) => setTimeout(r, 50));
++  }
++
++  if (!isPlayIntent()) {
++    hideXiPlayLoadingOverlay();
++    return;
++  }
++
++  if (state === "UNINITIALIZED" || state === "PRELOADING" || state === "DISPOSED") {
++    deferPending = false;
++    host?.requestMount({ deferBootstrap: false });
++  }
++
++  host?.setVisible(true);
++
++  // Wait briefly for boot bridge if cold
++  if (!boot) {
++    bootPromise =
++      bootPromise ??
++      new Promise<void>((resolve) => {
++        const start = performance.now();
++        const tick = () => {
++          if (boot || performance.now() - start > 8000) {
++            bootPromise = null;
++            resolve();
++            return;
++          }
++          requestAnimationFrame(tick);
++        };
++        tick();
++      });
++    await bootPromise;
++  }
++
++  if (seq !== opSeq || !isPlayIntent()) {
++    hideXiPlayLoadingOverlay();
++    return;
++  }
++
++  try {
++    boot?.resume();
++    boot?.ensureBootstrap();
++  } catch {
++    /* ignore */
++  }
++
++  if (seq !== opSeq || !isPlayIntent()) {
++    hideXiPlayLoadingOverlay();
++    try {
++      boot?.pause();
++    } catch {
++      /* ignore */
++    }
++    host?.setVisible(false);
++    return;
++  }
++
++  setState("ACTIVE");
++  markXiPerf("activateReady");
++  hideXiPlayLoadingOverlay();
++  markXiPerf("transitionEnd");
++}
++
++/**
++ * Leave Play — UI may navigate immediately. Pause + hide; do NOT dispose.
++ */
++export function suspendGameLifecycle(opts?: {
++  releaseHeavyFx?: boolean;
++}): void {
++  const seq = ++opSeq;
++  markXiPerf("suspendStart");
++  hideXiPlayLoadingOverlay();
++  try {
++    boot?.pause({ releaseHeavyFx: opts?.releaseHeavyFx === true });
++  } catch {
++    /* ignore */
++  }
++  host?.setVisible(false);
++  if (state === "ACTIVE" || state === "READY" || state === "PRELOADING") {
++    setState("SUSPENDED");
++  }
++  markXiPerf("suspendDone");
++  void seq;
++}
++
++/**
++ * Full teardown — only when leaving Xi segment or forced reset.
++ * Never call on routine Play→Hub.
++ */
++export function disposeGameLifecycle(): void {
++  if (state === "DISPOSED" || state === "DISPOSING") return;
++  const seq = ++opSeq;
++  setState("DISPOSING");
++  hideXiPlayLoadingOverlay();
++  try {
++    boot?.destroy();
++  } catch {
++    /* ignore */
++  }
++  boot = null;
++  host?.requestUnmount();
++  if (seq === opSeq) setState("DISPOSED");
++}
++
++export function shouldDeferBootstrap(): boolean {
++  return deferPending && state !== "ACTIVE";
++}
++
++export function getLifecycleDebug(): {
++  state: GameLifecycleState;
++  hasBoot: boolean;
++  hasHost: boolean;
++} {
++  return { state, hasBoot: !!boot, hasHost: !!host };
++}
+diff --git a/client/xi-lobby/game-host.tsx b/client/xi-lobby/game-host.tsx
+new file mode 100644
+index 0000000..4757cf7
+--- /dev/null
++++ b/client/xi-lobby/game-host.tsx
+@@ -0,0 +1,131 @@
++"use client";
++
++import { useEffect, useState, useSyncExternalStore } from "react";
++import { usePathname } from "next/navigation";
++import GameClient from "../../app/game-client.tsx";
++import {
++  activateGameLifecycle,
++  getGameLifecycleState,
++  registerGameHostController,
++  suspendGameLifecycle,
++  subscribeGameLifecycle,
++} from "./game-lifecycle.ts";
++import {
++  getOptimisticXiLayer,
++  resolveEffectiveXiLayer,
++  subscribeOptimisticXiLayer,
++} from "./nav.ts";
++import {
++  getLobbyLangServerSnapshot,
++  loadLobbyLang,
++  subscribeLobbyLang,
++  tLobby,
++} from "./i18n.ts";
++import { activeTierFromSettings } from "./quality.ts";
++import {
++  getXiHydratedServerSnapshot,
++  getXiHydratedSnapshot,
++  getXiQualityServerSnapshot,
++  getXiQualitySnapshot,
++  subscribeXiHydrated,
++  subscribeXiQuality,
++} from "./ui-store.ts";
++
++/**
++ * Persistent GameClient host under XiShell.
++ * Mounts once; Hub↔Play toggles visibility + suspend/activate (no full dispose).
++ * Uses optimistic layer so warm Play shows before pathname settles.
++ */
++export default function XiGameHost() {
++  const pathname = usePathname();
++  useSyncExternalStore(
++    subscribeOptimisticXiLayer,
++    getOptimisticXiLayer,
++    () => null,
++  );
++  const layer = resolveEffectiveXiLayer(pathname);
++  const [mounted, setMounted] = useState(false);
++  const [deferBootstrap, setDeferBootstrap] = useState(true);
++  const [visible, setVisible] = useState(false);
++
++  const lifecycle = useSyncExternalStore(
++    subscribeGameLifecycle,
++    getGameLifecycleState,
++    () => "UNINITIALIZED" as const,
++  );
++
++  const lang = useSyncExternalStore(
++    subscribeLobbyLang,
++    loadLobbyLang,
++    getLobbyLangServerSnapshot,
++  );
++
++  const qualityHydrated = useSyncExternalStore(
++    subscribeXiHydrated,
++    getXiHydratedSnapshot,
++    getXiHydratedServerSnapshot,
++  );
++  const qualitySettings = useSyncExternalStore(
++    subscribeXiQuality,
++    getXiQualitySnapshot,
++    getXiQualityServerSnapshot,
++  );
++
++  useEffect(() => {
++    registerGameHostController({
++      requestMount: (opts) => {
++        setDeferBootstrap(opts?.deferBootstrap !== false);
++        setMounted(true);
++      },
++      requestUnmount: () => {
++        setMounted(false);
++        setVisible(false);
++      },
++      setVisible: (active) => {
++        setVisible(active);
++      },
++    });
++    return () => {
++      registerGameHostController(null);
++    };
++  }, []);
++
++  useEffect(() => {
++    if (layer === "play") {
++      const label = tLobby(lang, "lobby.play.loading");
++      void activateGameLifecycle(label);
++      return;
++    }
++
++    const st = getGameLifecycleState();
++    if (st === "ACTIVE" || st === "READY" || st === "PRELOADING") {
++      const tier = qualityHydrated
++        ? activeTierFromSettings(qualitySettings)
++        : "medium";
++      suspendGameLifecycle({ releaseHeavyFx: tier === "low" });
++    }
++  }, [layer, lang, qualityHydrated, qualitySettings]);
++
++  useEffect(() => {
++    if (layer === "play") setVisible(true);
++  }, [layer]);
++
++  const active = layer === "play" && visible;
++
++  return (
++    <div
++      id="xi-game-host"
++      className={
++        active ? "xi-game-host is-active" : "xi-game-host is-suspended"
++      }
++      data-testid="xi-game-host"
++      data-xi-game-state={lifecycle}
++      data-xi-game-mounted={mounted ? "1" : "0"}
++      aria-hidden={!active}
++    >
++      {mounted ? (
++        <GameClient key="xi-singleton-game" deferBootstrap={deferBootstrap} />
++      ) : null}
++    </div>
++  );
++}
+diff --git a/client/xi-lobby/layer-keepalive.tsx b/client/xi-lobby/layer-keepalive.tsx
+new file mode 100644
+index 0000000..4c42576
+--- /dev/null
++++ b/client/xi-lobby/layer-keepalive.tsx
+@@ -0,0 +1,119 @@
++"use client";
++
++import { useEffect, useRef, useState, useSyncExternalStore } from "react";
++import { usePathname } from "next/navigation";
++import BdkHub from "./bdk-hub.tsx";
++import BdkPlayShell from "./play-shell.tsx";
++import {
++  getGameLifecycleState,
++  subscribeGameLifecycle,
++} from "./game-lifecycle.ts";
++import {
++  getOptimisticXiLayer,
++  resolveEffectiveXiLayer,
++  resolveXiLayer,
++  subscribeOptimisticXiLayer,
++} from "./nav.ts";
++
++/**
++ * Keep Hub + Play chrome mounted after first visit so warm Hub↔Play
++ * does not wait on RSC remount. Uses optimistic layer for instant switch.
++ * Pre-arms Play chrome when GameClient reaches READY on Hub (hover/idle warm).
++ */
++export default function XiLayerKeepAlive({
++  children,
++}: {
++  children: React.ReactNode;
++}) {
++  const pathname = usePathname();
++  const optimistic = useSyncExternalStore(
++    subscribeOptimisticXiLayer,
++    getOptimisticXiLayer,
++    () => null,
++  );
++  const lifecycle = useSyncExternalStore(
++    subscribeGameLifecycle,
++    getGameLifecycleState,
++    () => "UNINITIALIZED" as const,
++  );
++  const layer = resolveEffectiveXiLayer(pathname) ?? resolveXiLayer(pathname);
++  const hubVisited = useRef(false);
++  const playVisited = useRef(false);
++  const [hubAlive, setHubAlive] = useState(false);
++  const [playAlive, setPlayAlive] = useState(false);
++
++  useEffect(() => {
++    const real = resolveXiLayer(pathname);
++    if (real !== "hub" && hubVisited.current) setHubAlive(true);
++    if (real !== "play" && playVisited.current) setPlayAlive(true);
++    if (real === "hub") hubVisited.current = true;
++    if (real === "play") playVisited.current = true;
++  }, [pathname]);
++
++  useEffect(() => {
++    if (!optimistic) return;
++    if (optimistic !== "hub" && hubVisited.current) setHubAlive(true);
++    if (optimistic !== "play" && playVisited.current) setPlayAlive(true);
++    // Entering play optimistically — ensure play chrome exists
++    if (optimistic === "play") setPlayAlive(true);
++    if (optimistic === "hub") setHubAlive(true);
++  }, [optimistic]);
++
++  // Hub idle/warm READY → pre-mount Play chrome (hidden) so first Start has ← back
++  useEffect(() => {
++    const real = resolveXiLayer(pathname);
++    if (
++      (real === "hub" || optimistic === "hub" || !optimistic) &&
++      (lifecycle === "READY" || lifecycle === "SUSPENDED" || lifecycle === "ACTIVE")
++    ) {
++      setPlayAlive(true);
++    }
++  }, [lifecycle, pathname, optimistic]);
++
++  const useHubCache = layer === "hub" && hubAlive;
++  const usePlayCache = layer === "play" && playAlive;
++  // While optimistically on play, suppress hub RSC even if hubAlive not set yet
++  const suppressRsc =
++    useHubCache || usePlayCache || (layer === "play" && playAlive);
++
++  return (
++    <>
++      {hubAlive ? (
++        <div
++          className={
++            layer === "hub"
++              ? "xi-layer-keep is-active"
++              : "xi-layer-keep is-hidden"
++          }
++          data-testid="xi-hub-keepalive"
++          aria-hidden={layer !== "hub"}
++        >
++          <BdkHub />
++        </div>
++      ) : null}
++
++      {playAlive ? (
++        <div
++          className={
++            layer === "play"
++              ? "xi-layer-keep is-active"
++              : "xi-layer-keep is-hidden"
++          }
++          data-testid="xi-play-keepalive"
++          aria-hidden={layer !== "play"}
++        >
++          <BdkPlayShell />
++        </div>
++      ) : null}
++
++      <div
++        className={
++          suppressRsc ? "xi-layer-rsc is-suppressed" : "xi-layer-rsc"
++        }
++        aria-hidden={suppressRsc}
++      >
++        {suppressRsc ? null : children}
++      </div>
++    </>
++  );
++}
+diff --git a/tests/xi-hub-play-silk-p1.test.mjs b/tests/xi-hub-play-silk-p1.test.mjs
+new file mode 100644
+index 0000000..983e0e9
+--- /dev/null
++++ b/tests/xi-hub-play-silk-p1.test.mjs
+@@ -0,0 +1,101 @@
++/**
++ * Hub↔Play silk P1 — static / unit guards (no Wallet / Math / Round).
++ */
++import assert from "node:assert/strict";
++import { readFileSync, existsSync } from "node:fs";
++import { dirname, join } from "node:path";
++import { fileURLToPath } from "node:url";
++import test from "node:test";
++
++const root = join(dirname(fileURLToPath(import.meta.url)), "..");
++const read = (rel) => readFileSync(join(root, rel), "utf8");
++
++test("play-shell does not mount GameClient inline", () => {
++  const play = read("client/xi-lobby/play-shell.tsx");
++  assert.ok(!play.includes('import GameClient'));
++  assert.ok(play.includes("XiGameHost") || play.includes("persistent"));
++});
++
++test("XiShell mounts persistent XiGameHost + keep-alive", () => {
++  const shell = read("client/xi-lobby/xi-shell.tsx");
++  assert.ok(shell.includes("XiGameHost"));
++  assert.ok(shell.includes("XiLayerKeepAlive"));
++  assert.ok(existsSync(join(root, "client/xi-lobby/game-host.tsx")));
++  assert.ok(existsSync(join(root, "client/xi-lobby/game-lifecycle.ts")));
++  assert.ok(existsSync(join(root, "client/xi-lobby/layer-keepalive.tsx")));
++});
++
++test("optimistic layer + sync DOM swap for Hub↔Play", () => {
++  const nav = read("client/xi-lobby/nav.ts");
++  assert.ok(nav.includes("setOptimisticXiLayer"));
++  assert.ok(nav.includes("applyOptimisticDom"));
++  assert.ok(nav.includes("resolveEffectiveXiLayer"));
++});
++
++test("lifecycle state machine tokens present", () => {
++  const life = read("client/xi-lobby/game-lifecycle.ts");
++  for (const s of [
++    "UNINITIALIZED",
++    "PRELOADING",
++    "READY",
++    "ACTIVE",
++    "SUSPENDED",
++    "DISPOSING",
++    "DISPOSED",
++  ]) {
++    assert.ok(life.includes(s), `missing ${s}`);
++  }
++  assert.ok(life.includes("suspendGameLifecycle"));
++  assert.ok(life.includes("activateGameLifecycle"));
++  assert.ok(life.includes("warmGameClient"));
++  assert.ok(life.includes("routeClickAt"));
++  assert.ok(life.includes("transitionEnd"));
++});
++
++test("boot supports deferBootstrap and FX release on pause", () => {
++  const boot = read("client/m5/boot.ts");
++  assert.ok(boot.includes("deferBootstrap"));
++  assert.ok(boot.includes("ensureBootstrap"));
++  assert.ok(boot.includes("releaseHeavyFx"));
++});
++
++test("navigateXi suspends play leave without dispose wait", () => {
++  const nav = read("client/xi-lobby/nav.ts");
++  assert.ok(nav.includes("suspendGameLifecycle"));
++  assert.ok(nav.includes("markXiPerf"));
++  assert.ok(nav.includes("clickFeedbackAt"));
++  assert.ok(!/await\s+.*dispose/i.test(nav));
++});
++
++test("hub idle prefetch + hover warmup without spin API", () => {
++  const hub = read("client/xi-lobby/bdk-hub.tsx");
++  assert.ok(hub.includes("prefetchPlayCoreAssets") || hub.includes("prefetchPlayCoreByTier"));
++  assert.ok(hub.includes("warmGameClient"));
++  assert.ok(hub.includes("onMouseEnter"));
++  assert.ok(hub.includes("onTouchStart"));
++  assert.ok(!hub.includes("/api/v1/game/spins"));
++  assert.ok(!hub.includes("/api/v1/game/sessions"));
++});
++
++test("i18n lobby.play.loading in zh/en/my", () => {
++  const i18n = read("client/xi-lobby/i18n.ts");
++  const matches = i18n.match(/"lobby\.play\.loading"/g) ?? [];
++  assert.equal(matches.length, 3);
++});
++
++test("#gl translateZ preserved; no #hud shell translateZ; host no translateZ", () => {
++  const m5 = read("client/m5/styles.css");
++  assert.ok(m5.includes("translateZ(0)"));
++  assert.ok(!/#hud\s*\{[^}]*translateZ\(0\)/s.test(m5));
++  const lobby = read("client/xi-lobby/lobby.css");
++  assert.ok(lobby.includes(".xi-game-host"));
++  assert.ok(lobby.includes("xi-play-loading"));
++  assert.ok(!/\.xi-game-host[^{]*\{[^}]*translateZ\(0\)/s.test(lobby));
++});
++
++test("GameClient registers boot bridge + singleton counters", () => {
++  const gc = read("app/game-client.tsx");
++  assert.ok(gc.includes("registerBootBridge"));
++  assert.ok(gc.includes("__xiGameClientCount"));
++  assert.ok(gc.includes("deferBootstrap"));
++});

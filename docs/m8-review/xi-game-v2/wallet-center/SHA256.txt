@@ -1,0 +1,6 @@
+a65e057aa3702a2f3ce3e3dece50d5bddf6dc4fc27d08da47bade8ed1724a86e  client/xi-lobby/wallet-center.tsx
+febe500f7eb67ad1392f1be20dc3bc0168287c91e971e9861076af907546701d  client/xi-lobby/wallet-center.css
+d2e871feb4fd6be852d26c89a85b22152a706b464c60a0264f40a874d1af8f86  client/xi-lobby/lobby-app.tsx
+9f1600008a219975a721b52a14f0c53566a5b431d214d248fccf4663e802b82a  client/xi-lobby/i18n.ts
+8175e9f4235852650f476cb51ede76532850ccfc1fb221c9abb50c243f0af5d5  docs/m8-review/xi-game-v2/wallet-center/MODULE_IMPACT_ANALYSIS.md
+0cbc8db0f17d6ce3797aec530a3032ce18c751730f8848f7712b074442f7994a  docs/m8-review/xi-game-v2/wallet-center/AB-XI-WALLET-CENTER-review.patch

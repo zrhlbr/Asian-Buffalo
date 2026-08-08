@@ -1,0 +1,17 @@
+﻿8fff94250df0f83114f05dd4ca8f9c1adfaf8c36daec64160a9d22f8e7a6598e  client/xi-lobby/i18n.ts
+845c14425f40af79488be976c7d1e1470fe0c7f3f6eb138cc0397914e61a4b91  client/xi-lobby/lobby.css
+2e193f4eb7e22c410053116e1d6c52c3edc5540f4597fb1ec2ed5e88515d78e9  client/xi-lobby/lobby-app.tsx
+8ae1078a6b76785924771b8e7ed98f467bb4fb57167168dda2c0d78b6a0ebaf9  client/xi-lobby/quality.ts
+4178f4ddaf215492969210768319893e77876921a20c6900af5ae308d4f0e5ee  docs/m8-review/xi-game-v2/lobby-v3/AB-XI-LOBBY-V3-review.patch
+32af7b49fe8b740ff1bd05e4f45417f5bcd368f5963852984001493ba7c8d5b5  docs/m8-review/xi-game-v2/lobby-v3/ASSET_REPORT.md
+d5319511337c6309b1f6967e0f522ed2fe7d4f30b000cd1ff7252472bb3f801a  docs/m8-review/xi-game-v2/lobby-v3/BLOCKED_CAPTURE.md
+c62a66e7f61d8f1e4ccce6ba7045e20377c597cb50c6f8ef574a602dcebe56d0  docs/m8-review/xi-game-v2/lobby-v3/FILE_LIST.md
+884b063e383f5d9f8ab9c205fbe62e62f2e9d1614e5930961fc1f9d1643eb1f0  docs/m8-review/xi-game-v2/lobby-v3/GIT_STATUS_NOTE.txt
+cf4f58b985d54aa6d93e68a056ae89c454e2264f9cb56ec69577581eb8b5603b  docs/m8-review/xi-game-v2/lobby-v3/I18N_REPORT.md
+bcd6e9284e85852c468f472bae971f99de68dcc7b8ad65a56aa8f33e0eea1408  docs/m8-review/xi-game-v2/lobby-v3/LOBBY_V3_DELIVERY.md
+ff058298b8879b1efbe0ebff4acb74c1a1fc8aa933cdb73c38c4873a9d2d4fae  docs/m8-review/xi-game-v2/lobby-v3/MOBILE_REPORT.md
+868f8355ad0362ce90dcd3933a98790d593d2fde956584af00a250ef918f34fe  docs/m8-review/xi-game-v2/lobby-v3/MODULE_IMPACT_ANALYSIS.md
+bab7efc5df4112fd9ddb92196b9876d4eb2a87904c11a0f1b7faad455be68835  docs/m8-review/xi-game-v2/lobby-v3/PERFORMANCE_REPORT.md
+51050b12798924e62c63c0da530b618d3231adc25207f62524aa715eff026416  docs/m8-review/xi-game-v2/lobby-v3/REGRESSION_REPORT.md
+cb502f16db031c3eef543d74b604cf139456dc16c68a72bbf5835dbd5d30cf76  docs/m8-review/xi-game-v2/lobby-v3/REVIEW_PATCH.md
+239b69416790f8d617805887cb87723e472452060043e796aecc80716ce2375f  docs/m8-review/xi-game-v2/lobby-v3/SHA256.txt

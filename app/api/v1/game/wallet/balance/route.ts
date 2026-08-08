@@ -1,7 +1,6 @@
 /**
- * M5 presentation helper — read TEST wallet balance for HUD.
+ * Formal balance read — D1 ledger PLAYER_AVAILABLE (same stack as spins).
  * Uses the same fail-closed runtime identity gate as other game routes.
- * Does not modify M1–M4 handler implementations.
  */
 import { getDb } from "../../../../../../db/index.ts";
 import { getTrustedPlayerContext } from "../../../../../../lib/db-game.ts";
@@ -15,7 +14,9 @@ import {
   seedDevTestWalletIfEmpty,
 } from "../../../../../../lib/dev-test-bootstrap.ts";
 import { createRuntimeIdentityProvider } from "../../../../../../lib/runtime-identity.ts";
-import { routeTestWalletAdapter } from "../../../../../../lib/route-test-services.ts";
+import { createRouteDbWalletAdapter } from "../../../../../../lib/route-money-services.ts";
+import { ensurePlayerCommerceReady } from "../../../../../../lib/player-commerce-bootstrap.ts";
+import { sumFrozenWithdrawals } from "../../../../../../lib/withdrawal-service.ts";
 
 function unavailable(): Response {
   return Response.json(
@@ -32,7 +33,6 @@ function unauthorized(): Response {
 }
 
 export async function GET(request: Request) {
-  // Auditable: production factory remains available and is what runtime uses when gate is off.
   void createProductionIdentityProvider;
   const identityProvider = createRuntimeIdentityProvider();
 
@@ -55,8 +55,16 @@ export async function GET(request: Request) {
     );
   }
 
+  const walletAdapter = createRouteDbWalletAdapter(db);
   const balanceMinor = await seedDevTestWalletIfEmpty(
-    routeTestWalletAdapter,
+    walletAdapter,
+    context.playerId,
+    context.currency,
+  );
+
+  await ensurePlayerCommerceReady(db);
+  const frozenMinor = await sumFrozenWithdrawals(
+    db,
     context.playerId,
     context.currency,
   );
@@ -65,5 +73,7 @@ export async function GET(request: Request) {
     playerId: context.playerId,
     currency: context.currency,
     balanceMinor,
+    availableMinor: balanceMinor,
+    frozenMinor,
   });
 }

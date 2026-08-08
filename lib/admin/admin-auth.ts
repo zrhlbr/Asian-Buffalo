@@ -42,6 +42,15 @@ export const ADMIN_PERMISSIONS = [
   "logs:view",
   "admins:view",
   "admins:manage",
+  "vip:view",
+  "vip:manage",
+  "deposit:view",
+  "deposit:manage",
+  "withdraw:view",
+  "withdraw:review",
+  "withdraw:pay",
+  "activity:view",
+  "activity:manage",
 ] as const;
 export type AdminPermission = (typeof ADMIN_PERMISSIONS)[number];
 
@@ -56,13 +65,13 @@ const ALL_VIEW: AdminPermission[] = [
   "system:view",
   "logs:view",
   "admins:view",
+  "vip:view",
+  "deposit:view",
+  "withdraw:view",
+  "activity:view",
 ];
 
-<<<<<<< Updated upstream
-const ROLE_PERMISSIONS: Record<AdminRole, readonly AdminPermission[] | "*"> = {
-=======
 export const ROLE_PERMISSIONS: Record<AdminRole, readonly AdminPermission[] | "*"> = {
->>>>>>> Stashed changes
   SUPER_ADMIN: "*",
   OPS: [
     "dashboard:view",
@@ -73,9 +82,39 @@ export const ROLE_PERMISSIONS: Record<AdminRole, readonly AdminPermission[] | "*
     "system:view",
     "system:manage",
     "logs:view",
+    "vip:view",
+    "vip:manage",
+    "deposit:view",
+    "deposit:manage",
+    "withdraw:view",
+    "withdraw:review",
+    "activity:view",
+    "activity:manage",
   ],
-  SUPPORT: ["dashboard:view", "players:view", "rounds:view", "wallet:view"],
-  FINANCE: ["dashboard:view", "wallet:view", "ledger:view", "rounds:view", "logs:view"],
+  SUPPORT: [
+    "dashboard:view",
+    "players:view",
+    "rounds:view",
+    "wallet:view",
+    "vip:view",
+    "deposit:view",
+    "withdraw:view",
+    "activity:view",
+  ],
+  FINANCE: [
+    "dashboard:view",
+    "wallet:view",
+    "ledger:view",
+    "rounds:view",
+    "logs:view",
+    "vip:view",
+    "deposit:view",
+    "deposit:manage",
+    "withdraw:view",
+    "withdraw:review",
+    "withdraw:pay",
+    "activity:view",
+  ],
   RISK: [
     "dashboard:view",
     "risk:view",
@@ -83,9 +122,22 @@ export const ROLE_PERMISSIONS: Record<AdminRole, readonly AdminPermission[] | "*
     "players:freeze",
     "rounds:view",
     "logs:view",
+    "vip:view",
+    "withdraw:view",
+    "withdraw:review",
+    "deposit:view",
   ],
   AUDIT: [...ALL_VIEW],
-  TECH: ["dashboard:view", "system:view", "system:manage", "math:view", "logs:view"],
+  TECH: [
+    "dashboard:view",
+    "system:view",
+    "system:manage",
+    "math:view",
+    "logs:view",
+    "vip:view",
+    "activity:view",
+    "activity:manage",
+  ],
   READONLY: [...ALL_VIEW],
 };
 

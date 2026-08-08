@@ -1,0 +1,21 @@
+Step 3 delivery — NO commit / push / merge.
+
+Working tree includes Step 3 whitelist edits plus prior uncommitted Step1/2/mythic work on the branch.
+
+Step 3 touched:
+- client/xi-lobby/play-shell.tsx
+- app/xi/bull-demon-king/play/page.tsx
+- app/xi/bull-demon-king/play/layout.tsx (new)
+- client/xi-lobby/i18n.ts (additive play keys + en title)
+- client/xi-lobby/lobby.css (additive .xi-play-*)
+- client/m5/i18n.ts (gameTitle en/my)
+- client/m5/ui/hud.ts (leave href when data-xi-play-leave)
+- client/m5/game/symbol-life.ts (amplitude)
+- client/m5/win-presentation.ts (big particle clarity)
+- docs/m8-review/xi-game-v2/step-3-play/**
+
+Step1/2 component files NOT edited this Step:
+- client/xi-lobby/lobby-app.tsx
+- client/xi-lobby/bdk-hub.tsx
+- app/xi/page.tsx, app/xi/layout.tsx
+- app/xi/bull-demon-king/page.tsx, layout.tsx

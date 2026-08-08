@@ -5,6 +5,7 @@
 
 import type {
   GameProvider,
+  PlayerAnnouncementDto,
   PresentationSpinResult,
   SpinRequest,
   SymbolId,
@@ -194,5 +195,20 @@ export class FormalGameProvider implements GameProvider {
     this.balanceMinor = mapped.balanceAfterMinor;
     this.freeGamesRemaining = mapped.freeGamesRemaining;
     return mapped;
+  }
+
+  async refreshBalance(): Promise<number> {
+    const balRes = await fetch("/api/v1/game/wallet/balance");
+    const bal = await readJson<BalanceResponse>(balRes);
+    this.balanceMinor = bal.balanceMinor;
+    if (bal.currency) this.currency = bal.currency;
+    return this.balanceMinor;
+  }
+
+  async fetchAnnouncements(): Promise<PlayerAnnouncementDto[]> {
+    const res = await fetch("/api/v1/game/announcements");
+    if (!res.ok) return [];
+    const body = (await res.json()) as { items?: PlayerAnnouncementDto[] };
+    return Array.isArray(body.items) ? body.items : [];
   }
 }

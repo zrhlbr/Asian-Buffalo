@@ -1,15 +1,9 @@
 "use client";
 
 /**
-<<<<<<< Updated upstream
- * R1-M7 Admin console — application shell: login gate, sidebar navigation,
- * top bar (language switch / admin chip / logout), multi-tab strip and the
- * module switchboard.
-=======
  * R1-M9 Admin console — application shell: login gate, sidebar navigation,
  * top bar (language switch / admin chip / logout), multi-tab strip and the
  * module switchboard. Phase A preserved; Phase B–F modules added additively.
->>>>>>> Stashed changes
  */
 
 import React, { useState } from "react";
@@ -18,23 +12,20 @@ import type { AdminI18nKey } from "../../lib/admin/i18n.ts";
 import { ADMIN_LOCALES } from "../../lib/admin/i18n.ts";
 import DashboardModule from "./modules/dashboard.tsx";
 import PlayersModule from "./modules/players.tsx";
-<<<<<<< Updated upstream
-import RoundsModule from "./modules/rounds.tsx";
-=======
 import SessionsModule from "./modules/sessions.tsx";
 import RoundsModule from "./modules/rounds.tsx";
 import SpinsModule from "./modules/spins.tsx";
->>>>>>> Stashed changes
 import WalletModule from "./modules/wallet.tsx";
 import LedgerModule from "./modules/ledger.tsx";
 import MathModule from "./modules/math.tsx";
 import RiskModule from "./modules/risk.tsx";
-<<<<<<< Updated upstream
-=======
 import ReportsModule from "./modules/reports.tsx";
->>>>>>> Stashed changes
 import SystemModule from "./modules/system.tsx";
 import AdminsModule from "./modules/admins.tsx";
+import VipModule from "./modules/vip.tsx";
+import DepositsModule from "./modules/deposits.tsx";
+import WithdrawalsModule from "./modules/withdrawals.tsx";
+import ActivitiesModule from "./modules/activities.tsx";
 
 const NAV: { group: AdminI18nKey; items: { key: string; titleKey: AdminI18nKey; icon: string }[] }[] = [
   {
@@ -42,22 +33,21 @@ const NAV: { group: AdminI18nKey; items: { key: string; titleKey: AdminI18nKey; 
     items: [
       { key: "dashboard", titleKey: "nav.dashboard", icon: "◆" },
       { key: "players", titleKey: "nav.players", icon: "👤" },
-<<<<<<< Updated upstream
-      { key: "rounds", titleKey: "nav.rounds", icon: "🎰" },
-      { key: "risk", titleKey: "nav.risk", icon: "🛡" },
-=======
+      { key: "vip", titleKey: "nav.vip", icon: "♛" },
+      { key: "activities", titleKey: "nav.activities", icon: "🎁" },
       { key: "sessions", titleKey: "nav.sessions", icon: "◎" },
       { key: "rounds", titleKey: "nav.rounds", icon: "🎰" },
       { key: "spins", titleKey: "nav.spins", icon: "↻" },
       { key: "risk", titleKey: "nav.risk", icon: "🛡" },
       { key: "reports", titleKey: "nav.reports", icon: "▤" },
->>>>>>> Stashed changes
     ],
   },
   {
     group: "nav.group.finance",
     items: [
       { key: "wallet", titleKey: "nav.wallet", icon: "💼" },
+      { key: "deposits", titleKey: "nav.deposits", icon: "↓" },
+      { key: "withdrawals", titleKey: "nav.withdrawals", icon: "↑" },
       { key: "ledger", titleKey: "nav.ledger", icon: "📒" },
     ],
   },
@@ -132,21 +122,18 @@ function LoginScreen() {
 const MODULE_TITLES: Record<string, AdminI18nKey> = {
   dashboard: "nav.dashboard",
   players: "nav.players",
-<<<<<<< Updated upstream
-  rounds: "nav.rounds",
-=======
+  vip: "nav.vip",
+  activities: "nav.activities",
   sessions: "nav.sessions",
   rounds: "nav.rounds",
   spins: "nav.spins",
->>>>>>> Stashed changes
   wallet: "nav.wallet",
+  deposits: "nav.deposits",
+  withdrawals: "nav.withdrawals",
   ledger: "nav.ledger",
   math: "nav.math",
   risk: "nav.risk",
-<<<<<<< Updated upstream
-=======
   reports: "nav.reports",
->>>>>>> Stashed changes
   system: "nav.system",
   admins: "nav.admins",
 };
@@ -158,30 +145,30 @@ function ModuleView({ tabKey }: { tabKey: string }) {
       return <DashboardModule />;
     case "players":
       return <PlayersModule />;
-<<<<<<< Updated upstream
-    case "rounds":
-      return <RoundsModule />;
-=======
+    case "vip":
+      return <VipModule />;
+    case "activities":
+      return <ActivitiesModule />;
     case "sessions":
       return <SessionsModule />;
     case "rounds":
       return <RoundsModule />;
     case "spins":
       return <SpinsModule />;
->>>>>>> Stashed changes
     case "wallet":
       return <WalletModule />;
+    case "deposits":
+      return <DepositsModule />;
+    case "withdrawals":
+      return <WithdrawalsModule />;
     case "ledger":
       return <LedgerModule />;
     case "math":
       return <MathModule />;
     case "risk":
       return <RiskModule />;
-<<<<<<< Updated upstream
-=======
     case "reports":
       return <ReportsModule />;
->>>>>>> Stashed changes
     case "system":
       return <SystemModule />;
     case "admins":
@@ -201,12 +188,8 @@ function Shell() {
     <div className="ab-shell">
       <aside className="ab-sidebar">
         <div className="ab-brand">
-          <div className="ab-brand-title">🐃 Asian Buffalo</div>
-<<<<<<< Updated upstream
-          <div className="ab-brand-sub">R1-M7 ADMIN CONSOLE</div>
-=======
+          <div className="ab-brand-title">🐃 Bull Demon King</div>
           <div className="ab-brand-sub">R1-M9 ADMIN CONSOLE</div>
->>>>>>> Stashed changes
         </div>
         <nav className="ab-nav">
           {NAV.map((group) => (

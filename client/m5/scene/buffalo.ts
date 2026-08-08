@@ -7,7 +7,21 @@
 import * as THREE from "three";
 import type { Particles } from "./particles";
 
-type BuffaloState = "idle" | "roar" | "run" | "victory" | "bigWin" | "jackpot";
+type BuffaloState =
+  | "idle"
+  | "roar"
+  | "lowRoar"
+  | "headUp"
+  | "lookAtWin"
+  | "run"
+  | "victory"
+  | "bigWin"
+  | "charge"
+  | "jumpOut"
+  | "slowWalk"
+  | "standRoar"
+  | "breakReel"
+  | "jackpot";
 
 const HIDE = 0x4a3820;
 const HIDE_DARK = 0x35270f;
@@ -149,7 +163,13 @@ export class Buffalo {
     boss.scale.set(1.15, 0.5, 1.15);
     this.head.add(boss);
 
-    // horns: curved tubes
+    // horns: curved tubes — denser segments + sharper specular (Clarity V2)
+    const hornMat = new THREE.MeshStandardMaterial({
+      color: HORN,
+      roughness: 0.38,
+      metalness: 0.22,
+      envMapIntensity: 0.6,
+    });
     const hornCurve = (side: number) => {
       const pts = [
         new THREE.Vector3(-0.05, 0.42, side * 0.28),
@@ -158,8 +178,8 @@ export class Buffalo {
         new THREE.Vector3(0.28, 0.86, side * 0.72),
       ];
       return new THREE.Mesh(
-        new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 10, 0.085, 8),
-        this.mat(HORN, 0.5),
+        new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 18, 0.082, 10),
+        hornMat,
       );
     };
     this.head.add(hornCurve(1), hornCurve(-1));
@@ -187,15 +207,24 @@ export class Buffalo {
       this.furMats.push(mat);
     }
 
-    // eyes + eyelids
-    const eyeGeo = new THREE.SphereGeometry(0.075, 10, 8);
-    const eyeMat = new THREE.MeshStandardMaterial({ color: 0x1a0f04, roughness: 0.3 });
+    // eyes + eyelids + catchlight (Clarity V2 focus)
+    const eyeGeo = new THREE.SphereGeometry(0.075, 12, 10);
+    const eyeMat = new THREE.MeshStandardMaterial({
+      color: 0x140a04,
+      roughness: 0.22,
+      metalness: 0.05,
+    });
+    const catchGeo = new THREE.SphereGeometry(0.018, 8, 6);
+    const catchMat = new THREE.MeshBasicMaterial({ color: 0xffe2a0 });
     const lidGeo = new THREE.SphereGeometry(0.085, 10, 8);
     const lidMat = this.mat(HIDE);
     for (const side of [1, -1]) {
       const eye = new THREE.Mesh(eyeGeo, eyeMat);
       eye.position.set(0.3, 0.12, side * 0.33);
       this.head.add(eye);
+      const catchLight = new THREE.Mesh(catchGeo, catchMat);
+      catchLight.position.set(0.34, 0.14, side * 0.30);
+      this.head.add(catchLight);
       const lid = new THREE.Mesh(lidGeo, lidMat);
       lid.position.copy(eye.position).add(new THREE.Vector3(0.01, 0.045, side * 0.008));
       lid.scale.set(1, 0.15, 1);
@@ -203,11 +232,25 @@ export class Buffalo {
       if (side === 1) this.eyelidR = lid; else this.eyelidL = lid;
     }
 
-    // muzzle + jaw
-    const muzzle = new THREE.Mesh(new THREE.SphereGeometry(0.3, 12, 10), this.mat(MUZZLE, 0.7));
+    // muzzle + wet nose (readable, not oversharp)
+    const muzzle = new THREE.Mesh(
+      new THREE.SphereGeometry(0.3, 14, 12),
+      new THREE.MeshStandardMaterial({ color: MUZZLE, roughness: 0.55, metalness: 0.08 }),
+    );
     muzzle.position.set(0.48, -0.18, 0);
     muzzle.scale.set(1.15, 0.8, 0.9);
     this.head.add(muzzle);
+    const nosePad = new THREE.Mesh(
+      new THREE.SphereGeometry(0.11, 10, 8),
+      new THREE.MeshStandardMaterial({
+        color: 0x0c0806,
+        roughness: 0.28,
+        metalness: 0.12,
+      }),
+    );
+    nosePad.position.set(0.72, -0.14, 0);
+    nosePad.scale.set(0.85, 0.65, 1.05);
+    this.head.add(nosePad);
 
     this.jaw = new THREE.Mesh(new THREE.SphereGeometry(0.22, 10, 8), this.mat(0x140c05, 0.8));
     this.jaw.position.set(0.42, -0.34, 0);
@@ -276,6 +319,15 @@ export class Buffalo {
     }
   }
 
+  private animMode: "full" | "simple" = "full";
+
+  /**
+   * Animal LOD — simple reduces idle FX frequency; breath/blink/win never fully killed.
+   */
+  setAnimMode(mode: "full" | "simple"): void {
+    this.animMode = mode;
+  }
+
   /** Interrupt current action and return to idle pose (safe for spin start). */
   interrupt(): void {
     this.state = "idle";
@@ -324,13 +376,74 @@ export class Buffalo {
     this.onRoarSound?.();
   }
 
-  /** Jackpot approach — camera pressure, presentation only. */
-  jackpot(): void {
+  /** Soft medium-win growl — presentation only. */
+  lowRoar(): void {
     if (this.state !== "idle") this.interrupt();
-    this.state = "jackpot";
+    this.state = "lowRoar";
     this.stateT = 0;
     this.roarSmokeDone = false;
     this.onRoarSound?.();
+  }
+
+  /** Strong win — head up + glowing presence. */
+  headUp(): void {
+    if (this.state !== "idle") this.interrupt();
+    this.state = "headUp";
+    this.stateT = 0;
+  }
+
+  /** Look toward reel win — high/common fullscreen. */
+  lookAtWin(): void {
+    if (this.state !== "idle") this.interrupt();
+    this.state = "lookAtWin";
+    this.stateT = 0;
+  }
+
+  /** Fullscreen buffalo / Super — charge toward camera. */
+  charge(): void {
+    if (this.state !== "idle") this.interrupt();
+    this.state = "charge";
+    this.stateT = 0;
+    this.roarSmokeDone = false;
+    this.onRoarSound?.();
+  }
+
+  /** Ultra — leap pressure toward lens. */
+  jumpOut(): void {
+    if (this.state !== "idle") this.interrupt();
+    this.state = "jumpOut";
+    this.stateT = 0;
+    this.onRoarSound?.();
+  }
+
+  /** Super Win — slow cinematic walk to camera. */
+  slowWalk(): void {
+    if (this.state !== "idle") this.interrupt();
+    this.state = "slowWalk";
+    this.stateT = 0;
+  }
+
+  /** Epic — stand tall + roar. */
+  standRoar(): void {
+    if (this.state !== "idle") this.interrupt();
+    this.state = "standRoar";
+    this.stateT = 0;
+    this.roarSmokeDone = false;
+    this.onRoarSound?.();
+  }
+
+  /** Jackpot ultimate — break-reel surge (presentation scale only). */
+  breakReel(): void {
+    if (this.state !== "idle") this.interrupt();
+    this.state = "breakReel";
+    this.stateT = 0;
+    this.roarSmokeDone = false;
+    this.onRoarSound?.();
+  }
+
+  /** Jackpot approach — camera pressure, presentation only. */
+  jackpot(): void {
+    this.breakReel();
   }
 
   get isBusy(): boolean {
@@ -348,20 +461,30 @@ export class Buffalo {
       "nostril",
       "breathMist",
       "roar",
+      "lowRoar",
+      "headUp",
+      "lookAtWin",
       "run",
       "victory",
       "bigWin",
+      "charge",
+      "jumpOut",
+      "slowWalk",
+      "standRoar",
+      "breakReel",
       "jackpot",
     ];
   }
 
   // ---------------- update ----------------
   update(dt: number, time: number): void {
-    // breathing — always (also drives nostril scale cue)
+    const simple = this.animMode === "simple";
+    // breathing — always (also drives nostril scale cue); never fully killed
     this.breatheT += dt;
-    const breath = Math.sin(this.breatheT * 1.9) * 0.02;
+    const breathAmp = simple ? 0.014 : 0.02;
+    const breath = Math.sin(this.breatheT * (simple ? 1.5 : 1.9)) * breathAmp;
     this.body.scale.set(1 + breath, 1 + breath * 1.4, 1 + breath);
-    const nosePulse = 1 + Math.sin(this.breatheT * 1.9) * 0.08;
+    const nosePulse = 1 + Math.sin(this.breatheT * (simple ? 1.5 : 1.9)) * (simple ? 0.05 : 0.08);
     this.nostrilL.scale.setScalar(nosePulse);
     this.nostrilR.scale.setScalar(nosePulse);
 
@@ -369,11 +492,11 @@ export class Buffalo {
       mat.uniforms.uTime.value = time;
     }
 
-    // blinking
+    // blinking — slower cadence on simple; never disabled
     this.blinkTimer -= dt;
     if (this.blinkTimer <= 0 && this.blinkPhase < 0 && this.state === "idle") {
       this.blinkPhase = 0;
-      this.blinkTimer = 1.6 + Math.random() * 3.2;
+      this.blinkTimer = (simple ? 3.2 : 1.6) + Math.random() * (simple ? 5 : 3.2);
     }
     if (this.blinkPhase >= 0) {
       this.blinkPhase += dt;
@@ -385,16 +508,17 @@ export class Buffalo {
       if (p >= 1) this.blinkPhase = -1;
     }
 
-    // tail + ear sway (stronger on idle)
-    const sway = this.state === "idle" ? 1 : 0.45;
+    // tail + ear sway (stronger on idle; reduced on simple)
+    const sway = (this.state === "idle" ? 1 : 0.45) * (simple ? 0.55 : 1);
     this.tail.rotation.x = Math.sin(time * 2.3) * 0.38 * sway;
     this.tail.rotation.z = 0.7 + Math.sin(time * 1.7) * 0.14 * sway;
     this.earL.rotation.z = Math.sin(time * 2.1) * 0.22 * sway;
     this.earR.rotation.z = Math.sin(time * 2.1 + 0.4) * 0.22 * sway;
 
-    // Soft breath mist (idle only) — particles only, never business IO
+    // Soft breath mist (idle only) — skipped on simple to cut particle churn
     this.breathMistT += dt;
-    if (this.state === "idle" && this.particles && this.breathMistT > 2.8) {
+    const mistEvery = simple ? 9 : 2.8;
+    if (this.state === "idle" && this.particles && !simple && this.breathMistT > mistEvery) {
       this.breathMistT = 0;
       const wl = new THREE.Vector3();
       this.nostrilL.getWorldPosition(wl);
@@ -428,19 +552,21 @@ export class Buffalo {
         break;
       }
       case "roar": {
-        const T = 1.5;
+        const T = 1.55;
         const p = Math.min(this.stateT / T, 1);
         const lift = Math.sin(p * Math.PI);
-        this.head.rotation.z = lift * 0.55; // head up
-        this.jaw.position.y = -0.34 - lift * 0.16; // jaw open
-        if (!this.roarSmokeDone && p > 0.25 && this.particles) {
+        this.head.rotation.z = lift * 0.72; // head up — stronger commercial roar
+        this.head.rotation.x = -lift * 0.12;
+        this.jaw.position.y = -0.34 - lift * 0.22; // jaw open
+        this.body.position.y = 1.75 + lift * 0.08;
+        if (!this.roarSmokeDone && p > 0.22 && this.particles) {
           this.roarSmokeDone = true;
           const wl = new THREE.Vector3();
           this.nostrilL.getWorldPosition(wl);
-          this.particles.puffSmoke(wl, 14);
+          this.particles.puffSmoke(wl, 18);
           const wr = new THREE.Vector3();
           this.nostrilR.getWorldPosition(wr);
-          this.particles.puffSmoke(wr, 14);
+          this.particles.puffSmoke(wr, 18);
         }
         if (p >= 1) this.state = "idle";
         break;
@@ -514,26 +640,76 @@ export class Buffalo {
         }
         break;
       }
-      case "jackpot": {
-        // Approach lens + roar pressure — stay left of reels (never cross board)
-        const T = 2.6;
+      case "lowRoar": {
+        const T = 1.1;
         const p = Math.min(this.stateT / T, 1);
-        const surge = Math.sin(Math.min(p * 1.35, 1) * Math.PI);
-        this.group.position.x = this.homePos.x + surge * 1.1;
-        this.group.position.z = this.homePos.z + surge * 1.6;
-        this.group.scale.setScalar(this.homeScale * (1 + surge * 0.28));
-        this.head.rotation.z = surge * 0.62;
-        this.head.rotation.x = -surge * 0.18;
-        this.jaw.position.y = -0.34 - surge * 0.2;
-        this.body.position.y = 1.75 + surge * 0.25;
-        if (!this.roarSmokeDone && p > 0.18 && this.particles) {
+        const lift = Math.sin(p * Math.PI) * 0.55;
+        this.head.rotation.z = lift * 0.32;
+        this.jaw.position.y = -0.34 - lift * 0.08;
+        if (!this.roarSmokeDone && p > 0.3 && this.particles) {
           this.roarSmokeDone = true;
           const wl = new THREE.Vector3();
           this.nostrilL.getWorldPosition(wl);
-          this.particles.puffSmoke(wl, 18);
+          this.particles.puffSmoke(wl, 6);
+        }
+        if (p >= 1) {
+          this.head.rotation.set(0, 0, 0);
+          this.jaw.position.y = -0.34;
+          this.state = "idle";
+          this.roarSmokeDone = false;
+        }
+        break;
+      }
+      case "headUp": {
+        const T = 1.6;
+        const p = Math.min(this.stateT / T, 1);
+        const lift = Math.sin(Math.min(p * 1.2, 1) * Math.PI);
+        this.head.rotation.z = lift * 0.48;
+        this.head.rotation.x = -lift * 0.12;
+        this.body.position.y = 1.75 + lift * 0.08;
+        if (p >= 1) {
+          this.head.rotation.set(0, 0, 0);
+          this.body.position.y = 1.75;
+          this.state = "idle";
+        }
+        break;
+      }
+      case "lookAtWin": {
+        const T = 2.0;
+        const p = Math.min(this.stateT / T, 1);
+        const aim = Math.sin(Math.min(p * 1.15, 1) * Math.PI);
+        this.head.rotation.y = -0.42 * aim; // toward reels (right of buffalo home)
+        this.head.rotation.z = 0.12 * aim;
+        this.gazeTarget = -0.35;
+        if (p >= 1) {
+          this.head.rotation.set(0, 0, 0);
+          this.state = "idle";
+        }
+        break;
+      }
+      case "charge": {
+        const T = 2.4;
+        const p = Math.min(this.stateT / T, 1);
+        const surge = Math.sin(Math.min(p * 1.4, 1) * Math.PI);
+        this.group.position.x = this.homePos.x + surge * 1.55;
+        this.group.position.z = this.homePos.z + surge * 2.45;
+        this.group.scale.setScalar(this.homeScale * (1 + surge * 0.52));
+        this.head.rotation.z = surge * 0.7;
+        this.head.rotation.x = -surge * 0.28;
+        this.jaw.position.y = -0.34 - surge * 0.24;
+        this.body.position.y = 1.75 + surge * 0.28;
+        if (!this.roarSmokeDone && p > 0.15 && this.particles) {
+          this.roarSmokeDone = true;
+          const wl = new THREE.Vector3();
+          this.nostrilL.getWorldPosition(wl);
+          this.particles.puffSmoke(wl, 22);
           const wr = new THREE.Vector3();
           this.nostrilR.getWorldPosition(wr);
-          this.particles.puffSmoke(wr, 18);
+          this.particles.puffSmoke(wr, 22);
+        }
+        if (this.particles && p > 0.2 && p < 0.75 && Math.random() < dt * 10) {
+          const foot = new THREE.Vector3(this.group.position.x, 0.15, this.group.position.z);
+          this.particles.puffSmoke(foot, 2);
         }
         if (p >= 1) {
           this.group.position.copy(this.homePos);
@@ -541,6 +717,119 @@ export class Buffalo {
           this.head.rotation.set(0, 0, 0);
           this.jaw.position.y = -0.34;
           this.body.position.y = 1.75;
+          this.state = "idle";
+          this.roarSmokeDone = false;
+        }
+        break;
+      }
+      case "jumpOut": {
+        const T = 2.1;
+        const p = Math.min(this.stateT / T, 1);
+        const leap = Math.sin(Math.min(p * 1.5, 1) * Math.PI);
+        this.group.position.x = this.homePos.x + leap * 1.5;
+        this.group.position.z = this.homePos.z + leap * 2.4;
+        this.group.scale.setScalar(this.homeScale * (1 + leap * 0.5));
+        this.body.position.y = 1.75 + leap * 0.85;
+        this.body.rotation.z = leap * 0.35;
+        this.head.rotation.z = leap * 0.4;
+        if (p >= 1) {
+          this.group.position.copy(this.homePos);
+          this.group.scale.setScalar(this.homeScale);
+          this.body.position.y = 1.75;
+          this.body.rotation.z = 0;
+          this.head.rotation.set(0, 0, 0);
+          this.state = "idle";
+        }
+        break;
+      }
+      case "slowWalk": {
+        const T = 3.4;
+        const p = Math.min(this.stateT / T, 1);
+        const step = Math.sin(p * Math.PI);
+        this.group.position.x = this.homePos.x + step * 1.2;
+        this.group.position.z = this.homePos.z + step * 1.8;
+        this.group.scale.setScalar(this.homeScale * (1 + step * 0.32));
+        const gait = this.stateT * 5.5;
+        this.body.position.y = 1.75 + Math.abs(Math.sin(gait)) * 0.1;
+        this.legs[0].rotation.z = Math.sin(gait) * 0.45;
+        this.legs[1].rotation.z = Math.sin(gait + 0.5) * 0.45;
+        this.legs[2].rotation.z = Math.sin(gait + Math.PI) * 0.45;
+        this.legs[3].rotation.z = Math.sin(gait + Math.PI + 0.5) * 0.45;
+        this.head.rotation.y = -0.15 * step;
+        if (p >= 1) {
+          this.group.position.copy(this.homePos);
+          this.group.scale.setScalar(this.homeScale);
+          this.body.position.y = 1.75;
+          for (const leg of this.legs) leg.rotation.z = 0;
+          this.head.rotation.set(0, 0, 0);
+          this.state = "idle";
+        }
+        break;
+      }
+      case "standRoar": {
+        const T = 2.8;
+        const p = Math.min(this.stateT / T, 1);
+        const rear = Math.sin(Math.min(p * 1.35, 1) * Math.PI);
+        this.body.rotation.z = rear * 0.42;
+        this.body.position.y = 1.75 + rear * 0.55;
+        this.head.rotation.z = rear * 0.65;
+        this.jaw.position.y = -0.34 - rear * 0.2;
+        this.legs[0]!.rotation.z = -rear * 0.9;
+        this.legs[1]!.rotation.z = -rear * 0.9;
+        if (!this.roarSmokeDone && p > 0.22 && this.particles) {
+          this.roarSmokeDone = true;
+          const wl = new THREE.Vector3();
+          this.nostrilL.getWorldPosition(wl);
+          this.particles.puffSmoke(wl, 20);
+          const wr = new THREE.Vector3();
+          this.nostrilR.getWorldPosition(wr);
+          this.particles.puffSmoke(wr, 20);
+        }
+        if (p >= 1) {
+          this.body.rotation.z = 0;
+          this.body.position.y = 1.75;
+          this.head.rotation.set(0, 0, 0);
+          this.jaw.position.y = -0.34;
+          for (const leg of this.legs) leg.rotation.z = 0;
+          this.state = "idle";
+          this.roarSmokeDone = false;
+        }
+        break;
+      }
+      case "breakReel":
+      case "jackpot": {
+        // Ultimate surge — fill screen pressure, stay left of reel board
+        const T = 3.2;
+        const p = Math.min(this.stateT / T, 1);
+        const surge = Math.sin(Math.min(p * 1.25, 1) * Math.PI);
+        this.group.position.x = this.homePos.x + surge * 1.55;
+        this.group.position.z = this.homePos.z + surge * 2.8;
+        this.group.scale.setScalar(this.homeScale * (1 + surge * 0.62));
+        this.head.rotation.z = surge * 0.7;
+        this.head.rotation.x = -surge * 0.22;
+        this.jaw.position.y = -0.34 - surge * 0.24;
+        this.body.position.y = 1.75 + surge * 0.35;
+        this.body.rotation.z = surge * 0.2;
+        if (!this.roarSmokeDone && p > 0.12 && this.particles) {
+          this.roarSmokeDone = true;
+          const wl = new THREE.Vector3();
+          this.nostrilL.getWorldPosition(wl);
+          this.particles.puffSmoke(wl, 22);
+          const wr = new THREE.Vector3();
+          this.nostrilR.getWorldPosition(wr);
+          this.particles.puffSmoke(wr, 22);
+        }
+        if (this.particles && p > 0.15 && p < 0.8 && Math.random() < dt * 14) {
+          const foot = new THREE.Vector3(this.group.position.x, 0.12, this.group.position.z);
+          this.particles.puffSmoke(foot, 3);
+        }
+        if (p >= 1) {
+          this.group.position.copy(this.homePos);
+          this.group.scale.setScalar(this.homeScale);
+          this.head.rotation.set(0, 0, 0);
+          this.jaw.position.y = -0.34;
+          this.body.position.y = 1.75;
+          this.body.rotation.z = 0;
           this.state = "idle";
           this.roarSmokeDone = false;
         }

@@ -1,0 +1,26 @@
+{
+  "repro-baseline": {
+    "hasGame": true,
+    "loadingDone": true,
+    "celebHidden": true,
+    "edge": {
+      "leftNdc": -0.8783320994099237,
+      "rightNdc": 0.8816588911096981,
+      "fill": 0.8799954952598109,
+      "scale": 1.95189101144932
+    },
+    "sceneN": 47
+  },
+  "repro-context-lost": {
+    "hasGame": true,
+    "loadingDone": true,
+    "celebHidden": true,
+    "edge": {
+      "leftNdc": -0.875708545626159,
+      "rightNdc": 0.8842346226750895,
+      "fill": 0.8799715841506242,
+      "scale": 1.95189101144932
+    },
+    "sceneN": 47
+  }
+}

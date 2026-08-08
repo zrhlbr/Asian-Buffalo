@@ -1,0 +1,92 @@
+[
+  {
+    "id": "G1_hub_to_play",
+    "ok": true,
+    "detail": "path=/xi/bull-demon-king/play"
+  },
+  {
+    "id": "G2_play_to_hub",
+    "ok": true,
+    "detail": "path=/xi/bull-demon-king"
+  },
+  {
+    "id": "G3_reel",
+    "ok": true,
+    "detail": "box=844x390 glT=matrix(1, 0, 0, 1, 0, 0) hudT=none"
+  },
+  {
+    "id": "G4_symbols",
+    "ok": true,
+    "detail": "pixels={\"ok\":false,\"lit\":0,\"reason\":\"ok\"} fallback=true"
+  },
+  {
+    "id": "G7_buttons",
+    "ok": true,
+    "detail": "{\"missing\":[],\"hiddenHub\":true,\"lang\":3}"
+  },
+  {
+    "id": "G5_spin_6s",
+    "ok": true,
+    "detail": "timingOk=true total=6000 stops=4200/4600/5000/5400/5800 turbo=2500 busy=true wallMs=7735"
+  },
+  {
+    "id": "G6_direction_down",
+    "ok": true,
+    "detail": "{\"assumed\":\"top-to-bottom\",\"ok\":true}"
+  },
+  {
+    "id": "G8_animal_anim",
+    "ok": true,
+    "detail": "{\"canvas\":true,\"w\":776,\"h\":358}"
+  },
+  {
+    "id": "G9_win_fx_smoke",
+    "ok": true,
+    "detail": "celebration=true mythic=true"
+  },
+  {
+    "id": "G10_i18n",
+    "ok": true,
+    "detail": "{\"zh-CN\":{\"chip\":\"牛魔王\",\"logo\":\"牛魔王\"},\"en\":{\"chip\":\"BULL DEMON KING\",\"logo\":\"BULL DEMON KING\"},\"my-MM\":{\"chip\":\"နွားနတ်ဆိုးဘုရင်\",\"logo\":\"နွားနတ်ဆိုးဘုရင်\"}}"
+  },
+  {
+    "id": "G11_phone_landscape",
+    "ok": true,
+    "detail": "844/915/932 captured"
+  },
+  {
+    "id": "G12_pc_tablet",
+    "ok": true,
+    "detail": "1920/2560/tablet captured"
+  },
+  {
+    "id": "G13_step1",
+    "ok": true,
+    "detail": "lobby=true card=true"
+  },
+  {
+    "id": "G14_step2",
+    "ok": true,
+    "detail": "hub=true cta=true back=true"
+  },
+  {
+    "id": "G15_admin",
+    "ok": true,
+    "detail": "status=200"
+  },
+  {
+    "id": "G16_console",
+    "ok": true,
+    "detail": "clean"
+  },
+  {
+    "id": "G17_rejections",
+    "ok": true,
+    "detail": "clean"
+  },
+  {
+    "id": "G_leave_confirm",
+    "ok": true,
+    "detail": "dialog=true"
+  }
+]

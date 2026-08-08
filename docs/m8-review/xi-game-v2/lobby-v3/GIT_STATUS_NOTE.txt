@@ -1,0 +1,141 @@
+﻿ M .dev.vars
+ M app/admin/admin-app.tsx
+ M app/admin/admin.css
+ M app/admin/layout.tsx
+ M app/admin/modules/admins.tsx
+ M app/admin/modules/players.tsx
+ M app/admin/modules/system.tsx
+ M app/api/v1/game/spins/route.ts
+ M app/api/v1/game/wallet/balance/route.ts
+ M app/game-client.tsx
+ M app/layout.tsx
+ M app/page.tsx
+ A app/xi/bull-demon-king/layout.tsx
+ A app/xi/bull-demon-king/page.tsx
+ A app/xi/bull-demon-king/play/page.tsx
+ M client/m5/adapter.ts
+ M client/m5/audio.ts
+ M client/m5/boot.ts
+ M client/m5/formal-provider.ts
+ M client/m5/game/game.ts
+ M client/m5/game/reel-timing.ts
+ M client/m5/game/reels.ts
+ M client/m5/game/symbol-life.ts
+ M client/m5/game/symbols.ts
+ M client/m5/i18n.ts
+ M client/m5/mock-provider.ts
+ M client/m5/quality.ts
+ M client/m5/scene/buffalo.ts
+ M client/m5/scene/particles.ts
+ M client/m5/scene/world.ts
+ M client/m5/styles.css
+ M client/m5/ui/hud.ts
+ M lib/admin/admin-api.ts
+ M lib/admin/admin-auth.ts
+ M lib/admin/admin-bootstrap.ts
+ M lib/admin/admin-queries.ts
+ M lib/admin/i18n.ts
+ M lib/db-ledger.ts
+ M lib/db-wallet-adapter.ts
+ M lib/dev-test-bootstrap.ts
+ M lib/money-service.ts
+ M lib/runtime-identity.ts
+ M lib/spin-orchestrator.ts
+ M lib/wallet-adapter.ts
+ M next.config.ts
+ M package.json
+ M tests/r1-m4-money.test.mjs
+ M tests/r1-m6-presentation.test.mjs
+ M tests/r1-m7-admin.test.mjs
+ M tests/r1-m8-clarity.test.mjs
+ M tests/r1-m8-reel-timing.test.mjs
+ M tests/r1-m8-symbol-life.test.mjs
+ M worker/index.ts
+?? app/admin/login/
+?? app/admin/modules/activities.tsx
+?? app/admin/modules/deposits.tsx
+?? app/admin/modules/vip.tsx
+?? app/admin/modules/withdrawals.tsx
+?? app/api/v1/auth/
+?? app/api/v1/game/activities/
+?? app/api/v1/game/announcements/
+?? app/api/v1/game/checkin/
+?? app/api/v1/game/deposit/
+?? app/api/v1/game/profile/
+?? app/api/v1/game/rankings/
+?? app/api/v1/game/vip/
+?? app/api/v1/game/wallet/route.ts
+?? app/api/v1/game/wins/
+?? app/api/v1/game/withdraw/
+?? app/api/v1/lobby/
+?? app/game/
+?? app/xi/bdk/
+?? app/xi/bull-demon-king/play/layout.tsx
+?? app/xi/forgot/
+?? app/xi/layout.tsx
+?? app/xi/loading.tsx
+?? app/xi/login/
+?? app/xi/page.tsx
+?? app/xi/register/
+?? client/m5/ui/overlays.ts
+?? client/m5/win-presentation.ts
+?? client/xi-lobby/
+?? docs/m8-review/animal-life-amplitude/
+?? docs/m8-review/animal-life-v2/
+?? docs/m8-review/blocker-blackscreen-p0/
+?? docs/m8-review/blocker-buttons-p0/
+?? docs/m8-review/blocker-symbols-missing/
+?? docs/m8-review/brand-bdk/
+?? docs/m8-review/clarity-v2/
+?? docs/m8-review/full-system/
+?? docs/m8-review/reel-timing-6s/
+?? docs/m8-review/screenshot-features/
+?? docs/m8-review/win-presentation/
+?? docs/m8-review/wiring/
+?? docs/m8-review/xi-game-v2/
+?? lib/activity-service.ts
+?? lib/d1-money-stores.ts
+?? lib/deposit-service.ts
+?? lib/game-route-auth.ts
+?? lib/lobby-catalog.ts
+?? lib/otp-providers.ts
+?? lib/payment-readiness.ts
+?? lib/player-announcements.ts
+?? lib/player-auth-api.ts
+?? lib/player-auth-audit.ts
+?? lib/player-auth-bootstrap.ts
+?? lib/player-auth-service.ts
+?? lib/player-commerce-bootstrap.ts
+?? lib/player-otp.ts
+?? lib/player-password.ts
+?? lib/player-profile.ts
+?? lib/player-session.ts
+?? lib/rankings-service.ts
+?? lib/route-money-services.ts
+?? lib/vip-rewards.ts
+?? lib/vip-service.ts
+?? lib/wallet-commerce-bootstrap.ts
+?? lib/wallet-commerce-service.ts
+?? lib/win-history.ts
+?? lib/withdrawal-service.ts
+?? public/avatars/
+?? public/xi/
+?? scripts/gen-xi-hero-variants.mjs
+?? tests/activity-checkin.test.mjs
+?? tests/deposit-withdraw.test.mjs
+?? tests/player-auth-p3.test.mjs
+?? tests/player-profile.test.mjs
+?? tests/r1-m8-clarity-v2.test.mjs
+?? tests/r1-m8-presentation-near-miss-ldw.test.mjs
+?? tests/r1-m8-win-presentation.test.mjs
+?? tests/r1-m8-wiring-d1-money.test.mjs
+?? tests/rankings.test.mjs
+?? tests/step4-wallet-vip.test.mjs
+?? tests/step5-finalize.test.mjs
+?? tests/vip-rewards.test.mjs
+?? tests/xi-auth-i18n.test.mjs
+?? tests/xi-hub-play-silk-p1.test.mjs
+?? tests/xi-hydration-nav-p0.test.mjs
+?? tests/xi-integrated-rc.test.mjs
+?? tests/xi-lobby-phase1.test.mjs
+?? tests/xi-performance-quality.test.mjs

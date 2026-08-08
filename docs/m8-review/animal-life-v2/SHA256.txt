@@ -1,0 +1,5 @@
+# Animal Life V2 — SHA-256
+
+a8b23d6816b8f3de3fb14ccd053b8dc3e055e0062e797f9a245411473386b512  client/m5/game/symbol-life.ts
+289c703d8cfd0b8f4b9d7f0fbdc8929923562df0ae7e9dc5ea0c7c60fe1f31e2  client/m5/game/reels.ts
+f1b738b961f63147b3ffa37b4da272cc20eaa9ec993c7672fb10414c5264a09a  tests/r1-m8-symbol-life.test.mjs

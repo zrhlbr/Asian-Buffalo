@@ -1,0 +1,19 @@
+Production RC Candidate — git status snapshot
+=============================================
+Branch: feature/ab-r1-m8-cursor
+HEAD:   1430df9
+Date:   2026-08-07
+
+NO Commit / Push / Merge / Deploy performed in this agent run.
+
+M8 workspace remains dirty (prior Integrated RC + this package whitelist).
+M9 twin received hash-synced admin-queries.ts + admin-api.ts only.
+
+See _git-status.txt for full short status dump.
+Key new paths this package:
+  lib/rankings-service.ts
+  app/api/v1/game/rankings/
+  tests/rankings.test.mjs
+  docs/m8-review/xi-game-v2/production-rc-candidate/**
+  package.json (*:win scripts)
+  lib/admin/admin-queries.ts / admin-api.ts (P0 fix)

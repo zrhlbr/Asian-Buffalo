@@ -1,0 +1,1446 @@
+﻿diff --git a/client/m5/audio.ts b/client/m5/audio.ts
+index 7502e4f..132be21 100644
+--- a/client/m5/audio.ts
++++ b/client/m5/audio.ts
+@@ -17,6 +17,9 @@ export class AudioEngine {
+   private volume = 0.8;
+   private backgroundDimmed = false;
+   private spinNoise: { src: AudioBufferSourceNode; gain: GainNode } | null = null;
++  private activeSfx = 0;
++  private maxConcurrentSfx = 8;
++  private bgmWasRunning = false;
+ 
+   constructor() {
+     try {
+@@ -60,6 +63,22 @@ export class AudioEngine {
+     if (ctx && ctx.state === "suspended") void ctx.resume();
+   }
+ 
++  /**
++   * Lightweight warmup from a user gesture 鈥?creates AudioContext once if needed,
++   * then immediately suspends. Never tears down / recreates.
++   */
++  warmupFromGesture(): void {
++    const ctx = this.ensure();
++    if (!ctx) return;
++    if (ctx.state === "running") {
++      void ctx.suspend();
++    }
++    if (typeof window !== "undefined") {
++      const w = window as unknown as { __xiAudioContextCount?: number };
++      w.__xiAudioContextCount = 1;
++    }
++  }
++
+   setMuted(m: boolean): void {
+     this.muted = m;
+     this.applyMaster();
+@@ -85,6 +104,34 @@ export class AudioEngine {
+     this.applyMaster();
+   }
+ 
++  /** Cap overlapping one-shot SFX voices (presentation LOD). */
++  setMaxConcurrentSfx(n: number): void {
++    this.maxConcurrentSfx = Math.max(2, Math.min(16, Math.floor(n)));
++  }
++
++  /**
++   * Background tab: suspend context + pause BGM timers.
++   * Keeps single AudioContext 鈥?never recreate.
++   */
++  pauseForBackground(): void {
++    this.bgmWasRunning = this.bgmTimer !== null;
++    this.stopBgm();
++    this.stopSpinLoop();
++    if (this.ctx && this.ctx.state === "running") {
++      void this.ctx.suspend();
++    }
++  }
++
++  resumeFromBackground(): void {
++    if (this.ctx && this.ctx.state === "suspended") {
++      void this.ctx.resume();
++    }
++    if (this.bgmWasRunning) {
++      this.startBgm();
++      this.bgmWasRunning = false;
++    }
++  }
++
+   private applyMaster(): void {
+     if (this.master && this.ctx) {
+       this.master.gain.cancelScheduledValues(this.ctx.currentTime);
+@@ -190,16 +237,27 @@ export class AudioEngine {
+   }
+ 
+   // ---------------- SFX helpers ----------------
+-  private sfxGain(vol: number): GainNode | null {
++  private sfxGain(vol: number, holdMs = 400): GainNode | null {
+     if (!this.ensure() || !this.master) return null;
++    if (this.activeSfx >= this.maxConcurrentSfx) return null;
+     const g = this.ctx!.createGain();
+     g.gain.value = vol;
+     g.connect(this.master);
++    this.activeSfx++;
++    window.setTimeout(() => {
++      this.activeSfx = Math.max(0, this.activeSfx - 1);
++      try {
++        g.disconnect();
++      } catch {
++        /* ignore */
++      }
++    }, holdMs);
+     return g;
+   }
+ 
+   private blip(freqs: number[], stepDur: number, vol: number, type: OscillatorType = "triangle"): void {
+-    const out = this.sfxGain(vol);
++    const hold = Math.ceil((freqs.length * stepDur + 0.25) * 1000);
++    const out = this.sfxGain(vol, hold);
+     if (!out || !this.ctx) return;
+     const t0 = this.ctx.currentTime;
+     freqs.forEach((f, i) => {
+@@ -273,9 +331,71 @@ export class AudioEngine {
+     this.noiseBurst(0.08, 0.12, 2400, "highpass");
+   }
+ 
+-  winSmall(): void { this.blip([523, 659, 784, 1047], 0.09, 0.3); }
++  winSmall(): void { this.winNormal(); }
+   scatterLand(): void { this.blip([1568, 2093], 0.08, 0.3, "sine"); }
+ 
++  /** LDW 鈥?upbeat small-tier celebration; meters still show real server payout. */
++  pseudoWin(): void {
++    this.blip([523, 659, 784, 988], 0.08, 0.3, "triangle");
++    setTimeout(() => this.blip([784, 988, 1175], 0.06, 0.22, "sine"), 220);
++    this.coinDrop();
++  }
++
++  /** Near-miss teaser 鈥?must not sound like a paid win fanfare. */
++  nearMiss(): void {
++    this.blip([740, 880, 660], 0.07, 0.2, "sine");
++    this.noiseBurst(0.1, 0.08, 1600, "bandpass");
++  }
++
++  /** Distinct per-tier cues 鈥?never share one win sound across all tiers. */
++  coinDrop(): void {
++    this.blip([880, 660, 440], 0.05, 0.22, "triangle");
++    this.noiseBurst(0.12, 0.08, 1800, "bandpass");
++  }
++  winNormal(): void {
++    this.blip([523, 659, 784, 1047], 0.08, 0.28);
++    this.coinDrop();
++  }
++  winMedium(): void {
++    this.blip([392, 523, 659, 784, 988], 0.09, 0.32);
++    setTimeout(() => this.blip([784, 988], 0.07, 0.2), 280);
++  }
++  winStrong(): void {
++    this.blip([330, 392, 523, 659, 784, 1047], 0.09, 0.36, "triangle");
++    setTimeout(() => this.thunder(), 200);
++  }
++  fullscreenCommon(): void {
++    this.blip([440, 554, 659, 880], 0.1, 0.34, "sine");
++    setTimeout(() => this.blip([659, 880, 1108], 0.08, 0.28), 350);
++  }
++  fullscreenHigh(): void {
++    this.blip([294, 370, 440, 554, 740], 0.1, 0.38, "sawtooth");
++    setTimeout(() => this.noiseBurst(0.35, 0.14, 600, "lowpass"), 180);
++    setTimeout(() => this.blip([554, 740, 880, 1175], 0.09, 0.3), 500);
++  }
++  fullscreenBuffalo(): void {
++    this.roar();
++    setTimeout(() => this.blip([196, 247, 330, 392, 523], 0.12, 0.4, "sawtooth"), 200);
++    setTimeout(() => this.thunder(), 400);
++    setTimeout(() => this.blip([523, 659, 784, 1047, 1319], 0.1, 0.35), 900);
++  }
++  thunder(): void {
++    this.noiseBurst(0.55, 0.22, 180, "lowpass");
++    setTimeout(() => this.noiseBurst(0.25, 0.12, 900, "bandpass"), 120);
++  }
++  superWin(): void {
++    this.blip([392, 523, 659, 784, 988, 1319], 0.11, 0.42);
++    setTimeout(() => this.blip([659, 831, 1047, 1319, 1661], 0.1, 0.38), 600);
++    setTimeout(() => this.blip([1047, 1319, 1661, 2093], 0.09, 0.35, "sine"), 1400);
++    setTimeout(() => this.noiseBurst(0.8, 0.14, 3200, "highpass"), 900);
++  }
++  epicWin(): void {
++    this.superWin();
++    setTimeout(() => this.thunder(), 500);
++    setTimeout(() => this.roar(), 800);
++    setTimeout(() => this.blip([523, 784, 1047, 1568, 2093, 2637], 0.1, 0.4), 1600);
++  }
++
+   /** Soft animal / special SFX 鈥?presentation only, never blocks gameplay. */
+   animalCue(kind: "buffalo" | "lion" | "elephant" | "zebra" | "antelope" | "wild" | "scatter"): void {
+     try {
+@@ -311,25 +431,102 @@ export class AudioEngine {
+   bigWin(): void {
+     this.blip([523, 659, 784, 1047, 1319, 1568], 0.11, 0.4);
+     setTimeout(() => this.blip([784, 988, 1175, 1568, 2093], 0.11, 0.35), 500);
++    setTimeout(() => this.coinDrop(), 200);
+   }
+   megaWin(): void {
+-    this.bigWin();
+-    setTimeout(() => this.blip([659, 831, 988, 1319, 1661, 2093, 2637], 0.1, 0.4), 900);
++    // Distinct from big 鈥?wider chord + delayed fanfare (not a bigWin() call).
++    this.blip([392, 523, 659, 831, 1047, 1319], 0.1, 0.42);
++    setTimeout(() => this.blip([659, 831, 988, 1319, 1661, 2093, 2637], 0.1, 0.4), 700);
++    setTimeout(() => this.noiseBurst(0.6, 0.14, 2400, "bandpass"), 400);
+   }
+   ultraWin(): void {
+-    this.megaWin();
+-    setTimeout(() => this.noiseBurst(1.2, 0.2, 5000, "highpass"), 800);
+-    setTimeout(() => this.blip([1047, 1319, 1568, 2093, 2637, 3136], 0.09, 0.42), 1400);
++    // Distinct from mega 鈥?brighter stack + thunder wash.
++    this.blip([330, 440, 554, 740, 988, 1319], 0.1, 0.44, "triangle");
++    setTimeout(() => this.noiseBurst(1.2, 0.2, 5000, "highpass"), 600);
++    setTimeout(() => this.blip([1047, 1319, 1568, 2093, 2637, 3136], 0.09, 0.42), 1100);
++    setTimeout(() => this.thunder(), 300);
+   }
+   jackpot(): void {
+-    this.ultraWin();
+-    for (let i = 0; i < 4; i++) {
+-      setTimeout(() => this.blip([523, 784, 1047, 1568], 0.08, 0.35), 400 + i * 350);
++    // Ultimate 鈥?longest layered fanfare; never delegates to ultra/mega/big.
++    this.blip([196, 247, 330, 392, 523, 659], 0.12, 0.48, "sawtooth");
++    setTimeout(() => this.roar(), 250);
++    setTimeout(() => this.thunder(), 400);
++    setTimeout(() => this.blip([523, 659, 784, 1047, 1319, 1661], 0.1, 0.42), 800);
++    for (let i = 0; i < 5; i++) {
++      setTimeout(() => this.blip([523, 784, 1047, 1568, 2093], 0.08, 0.36), 1200 + i * 380);
+     }
++    setTimeout(() => this.noiseBurst(1.4, 0.22, 4000, "highpass"), 1000);
+   }
+ 
+   freeSpinTrigger(): void {
+-    this.blip([392, 523, 659, 784, 1047, 1319, 1568, 2093], 0.12, 0.4, "sine");
++    this.freeSpinEnter();
++  }
++
++  /** Scatter free-spin enter 鈥?temple open / beam / roar stack. */
++  freeSpinEnter(): void {
++    this.roar();
++    this.blip([392, 523, 659, 784, 1047, 1319, 1568, 2093], 0.11, 0.42, "sine");
++    setTimeout(() => this.blip([784, 1047, 1319, 1661], 0.1, 0.35), 500);
++    setTimeout(() => this.noiseBurst(0.7, 0.16, 2800, "bandpass"), 280);
++  }
++
++  /** Play a named presentation cue (choreography-driven). */
++  playCue(cue: string): void {
++    switch (cue) {
++      case "winNormal":
++        this.winNormal();
++        break;
++      case "winMedium":
++        this.winMedium();
++        break;
++      case "winStrong":
++        this.winStrong();
++        break;
++      case "fullscreenCommon":
++        this.fullscreenCommon();
++        break;
++      case "fullscreenHigh":
++        this.fullscreenHigh();
++        break;
++      case "fullscreenBuffalo":
++        this.fullscreenBuffalo();
++        break;
++      case "bigWin":
++        this.bigWin();
++        break;
++      case "megaWin":
++        this.megaWin();
++        break;
++      case "ultraWin":
++        this.ultraWin();
++        break;
++      case "superWin":
++        this.superWin();
++        break;
++      case "epicWin":
++        this.epicWin();
++        break;
++      case "jackpot":
++        this.jackpot();
++        break;
++      case "freeSpinEnter":
++        this.freeSpinEnter();
++        break;
++      case "coinDrop":
++        this.coinDrop();
++        break;
++      case "thunder":
++        this.thunder();
++        break;
++      case "pseudoWin":
++        this.pseudoWin();
++        break;
++      case "nearMiss":
++        this.nearMiss();
++        break;
++      default:
++        break;
++    }
+   }
+ 
+   /** buffalo roar: low sawtooth + growl noise, pitch envelope */
+diff --git a/client/m5/game/game.ts b/client/m5/game/game.ts
+index 66389ae..5b3db90 100644
+--- a/client/m5/game/game.ts
++++ b/client/m5/game/game.ts
+@@ -9,7 +9,6 @@ import {
+   type BetPreset,
+   type GameProvider,
+   type PresentationSpinResult,
+-  winTier,
+   type WinTier,
+   ROWS,
+ } from "../adapter.ts";
+@@ -18,6 +17,18 @@ import type { Buffalo } from "../scene/buffalo.ts";
+ import type { Particles } from "../scene/particles.ts";
+ import type { World } from "../scene/world.ts";
+ import { audio } from "../audio.ts";
++import {
++  choreographyFor,
++  FREE_SPIN_ENTER_CHOREO,
++  NEAR_MISS_CHOREO,
++  PSEUDO_WIN_CHOREO,
++  presentationFxScale,
++  resolvePresentationOutcome,
++  scaleChoreographyFx,
++  type BuffaloAction,
++  type PresentationTier,
++  type TierChoreography,
++} from "../win-presentation.ts";
+ 
+ export interface HudHooks {
+   setBalance(v: number, animate?: boolean): void;
+@@ -25,12 +36,17 @@ export interface HudHooks {
+   showWin(amount: number): void;
+   setFreeSpins(n: number): void;
+   toastKey(key: string): void;
++  toastMessage?(message: string): void;
+   celebrate(tier: WinTier, amount: number): Promise<void>;
++  flashMeters?(level: 0 | 1 | 2 | 3): void;
+   setSpinBusy(busy: boolean): void;
+   setAutoActive(on: boolean): void;
+   setTurboActive(on: boolean): void;
+   refreshStatic(): void;
+   setStatus?(message: string): void;
++  setSessionOnline?(online: boolean): void;
++  /** Clear stuck celebration / modal / loading pointer traps (HUD only). */
++  releasePointerTraps?(): void;
+ }
+ 
+ export class Game {
+@@ -131,6 +147,25 @@ export class Game {
+         recovered.isFreeGame || recovered.freeGamesRemaining > 0,
+       );
+     }
++    try {
++      const notes = await this.provider.fetchAnnouncements();
++      if (notes.length > 0) {
++        this.hud.toastMessage?.(notes[0]!.title);
++      }
++    } catch {
++      /* announcements are non-blocking */
++    }
++  }
++
++  /** Page resume / recovery 鈥?re-sync formal wallet balance into HUD. */
++  async refreshBalanceFromWallet(): Promise<void> {
++    try {
++      const bal = await this.provider.refreshBalance();
++      this.hud.setBalance(bal);
++      this.hud.setSessionOnline?.(true);
++    } catch {
++      this.hud.setSessionOnline?.(false);
++    }
+   }
+ 
+   async spin(): Promise<void> {
+@@ -148,99 +183,104 @@ export class Game {
+     this.hud.setSpinBusy(true);
+     this.hud.showWin(0);
+     this.rig.clearHighlights();
++    this.rig.setFrameGlow(0);
++    this.rig.setWinAmp(1);
+     this.buffalo.interrupt();
++    this.world.clearCelebrationMood();
+ 
+     audio.unlock();
+     audio.spinStart();
+     if (Math.random() < 0.18) this.buffalo.roar();
+ 
+-    let result: PresentationSpinResult;
+     try {
+-      result = await this.provider.spin({
+-        roomBase: preset.roomBase,
+-        betLevel: preset.betLevel,
+-        betMultiplier: preset.betMultiplier,
+-      });
+-    } catch (error) {
+-      this.busy = false;
+-      this.hud.setSpinBusy(false);
+-      audio.stopSpinLoop();
+-      const code = (error as Error & { code?: string }).code ?? "";
+-      if (code === "INSUFFICIENT_BALANCE" || String(error).includes("INSUFFICIENT")) {
+-        this.hud.toastKey("insufficient");
+-      } else {
+-        this.hud.toastKey("errorGeneric");
++      let result: PresentationSpinResult;
++      try {
++        result = await this.provider.spin({
++          roomBase: preset.roomBase,
++          betLevel: preset.betLevel,
++          betMultiplier: preset.betMultiplier,
++        });
++      } catch (error) {
++        audio.stopSpinLoop();
++        const code = (error as Error & { code?: string }).code ?? "";
++        if (code === "INSUFFICIENT_BALANCE" || String(error).includes("INSUFFICIENT")) {
++          this.hud.toastKey("insufficient");
++        } else {
++          this.hud.toastKey("errorGeneric");
++        }
++        return;
+       }
+-      return;
+-    }
+ 
+-    this.freeSpins = result.freeGamesRemaining;
+-    const inFs =
+-      result.isFreeGame || result.freeGamesRemaining > 0 || result.awardedFreeGames > 0;
+-    this.world.setFreeSpinMood(inFs);
+-    await this.rig.spinAll(result.grid, this.turbo);
+-    audio.stopSpinLoop();
+-    this.hud.setBalance(result.balanceAfterMinor, true);
+-    this.hud.setFreeSpins(this.freeSpins);
+-
+-    // UI-only tier 鈥?must not affect balance/ledger/math
+-    const tier = winTier(result.winMinor, result.totalBetMinor);
+-    if (result.winMinor > 0) {
+-      this.hud.showWin(result.winMinor);
+-      await this.presentPaylines(result);
+-      if (result.isFreeGame) this.fsTotalWin += result.winMinor;
+-    }
++      this.freeSpins = result.freeGamesRemaining;
++      const inFs =
++        result.isFreeGame || result.freeGamesRemaining > 0 || result.awardedFreeGames > 0;
++      this.world.setFreeSpinMood(inFs);
++      await this.rig.spinAll(result.grid, this.turbo);
++      audio.stopSpinLoop();
++      this.hud.setBalance(result.balanceAfterMinor, true);
++      this.hud.setFreeSpins(this.freeSpins);
+ 
+-    if (result.awardedFreeGames > 0) {
+-      audio.freeSpinTrigger();
+-      this.buffalo.roar();
+-      this.hud.toastKey("freeSpinsWon");
+-      this.particles.setPillars(true);
+-      this.world.setBloom(0.6);
+-      this.world.setFreeSpinMood(true);
+-    }
+-    if (result.scatterCount >= 3) audio.scatterLand();
++      // UI-only presentation 鈥?must not affect balance / money path / math / settlement
++      const outcome = resolvePresentationOutcome(result);
++      const fxScale = readPresentationFxScale();
++      if (result.winMinor > 0) {
++        // HUD Win meter always shows server truth (including LDW / pseudoWin)
++        this.hud.showWin(result.winMinor);
++        await this.presentPaylines(result);
++        if (result.isFreeGame) this.fsTotalWin += result.winMinor;
++      }
+ 
+-    if (tier !== "none") {
+-      this.fireTierEffects(tier);
+-      await this.hud.celebrate(tier, result.winMinor);
+-      this.particles.coinRainActive = false;
+-      if (this.freeSpins === 0) {
+-        this.particles.setPillars(false);
+-        this.world.setBloom(0.38);
++      if (result.awardedFreeGames > 0) {
++        await this.presentFreeSpinEnter(result);
+       }
+-    } else if (result.winMinor > 0) {
+-      audio.winSmall();
+-      await sleep(this.turbo ? 250 : 700);
+-    } else {
+-      await sleep(this.turbo ? 120 : 350);
+-    }
++      if (result.scatterCount >= 3) audio.scatterLand();
+ 
+-    if (result.isFreeGame && this.freeSpins === 0) {
+-      this.particles.setPillars(false);
+-      this.world.setBloom(0.38);
+-      this.world.setFreeSpinMood(false);
+-      if (this.fsTotalWin > 0) {
+-        this.hud.showWin(this.fsTotalWin);
+-        audio.bigWin();
+-        await sleep(900);
++      if (outcome.pseudoWin) {
++        await this.presentPseudoWin(result, fxScale);
++      } else if (outcome.tier !== "none") {
++        await this.presentWinTier(outcome.tier, result.winMinor);
++      } else if (outcome.nearMiss) {
++        await this.presentNearMiss(result, outcome.nearMissCells, fxScale);
++      } else if (result.winMinor > 0) {
++        audio.winSmall();
++        await sleep(this.turbo ? 250 : 700);
++      } else {
++        await sleep(this.turbo ? 120 : 350);
+       }
+-      this.fsTotalWin = 0;
+-    } else if (!inFs && this.freeSpins === 0) {
+-      this.world.setFreeSpinMood(false);
+-    }
+ 
+-    this.busy = false;
+-    this.hud.setSpinBusy(false);
++      if (result.isFreeGame && this.freeSpins === 0) {
++        this.particles.setPillars(false);
++        this.world.setBloom(0.2);
++        this.world.setFreeSpinMood(false);
++        this.world.clearCelebrationMood();
++        if (this.fsTotalWin > 0) {
++          this.hud.showWin(this.fsTotalWin);
++          audio.bigWin();
++          await sleep(900);
++        }
++        this.fsTotalWin = 0;
++      } else if (!inFs && this.freeSpins === 0) {
++        this.world.setFreeSpinMood(false);
++      }
+ 
+-    if (this.autoMode && (this.freeSpins > 0 || this.provider.canBet(this.bet.totalBetMinor))) {
+-      this.autoTimer = window.setTimeout(() => {
+-        this.autoTimer = null;
+-        void this.spin();
+-      }, this.turbo ? 250 : 600);
+-    } else if (this.autoMode) {
+-      this.autoMode = false;
+-      this.hud.setAutoActive(false);
++      if (this.autoMode && (this.freeSpins > 0 || this.provider.canBet(this.bet.totalBetMinor))) {
++        this.autoTimer = window.setTimeout(() => {
++          this.autoTimer = null;
++          void this.spin();
++        }, this.turbo ? 250 : 600);
++      } else if (this.autoMode) {
++        this.autoMode = false;
++        this.hud.setAutoActive(false);
++      }
++    } catch (error) {
++      audio.stopSpinLoop();
++      console.error("[m5] spin presentation failed", error);
++      this.hud.toastKey("errorGeneric");
++      // Never leave celebration chrome covering the HUD after a throw
++      this.hud.releasePointerTraps?.();
++    } finally {
++      this.busy = false;
++      this.hud.setSpinBusy(false);
+     }
+   }
+ 
+@@ -278,8 +318,9 @@ export class Game {
+     return cells;
+   }
+ 
+-  private highlightWins(result: PresentationSpinResult): void {
++  private highlightWins(result: PresentationSpinResult, winAmp = 1): void {
+     const cells = this.collectWinCells(result);
++    this.rig.setWinAmp(winAmp);
+     if (cells.length) this.rig.highlightCells(cells, result.grid);
+     this.playWinSymbolCues(result, cells);
+   }
+@@ -328,47 +369,173 @@ export class Game {
+     this.highlightWins(result);
+   }
+ 
+-  private fireTierEffects(tier: WinTier): void {
++  private async presentFreeSpinEnter(result: PresentationSpinResult): Promise<void> {
++    const choreo = FREE_SPIN_ENTER_CHOREO;
++    this.applyChoreography(choreo, result);
++    this.hud.toastKey("freeSpinsWon");
++    this.world.setFreeSpinMood(true);
++    await sleep(this.turbo ? 700 : choreo.durationMs);
++    // Keep free-spin mood; clear one-shot FX
++    this.particles.coinRainActive = false;
++    this.rig.setFrameGlow(0.25);
++  }
++
++  private async presentWinTier(tier: PresentationTier, amount: number): Promise<void> {
++    const choreo = choreographyFor(tier);
++    this.applyChoreography(choreo);
++    this.hud.flashMeters?.(choreo.hudFlash);
++
++    const overlayTier = toOverlayWinTier(tier);
++    if (choreo.hudOverlay && overlayTier) {
++      await this.hud.celebrate(overlayTier, amount);
++    } else {
++      await sleep(this.turbo ? Math.min(400, choreo.durationMs) : choreo.durationMs);
++    }
++
++    this.particles.coinRainActive = false;
++    this.particles.setCoinRainRate(1);
++    this.rig.setFrameGlow(0);
++    if (this.freeSpins === 0) {
++      this.particles.setPillars(false);
++      this.world.setBloom(0.2);
++      this.world.clearCelebrationMood();
++    }
++  }
++
++  /** LDW 鈥?light celebration; amount on HUD remains server winMinor (already set). */
++  private async presentPseudoWin(
++    result: PresentationSpinResult,
++    fxScale: number,
++  ): Promise<void> {
++    const choreo = scaleChoreographyFx(PSEUDO_WIN_CHOREO, fxScale);
++    this.applyChoreography(choreo, result);
++    this.hud.flashMeters?.(choreo.hudFlash);
++    await sleep(this.turbo ? Math.min(350, choreo.durationMs) : choreo.durationMs);
++    this.particles.coinRainActive = false;
++    this.particles.setCoinRainRate(1);
++    this.rig.setFrameGlow(0);
++    if (this.freeSpins === 0) {
++      this.particles.setPillars(false);
++      this.world.setBloom(0.2);
++      this.world.clearCelebrationMood();
++    }
++  }
++
++  /**
++   * Near-miss edge accent after a true miss 鈥?FX only.
++   * Does not show win meters, invent grids, or change spin timing.
++   */
++  private async presentNearMiss(
++    result: PresentationSpinResult,
++    cells: Array<[number, number]>,
++    fxScale: number,
++  ): Promise<void> {
++    const choreo = scaleChoreographyFx(NEAR_MISS_CHOREO, fxScale);
++    for (const cue of choreo.audio) audio.playCue(cue);
++    this.rig.pulseNearMissAccent(cells, result.grid, fxScale);
++    this.rig.setFrameGlow(choreo.reelFrameGlow);
++    if (choreo.shake > 0) this.world.shake(choreo.shake, choreo.shakeDecay);
++    if (choreo.punchZoom > 0) this.world.punchZoom(choreo.punchZoom);
++    this.world.setBloom(choreo.bloom);
++    if (choreo.sparkBurst > 0) {
++      this.particles.burstSparks(new THREE.Vector3(0, 2.4, 1.5), choreo.sparkBurst, choreo.sparkSpeed);
++    }
++    await sleep(this.turbo ? Math.min(220, choreo.durationMs) : choreo.durationMs);
++    this.rig.clearHighlights();
++    this.rig.setFrameGlow(0);
++    this.world.setBloom(0.2);
++    this.world.clearCelebrationMood();
++  }
++
++  private applyChoreography(
++    choreo: TierChoreography | typeof FREE_SPIN_ENTER_CHOREO,
++    result?: PresentationSpinResult,
++  ): void {
+     const center = new THREE.Vector3(0, 2.4, 1.5);
+-    switch (tier) {
+-      case "big":
+-        audio.bigWin();
++    for (const cue of choreo.audio) audio.playCue(cue);
++
++    this.fireBuffalo(choreo.buffalo);
++    this.rig.setWinAmp(choreo.symbolWin);
++    this.rig.setFrameGlow(choreo.reelFrameGlow);
++    if (result) this.highlightWins(result, choreo.symbolWin);
++
++    if (choreo.shake > 0) this.world.shake(choreo.shake, choreo.shakeDecay);
++    if (choreo.punchZoom > 0) this.world.punchZoom(choreo.punchZoom);
++    this.world.setBloom(choreo.bloom);
++    this.world.setCelebrationMood({
++      colorWash: choreo.colorWash,
++      darkenBg: choreo.darkenBg,
++      lightning: choreo.lightning,
++      wind: choreo.wind,
++      slowMo: choreo.slowMo,
++    });
++    if (choreo.wind > 0) this.world.setWind(0.75 + choreo.wind);
++
++    this.particles.setPillarStyle(choreo.particleStyle);
++    this.particles.setPillars(choreo.pillars);
++    if (choreo.sparkBurst > 0) {
++      this.particles.burstSparks(center, choreo.sparkBurst, choreo.sparkSpeed);
++    }
++    if (choreo.coinBurst > 0) {
++      this.particles.coinBurst(center, choreo.coinBurst);
++    }
++    this.particles.coinRainActive = choreo.coinRain;
++    const rainRate =
++      choreo.tier === "jackpot" || choreo.tier === "fullscreen_buffalo"
++        ? 2.2
++        : choreo.tier === "epic" || choreo.tier === "super"
++          ? 1.8
++          : choreo.tier === "ultra" || choreo.tier === "mega"
++            ? 1.45
++            : choreo.coinRain
++              ? 1.15
++              : 1;
++    this.particles.setCoinRainRate(rainRate);
++
++    if (choreo.speciesCall && result) {
++      const cells = this.collectWinCells(result);
++      this.playWinSymbolCues(result, cells);
++    }
++  }
++
++  private fireBuffalo(action: BuffaloAction): void {
++    switch (action) {
++      case "roar":
++        this.buffalo.roar();
++        break;
++      case "lowRoar":
++        this.buffalo.lowRoar();
++        break;
++      case "headUp":
++        this.buffalo.headUp();
++        break;
++      case "lookAtWin":
++        this.buffalo.lookAtWin();
++        break;
++      case "bigWin":
+         this.buffalo.bigWin();
+-        this.world.shake(0.18, 5.2);
+-        this.world.punchZoom(0.32);
+-        this.particles.burstSparks(center, 140);
+-        this.particles.coinBurst(center, 110);
+-        this.particles.setPillars(true);
+         break;
+-      case "mega":
+-        audio.megaWin();
++      case "run":
+         this.buffalo.run();
+-        this.world.shake(0.28, 4.4);
+-        this.world.punchZoom(0.48);
+-        this.particles.burstSparks(center, 210, 7);
+-        this.particles.coinBurst(center, 170);
+-        this.particles.coinRainActive = true;
+-        this.particles.setPillars(true);
+         break;
+-      case "ultra":
+-        audio.ultraWin();
++      case "victory":
+         this.buffalo.victory();
+-        this.world.shake(0.4, 3.5);
+-        this.world.punchZoom(0.62);
+-        this.particles.burstSparks(center, 300, 9);
+-        this.particles.coinRainActive = true;
+-        this.particles.setPillars(true);
+-        this.world.setBloom(0.78);
+         break;
++      case "charge":
++        this.buffalo.charge();
++        break;
++      case "jumpOut":
++        this.buffalo.jumpOut();
++        break;
++      case "slowWalk":
++        this.buffalo.slowWalk();
++        break;
++      case "standRoar":
++        this.buffalo.standRoar();
++        break;
++      case "breakReel":
+       case "jackpot":
+-        audio.jackpot();
+-        this.buffalo.jackpot();
+-        this.world.shake(0.52, 2.9);
+-        this.world.punchZoom(0.78);
+-        this.particles.burstSparks(center, 380, 12);
+-        this.particles.coinRainActive = true;
+-        this.particles.setPillars(true);
+-        this.world.setBloom(0.9);
++        this.buffalo.breakReel();
+         break;
+       default:
+         break;
+@@ -376,6 +543,28 @@ export class Game {
+   }
+ }
+ 
++function toOverlayWinTier(tier: PresentationTier): WinTier | null {
++  switch (tier) {
++    case "big":
++    case "mega":
++    case "ultra":
++    case "super":
++    case "epic":
++    case "jackpot":
++      return tier;
++    case "fullscreen_buffalo":
++      return "big"; // long overlay uses big chrome + buffalo charge FX
++    default:
++      return null;
++  }
++}
++
++/** Read quality tier attr set by boot 鈥?presentation FX scale only. */
++function readPresentationFxScale(): number {
++  if (typeof document === "undefined") return 1;
++  return presentationFxScale(document.documentElement.getAttribute("data-xi-tier"));
++}
++
+ function sleep(ms: number): Promise<void> {
+   return new Promise((r) => setTimeout(r, ms));
+ }
+diff --git a/client/m5/game/reels.ts b/client/m5/game/reels.ts
+index 82f2ca3..9a25286 100644
+--- a/client/m5/game/reels.ts
++++ b/client/m5/game/reels.ts
+@@ -9,11 +9,15 @@ import { REELS, ROWS, type SymbolId } from "../adapter.ts";
+ import { symbolTexture, ALL_SYMBOLS } from "./symbols.ts";
+ import {
+   createSymbolMaterial,
++  lifeSpeciesOf,
+   setSymbolMap,
+   symbolAnimKind,
+   symbolPhase,
++  symbolSeed,
++  triggerSymbolWinAccent,
+   updateSymbolLife,
+   type SymbolAnimIntensity,
++  type SymbolTileMaterial,
+ } from "./symbol-life.ts";
+ import {
+   spinMotionProgress,
+@@ -41,11 +45,31 @@ const OUTER_RAIL = 0.14;
+ /** Visual spin axis 鈥?always downward for normal / turbo / auto / free spin. */
+ export const REEL_SPIN_DIRECTION = "down" as const;
+ 
++/** Soft-restore window after bounce 鈥?full sharpness within ~0.15s. */
++export const SHARP_RESTORE_SEC = 0.15;
++
+ /** Unscaled half-width of the commercial metal frame (world units). */
+ export function reelFrameHalfWidth(): number {
+   return (REELS * (CELL + GAP) + FRAME_PAD) / 2 + OUTER_RAIL;
+ }
+ 
++/**
++ * Snap world Y so projected pixels land on integer rows when possible.
++ * Used after bounce settle to avoid chronic half-pixel softness.
++ */
++export function pixelAlignWorldY(
++  worldY: number,
++  pixelsPerWorldUnit: number,
++): number {
++  if (!(pixelsPerWorldUnit > 0) || !Number.isFinite(worldY)) return worldY;
++  return Math.round(worldY * pixelsPerWorldUnit) / pixelsPerWorldUnit;
++}
++
++/** Rest frac must be exact 0 鈥?collapses float dust after bounce. */
++export function settleSpinFrac(frac: number): number {
++  return Math.abs(frac) < 1e-4 ? 0 : frac;
++}
++
+ /**
+  * Row r=0 is top (max Y). Positive `frac` shifts symbols downward (鈭扽)
+  * so increasing spin position reads as top鈫抌ottom motion.
+@@ -89,11 +113,16 @@ class Reel {
+   private bounceDuration = 0.3;
+   private spinning = false;
+   private bounceT = -1;
++  /** Counts down after bounce 鈥?keeps tiles sharp while life fades back in. */
++  private sharpRestore = 0;
+   private lastTex: THREE.Texture[] = [];
+   private winMask: boolean[] = [];
++  private winAmp = 1;
+   private lifeTime = 0;
+   private animIntensity: SymbolAnimIntensity = 2;
+   private resolver: (() => void) | null = null;
++  /** Optional screen px per world unit for final pixel snap (set by ReelRig). */
++  pixelsPerWorld = 0;
+   onStop: ((index: number) => void) | null = null;
+ 
+   constructor(index: number) {
+@@ -101,7 +130,13 @@ class Reel {
+     const geo = new THREE.PlaneGeometry(CELL, CELL);
+     for (let k = 0; k < ROWS + 2; k++) {
+       const tex = symbolTexture("buffalo");
+-      const mat = createSymbolMaterial(tex, "animal", symbolPhase(index, k));
++      const mat = createSymbolMaterial(
++        tex,
++        "animal",
++        symbolPhase(index, k),
++        "buffalo",
++        symbolSeed(index, k),
++      );
+       const m = new THREE.Mesh(geo, mat);
+       this.cells.push(m);
+       this.lastTex.push(tex);
+@@ -117,6 +152,10 @@ class Reel {
+     this.animIntensity = intensity;
+   }
+ 
++  setWinAmp(amp: number): void {
++    this.winAmp = Math.min(2, Math.max(0, amp));
++  }
++
+   setGrid(col: SymbolId[]): void {
+     this.spinning = false;
+     // Same strip encoding as spin stop 鈥?row0 (top) stays server order
+@@ -125,6 +164,7 @@ class Reel {
+     this.distance = 0;
+     this.t = 0;
+     this.bounceT = -1;
++    this.sharpRestore = 0;
+     this.layout();
+   }
+ 
+@@ -153,6 +193,7 @@ class Reel {
+     this.bounceDuration = Math.max(0.05, bounceSec);
+     this.spinning = true;
+     this.bounceT = -1;
++    this.sharpRestore = 0;
+     return new Promise((res) => {
+       this.resolver = res;
+     });
+@@ -187,6 +228,7 @@ class Reel {
+       const p = this.bounceT / this.bounceDuration;
+       if (p >= 1) {
+         this.bounceT = -1;
++        this.sharpRestore = SHARP_RESTORE_SEC;
+         this.layout(0);
+         const r = this.resolver;
+         this.resolver = null;
+@@ -197,55 +239,83 @@ class Reel {
+         this.layout(0.22 * elastic);
+       }
+     } else {
+-      // Idle life 鈥?refresh shader uniforms without changing strip positions
++      if (this.sharpRestore > 0) {
++        this.sharpRestore = Math.max(0, this.sharpRestore - dt);
++      }
++      // Idle life 鈥?refresh shader uniforms; positions stay pixel-stable
+       this.layout();
+     }
+   }
+ 
+   private layout(extraFrac = 0): void {
+     const base = Math.floor(this.pos);
+-    const frac = this.pos - base + extraFrac;
+-      // Stronger Y stretch while cruising 鈥?impact without tearing tiles apart
+-      const cruise = this.spinning && this.t > 0.06 && this.t < 0.78;
+-      const speedStretch = this.spinning
+-        ? 1 + (cruise ? 0.34 : Math.sin(Math.min(this.t * 3, Math.PI)) * 0.18)
+-        : 1;
++    const frac = settleSpinFrac(this.pos - base + extraFrac);
++    // Motion feel while spinning; recognizable tiles (stretch capped for clarity)
++    const cruise = this.spinning && this.t > 0.06 && this.t < 0.78;
++    const speedStretch = this.spinning
++      ? 1 + (cruise ? 0.26 : Math.sin(Math.min(this.t * 3, Math.PI)) * 0.14)
++      : 1;
+     const halfWindow = (ROWS * (CELL + GAP)) / 2;
+     const maxIdx = Math.max(0, this.seq.length - 1);
++    const atRest = !this.spinning && this.bounceT < 0;
++    const spinAmt = this.spinning
++      ? 1
++      : this.bounceT >= 0
++        ? 0.55
++        : this.sharpRestore > 0
++          ? this.sharpRestore / SHARP_RESTORE_SEC
++          : 0;
+     for (let k = 0; k < ROWS + 2; k++) {
+       const r = k - 1;
+       const idx = Math.min(Math.max(stripIndex(base, r), 0), maxIdx);
+       const sym = this.seq[idx]!;
+       const mesh = this.cells[k]!;
+       // Positive frac 鈫?lower Y 鈫?top-to-bottom scroll
+-      mesh.position.y = cellY(r, frac);
++      let y = cellY(r, frac);
++      if (atRest && frac === 0 && this.pixelsPerWorld > 0) {
++        y = pixelAlignWorldY(y, this.pixelsPerWorld);
++      }
+       const win = this.winMask[k] === true;
+-      const pop = win && !this.spinning ? 1.08 : 1;
+-      mesh.scale.set(pop, speedStretch * pop, 1);
+-      mesh.position.z = win && !this.spinning ? 0.045 : 0;
+-      const fade = Math.min(Math.max((halfWindow + 0.42 - Math.abs(mesh.position.y)) / 0.6, 0), 1);
++      const winLevel = win ? this.winAmp : 0;
++      const pop = win && atRest ? 1.06 + 0.04 * this.winAmp : 1;
++      mesh.position.z = win && atRest ? 0.045 : 0;
++      // Life owns scale / x / rotZ; reset x/rot before measuring fade from base Y
++      mesh.position.x = 0;
++      mesh.rotation.z = 0;
++      const fade = Math.min(Math.max((halfWindow + 0.42 - Math.abs(y)) / 0.6, 0), 1);
+       mesh.visible = fade > 0.02;
+       const tex = symbolTexture(sym);
+-      const mat = mesh.material as THREE.ShaderMaterial;
++      const mat = mesh.material as SymbolTileMaterial;
++      const kind = symbolAnimKind(sym);
+       if (this.lastTex[k] !== tex) {
+-        setSymbolMap(mat, tex, symbolAnimKind(sym));
++        setSymbolMap(mat, tex, kind, lifeSpeciesOf(sym));
+         this.lastTex[k] = tex;
+       }
+       updateSymbolLife(mat, {
+         time: this.lifeTime,
+         opacity: fade,
+-        win,
++        win: winLevel,
+         intensity: this.animIntensity,
+-        spinning: this.spinning,
+-        tint: win ? 1.55 : 1,
++        spinning: spinAmt,
++        tint: win ? 1.4 + 0.2 * this.winAmp : 1,
++        symbolId: sym,
++        mesh,
++        baseScaleX: pop,
++        baseScaleY: speedStretch * pop,
++        basePosY: y,
+       });
+     }
+   }
+ 
+-  setCellHighlight(r: number, on: boolean): void {
++  setCellHighlight(r: number, on: boolean, winAmp = this.winAmp): void {
+     const k = r + 1;
+     if (k < 0 || k >= this.winMask.length) return;
++    const was = this.winMask[k] === true;
+     this.winMask[k] = on;
++    if (on && !was) {
++      const mat = this.cells[k]!.material as SymbolTileMaterial;
++      triggerSymbolWinAccent(mat, winAmp);
++    }
+     // Apply immediately so sequential payline presentation feels snappy
+     this.layout();
+   }
+@@ -256,18 +326,31 @@ export class ReelRig {
+   private reels: Reel[] = [];
+   private highlights: THREE.Mesh[] = [];
+   private glowPlane: THREE.Mesh | null = null;
++  private frameGlowBoost = 0;
+   private frameHalfW = reelFrameHalfWidth();
+   private animIntensity: SymbolAnimIntensity = 2;
++  private winAmp = 1;
+   /** Current commercial scale (full-bleed). */
+   scaleFactor = 1;
+   onReelStop: ((index: number) => void) | null = null;
+ 
+-  /** Quality LOD for symbol life shaders (presentation only). */
++  /** Quality LOD for symbol life (presentation only; MeshBasic path). */
+   setSymbolAnimIntensity(intensity: SymbolAnimIntensity): void {
+     this.animIntensity = intensity;
+     for (const reel of this.reels) reel.setAnimIntensity(intensity);
+   }
+ 
++  /** Win symbol amplify 0鈥? from presentation choreography. */
++  setWinAmp(amp: number): void {
++    this.winAmp = Math.min(2, Math.max(0, amp));
++    for (const reel of this.reels) reel.setWinAmp(this.winAmp);
++  }
++
++  /** Reel frame glow boost 0鈥? during celebrations. */
++  setFrameGlow(boost: number): void {
++    this.frameGlowBoost = Math.min(1, Math.max(0, boost));
++  }
++
+   constructor() {
+     const W = REELS * (CELL + GAP) + FRAME_PAD;
+     const H = ROWS * (CELL + GAP) + FRAME_PAD;
+@@ -474,6 +557,13 @@ export class ReelRig {
+     this.group.position.x = 0;
+     // Phone landscape: lift slightly so bottom console does not bury the last row
+     this.group.position.y = aspect < 1.05 ? 2.55 : phoneLandscape ? 2.42 : 2.32;
++
++    // Approx CSS px per world unit at reel depth 鈥?for post-bounce pixel align
++    const visibleHalfH = cameraZ * Math.tan(halfFov);
++    const pxPerWorld = viewportH / Math.max(visibleHalfH * 2, 1e-6);
++    for (const reel of this.reels) {
++      reel.pixelsPerWorld = pxPerWorld * scale;
++    }
+   }
+ 
+   /** World-space half-width after commercial scale (for camera fit). */
+@@ -506,7 +596,8 @@ export class ReelRig {
+ 
+   /**
+    * Choreographed spin using centralized timing (reel-timing.ts).
+-   * Normal / Auto / Free Spin 鈫?~10s total; Turbo 鈫?~2.5s.
++   * Normal / Auto / Free Spin 鈫?NORMAL_SPIN_TOTAL_MS (6000); Turbo 鈫?~2.5s.
++   * Server may return early; visual timeline still plays fully here.
+    * Grid must be the server result 鈥?never recomputed here.
+    */
+   spinAll(grid: SymbolId[][], turbo: boolean): Promise<void> {
+@@ -528,7 +619,9 @@ export class ReelRig {
+   highlightCells(cells: Array<[number, number]>, grid?: SymbolId[][]): void {
+     this.clearHighlights();
+     for (const [reel, row] of cells) {
+-      if (this.reels[reel]) this.reels[reel]!.setCellHighlight(row, true);
++      if (this.reels[reel]) {
++        this.reels[reel]!.setCellHighlight(row, true, this.winAmp);
++      }
+       const sym = grid?.[reel]?.[row];
+       const kind = sym ? symbolAnimKind(sym) : "letter";
+       const color =
+@@ -569,6 +662,66 @@ export class ReelRig {
+     }
+   }
+ 
++  /**
++   * Near-miss stop accent 鈥?presentation only.
++   * Highlights existing server-grid cells; never rewrites symbols or stop timing.
++   * @param intensity 0鈥? (LOW quality should pass a reduced value)
++   */
++  pulseNearMissAccent(
++    cells: Array<[number, number]>,
++    grid: SymbolId[][] | undefined,
++    intensity = 1,
++  ): void {
++    const amp = Math.min(1, Math.max(0.15, intensity));
++    this.clearHighlights();
++    this.setFrameGlow(0.35 * amp + 0.1);
++    for (const [reel, row] of cells) {
++      if (this.reels[reel]) {
++        this.reels[reel]!.setCellHighlight(row, true, Math.min(1, amp));
++      }
++      const sym = grid?.[reel]?.[row];
++      const kind = sym ? symbolAnimKind(sym) : "letter";
++      // Cool amber edge cue 鈥?distinct from paid gold win highlights
++      const color =
++        kind === "scatter" ? 0xffc060 : kind === "wild" ? 0x7ec8ff : 0xe8c878;
++      const glow = new THREE.Mesh(
++        new THREE.PlaneGeometry(CELL * 1.08, CELL * 1.08),
++        new THREE.MeshBasicMaterial({
++          color,
++          transparent: true,
++          opacity: 0.0,
++          blending: THREE.AdditiveBlending,
++          depthWrite: false,
++        }),
++      );
++      glow.position.set((reel - (REELS - 1) / 2) * (CELL + GAP), cellY(row, 0), 0.025);
++      glow.userData.pulse = true;
++      glow.userData.nearMiss = true;
++      glow.userData.nearMissAmp = amp;
++      this.highlights.push(glow);
++      this.group.add(glow);
++
++      const ring = new THREE.Mesh(
++        new THREE.RingGeometry(CELL * 0.4, CELL * 0.5, 28),
++        new THREE.MeshBasicMaterial({
++          color,
++          transparent: true,
++          opacity: 0.0,
++          blending: THREE.AdditiveBlending,
++          depthWrite: false,
++          side: THREE.DoubleSide,
++        }),
++      );
++      ring.position.copy(glow.position);
++      ring.position.z = 0.03;
++      ring.userData.ring = true;
++      ring.userData.nearMiss = true;
++      ring.userData.nearMissAmp = amp;
++      this.highlights.push(ring);
++      this.group.add(ring);
++    }
++  }
++
+   clearHighlights(): void {
+     for (const reel of this.reels) {
+       for (let r = 0; r < ROWS; r++) reel.setCellHighlight(r, false);
+@@ -585,18 +738,20 @@ export class ReelRig {
+     for (const reel of this.reels) reel.update(dt, time);
+     for (const h of this.highlights) {
+       const mat = h.material as THREE.MeshBasicMaterial;
++      const nmAmp = typeof h.userData.nearMissAmp === "number" ? h.userData.nearMissAmp : 1;
+       if (h.userData.ring) {
+         const pulse = 0.55 + 0.45 * Math.sin(time * 7);
+-        mat.opacity = 0.22 * pulse;
+-        const s = 1 + 0.12 * Math.sin(time * 6);
++        mat.opacity = 0.22 * pulse * nmAmp;
++        const s = 1 + 0.12 * Math.sin(time * 6) * nmAmp;
+         h.scale.set(s, s, 1);
+       } else {
+-        mat.opacity = 0.3 + 0.24 * Math.sin(time * 8);
++        mat.opacity = (0.3 + 0.24 * Math.sin(time * 8)) * nmAmp;
+       }
+     }
+     if (this.glowPlane) {
+       const mat = this.glowPlane.material as THREE.MeshBasicMaterial;
+-      mat.opacity = 0.12 + 0.06 * Math.sin(time * 1.8);
++      const pulse = 0.12 + 0.06 * Math.sin(time * 1.8);
++      mat.opacity = pulse + this.frameGlowBoost * (0.28 + 0.18 * Math.sin(time * 5.5));
+     }
+   }
+ }
+diff --git a/client/m5/i18n.ts b/client/m5/i18n.ts
+index 9f1037e..d5a3ba5 100644
+--- a/client/m5/i18n.ts
++++ b/client/m5/i18n.ts
+@@ -8,8 +8,8 @@ export const LANGS: Lang[] = ["zh-CN", "en", "my-MM"];
+ 
+ const dict: Record<Lang, Record<string, string>> = {
+   "zh-CN": {
+-    gameTitle: "浜氭床姘寸墰",
+-    loading: "姝ｅ湪杩涘叆鑽夊師鈥?,
++    gameTitle: "鐗涢瓟鐜?,
++    loading: "姝ｅ湪杩涘叆鐏劙灞扁€?,
+     balance: "浣欓",
+     bet: "鎶曟敞",
+     win: "璧㈠緱",
+@@ -24,6 +24,8 @@ const dict: Record<Lang, Record<string, string>> = {
+     bigWin: "澶ц耽",
+     megaWin: "宸ㄨ耽",
+     ultraWin: "瓒呯骇宸ㄨ耽",
++    superWin: "鑷冲皧宸ㄨ耽",
++    epicWin: "鍙茶瘲宸ㄨ耽",
+     jackpot: "瓒呯骇澶村",
+     congratulations: "鎭枩锛?,
+     goodLuck: "绁濆ソ杩愶紒",
+@@ -34,7 +36,7 @@ const dict: Record<Lang, Record<string, string>> = {
+     scatterNote:
+       "SCATTER锛?/4/5 涓Е鍙?8/15/20 娆″厤璐规棆杞紱鍏嶈垂鏃嬭浆涓?2 涓強浠ヤ笂鍐嶈Е鍙戦澶栨鏁般€傜粨绠楃敱鏈嶅姟鍣ㄦ潈濞佸垽瀹氥€?,
+     wildNote: "WILD锛氬彲鏇夸唬闄?SCATTER 澶栨墍鏈夌鍙枫€傜嚎濂栦笌鍏嶈垂娓告垙鐢辨寮忔暟瀛︾増鏈粨绠椼€?,
+-    linesNote: "5脳4銆?0 绾跨帺娉曘€傝禂浠樿〃鏁板€间负绾挎敞鍊嶆暟锛汢ig/Mega/Ultra/Jackpot 浠呬负灞曠ず鍔ㄧ敾銆?,
++    linesNote: "5脳4銆?0 绾跨帺娉曘€傝禂浠樿〃鏁板€间负绾挎敞鍊嶆暟锛汢ig/Mega/Ultra/Super/Epic/Jackpot 浠呬负灞曠ず鍔ㄧ敾銆?,
+     insufficient: "浣欓涓嶈冻",
+     errorGeneric: "鏈嶅姟鏆傛椂涓嶅彲鐢紝璇风◢鍚庨噸璇?,
+     retry: "閲嶈瘯",
+@@ -49,13 +51,60 @@ const dict: Record<Lang, Record<string, string>> = {
+     volume: "闊抽噺",
+     quality: "鐢昏川",
+     qualityAuto: "鑷姩",
++    qualityUltra: "鏃楄埌",
+     qualityHigh: "楂?,
+     qualityMedium: "涓?,
+     qualityLow: "浣?,
++    fxEffects: "鐗规晥",
++    fxOn: "寮€",
++    fxOff: "鍏?,
++    animalAnim: "鍔ㄧ墿鍔ㄧ敾",
++    animalFull: "瀹屾暣",
++    animalSimple: "绠€鍖?,
++    fpsTarget: "甯х巼",
++    fpsAuto: "鑷姩",
++    fps30: "30",
++    fps60: "60",
+     settings: "璁剧疆",
++    back: "杩斿洖",
+     tapToContinue: "鐐瑰嚮缁х画",
+     spinning: "鏃嬭浆涓?,
+     goodLuckSpin: "绁濆ソ杩?,
++    /** Near-miss teaser 鈥?never claims a win when payout is 0. Prefer FX-only. */
++    closeCall: "灏卞樊涓€鐐?,
++    profile: "涓汉涓績",
++    profilePlayerId: "鐜╁ID",
++    profilePhone: "鎵嬫満",
++    profilePhoneNone: "鏈粦瀹?,
++    profileCurrency: "甯佺",
++    profileStatus: "鐘舵€?,
++    profileRegistered: "娉ㄥ唽鏃堕棿",
++    profileLastLogin: "鏈€杩戠櫥褰?,
++    profileNickname: "鏄电О",
++    profileSave: "淇濆瓨",
++    profileBindPhone: "缁戝畾",
++    profileChooseAvatar: "閫夋嫨澶村儚",
++    profileSaved: "宸蹭繚瀛?,
++    profilePhonePending: "宸叉彁浜わ紙鐭俊楠岃瘉寰呬笟鍔¤鍒欙級",
++    vip: "VIP",
++    vipCenter: "VIP 涓績",
++    vipChests: "濂栧姳瀹濈",
++    vipUnlocked: "宸茶В閿?,
++    vipLocked: "鏈В閿?,
++    vipConditionsPending: "鍗囩骇鏉′欢鐢卞悗鍙伴厤缃紙涓氬姟瑙勫垯寰呭畾锛?,
++    chestClaim: "棰嗗彇",
++    chestClaimed: "宸查鍙?,
++    chestLocked: "閿佸畾",
++    wallet: "閽卞寘",
++    walletAvailable: "鍙敤",
++    walletFrozen: "鍐荤粨",
++    walletStatus: "鐘舵€?,
++    walletNoMoves: "鏆傛棤杩戞湡娴佹按",
++    walletPending: "鍏呭€?鎻愮幇璇峰湪澶у巺鎴栫墰榄旂帇涓績鎿嶄綔锛涢噾棰濅笌娓犻亾瑙?BUSINESS_RULES_PENDING銆?,
++    help: "甯姪",
++    helpIntro: "鐗涢瓟鐜嬫寮忚鍒欎笌瀹㈡湇鍏ュ彛銆傛棆杞粨绠椾互鏈嶅姟鍣ㄤ负鍑嗐€?,
++    helpPending: "宸ュ崟绯荤粺 Phase 8 鈥?瑙勫垯璇﹁璧斾粯琛ㄤ笌鍏憡銆?,
++    overlayWaitSpin: "鏃嬭浆缁撶畻涓紝璇风◢鍚庡啀鎵撳紑",
+     sym_buffalo: "姘寸墰",
+     sym_lion: "鐙瓙",
+     sym_elephant: "澶ц薄",
+@@ -71,8 +120,8 @@ const dict: Record<Lang, Record<string, string>> = {
+     sym_scatter: "SCATTER",
+   },
+   en: {
+-    gameTitle: "Asian Buffalo",
+-    loading: "Entering the savanna鈥?,
++    gameTitle: "BULL DEMON KING",
++    loading: "Entering Flame Mountain鈥?,
+     balance: "Balance",
+     bet: "Bet",
+     win: "Win",
+@@ -87,6 +136,8 @@ const dict: Record<Lang, Record<string, string>> = {
+     bigWin: "BIG WIN",
+     megaWin: "MEGA WIN",
+     ultraWin: "ULTRA WIN",
++    superWin: "SUPER WIN",
++    epicWin: "EPIC WIN",
+     jackpot: "JACKPOT",
+     congratulations: "Congratulations!",
+     goodLuck: "Good luck!",
+@@ -98,7 +149,7 @@ const dict: Record<Lang, Record<string, string>> = {
+       "SCATTER: 3/4/5 award 8/15/20 free spins; 2+ during free spins retrigger. Settlement is server-authoritative.",
+     wildNote: "WILD substitutes for all symbols except SCATTER. Line pays use the frozen math version.",
+     linesNote:
+-      "5脳4, 50-line game. Paytable values are line-bet multipliers. Big/Mega/Ultra/Jackpot are UI only.",
++      "5脳4, 50-line game. Paytable values are line-bet multipliers. Big/Mega/Ultra/Super/Epic/Jackpot are UI only.",
+     insufficient: "Insufficient balance",
+     errorGeneric: "Service temporarily unavailable",
+     retry: "Retry",
+@@ -113,13 +164,60 @@ const dict: Record<Lang, Record<string, string>> = {
+     volume: "Volume",
+     quality: "Quality",
+     qualityAuto: "Auto",
++    qualityUltra: "Ultra",
+     qualityHigh: "High",
+     qualityMedium: "Med",
+     qualityLow: "Low",
++    fxEffects: "Effects",
++    fxOn: "On",
++    fxOff: "Off",
++    animalAnim: "Animal anim",
++    animalFull: "Full",
++    animalSimple: "Simple",
++    fpsTarget: "FPS",
++    fpsAuto: "Auto",
++    fps30: "30",
++    fps60: "60",
+     settings: "Settings",
++    back: "Back",
+     tapToContinue: "Tap to continue",
+     spinning: "Spinning",
+     goodLuckSpin: "Good luck",
++    /** Near-miss teaser 鈥?never claims a win when payout is 0. Prefer FX-only. */
++    closeCall: "So close",
++    profile: "Profile",
++    profilePlayerId: "Player ID",
++    profilePhone: "Phone",
++    profilePhoneNone: "Not bound",
++    profileCurrency: "Currency",
++    profileStatus: "Status",
++    profileRegistered: "Registered",
++    profileLastLogin: "Last login",
++    profileNickname: "Nickname",
++    profileSave: "Save",
++    profileBindPhone: "Bind",
++    profileChooseAvatar: "Choose avatar",
++    profileSaved: "Saved",
++    profilePhonePending: "Submitted (SMS OTP pending business rules)",
++    vip: "VIP",
++    vipCenter: "VIP Center",
++    vipChests: "Reward chests",
++    vipUnlocked: "Unlocked",
++    vipLocked: "Locked",
++    vipConditionsPending: "Upgrade conditions are admin-configured (pending rules)",
++    chestClaim: "Claim",
++    chestClaimed: "Claimed",
++    chestLocked: "Locked",
++    wallet: "Wallet",
++    walletAvailable: "Available",
++    walletFrozen: "Frozen",
++    walletStatus: "Status",
++    walletNoMoves: "No recent moves",
++    walletPending: "Use lobby/hub for deposit & withdraw. Amounts/channels: BUSINESS_RULES_PENDING.",
++    help: "Help",
++    helpIntro: "Bull Demon King formal rules and support. Settlement is server-authoritative.",
++    helpPending: "Tickets are Phase 8 鈥?see paytable and announcements for rules.",
++    overlayWaitSpin: "Please wait until the spin settles",
+     sym_buffalo: "Buffalo",
+     sym_lion: "Lion",
+     sym_elephant: "Elephant",
+@@ -135,8 +233,8 @@ const dict: Record<Lang, Record<string, string>> = {
+     sym_scatter: "SCATTER",
+   },
+   "my-MM": {
+-    gameTitle: "醼♂€€涐€踞€€醼坚€结€贬€?,
+-    loading: "醼欋€坚€€醼横€佱€勧€横€羔€曖€坚€勧€横€炨€€€?醼濁€勧€横€涐€贬€€€醼横€斸€贬€炨€娽€衡€?,
++    gameTitle: "醼斸€结€€羔€斸€愥€横€嗎€€€羔€樶€€涐€勧€?,
++    loading: "醼欋€€羔€愥€贬€€勧€横€炨€€€?醼濁€勧€横€涐€贬€€€醼横€斸€贬€炨€娽€衡€?,
+     balance: "醼溼€€醼横€€醼会€斸€横€勧€结€?,
+     bet: "醼溼€贬€€勧€横€羔€€醼坚€贬€?,
+     win: "醼♂€斸€€€勧€横€?,
+@@ -151,6 +249,8 @@ const dict: Record<Lang, Record<string, string>> = {
+     bigWin: "醼♂€斸€€€勧€横€€醼坚€€?,
+     megaWin: "醼欋€傖€横€傖€€♂€斸€€€勧€?,
+     ultraWin: "醼♂€戓€结€愥€横€♂€戓€€曖€横€♂€斸€€€勧€?,
++    superWin: "醼呩€搬€曖€€♂€斸€€€勧€?,
++    epicWin: "醼п€曖€呩€横€♂€斸€€€勧€?,
+     jackpot: "醼傖€会€€醼横€曖€贬€€€醼横€嗎€?,
+     congratulations: "醼傖€€忈€横€氠€搬€曖€€愥€氠€?",
+     goodLuck: "醼€醼夺€€醼贬€€勧€横€羔€曖€€呩€?",
+@@ -162,7 +262,7 @@ const dict: Record<Lang, Record<string, string>> = {
+       "SCATTER: 3/4/5 醼炨€娽€?醼♂€佱€欋€册€丰€溼€踞€娽€丰€横€佱€坚€勧€横€?8/15/20 醼曖€贬€羔€炨€娽€横亱 醼嗎€€夺€羔€栣€坚€愥€横€佱€会€€醼横€€醼€?醼嗎€€椺€€€醼炨€?醼溼€€曖€横€炨€娽€横亱",
+     wildNote: "WILD 醼炨€娽€?SCATTER 醼欋€熱€€愥€横€炨€贬€?醼炨€勧€横€贯€€醼贬€愥€欋€会€€羔€€醼€?醼♂€呩€€羔€戓€€€羔€斸€€€勧€横€炨€娽€横亱",
+     linesNote:
+-      "5脳4醽?醼溼€€€勧€横€?醽呩亐醽?Big/Mega/Ultra/Jackpot 醼炨€娽€?UI 醼炨€涐€€曖€横€曖€坚€炨€?醼栣€坚€呩€横€炨€娽€横亱",
++      "5脳4醽?醼溼€€€勧€横€?醽呩亐醽?Big/Mega/Ultra/Super/Epic/Jackpot 醼炨€娽€?UI 醼炨€涐€€曖€横€曖€坚€炨€?醼栣€坚€呩€横€炨€娽€横亱",
+     insufficient: "醼溼€€醼横€€醼会€斸€横€勧€结€?醼欋€溼€€夺€溼€贬€€€醼横€曖€?,
+     errorGeneric: "醼濁€斸€横€嗎€贬€€勧€横€欋€踞€?醼氠€€氠€€欋€涐€斸€€€勧€横€曖€?,
+     retry: "醼曖€坚€斸€横€€醼坚€€€羔€呩€€羔€涐€斸€?,
+@@ -177,13 +277,60 @@ const dict: Record<Lang, Record<string, string>> = {
+     volume: "醼♂€炨€夺€♂€愥€€€羔€♂€€醼会€氠€?,
+     quality: "醼♂€涐€娽€横€♂€炨€结€贬€?,
+     qualityAuto: "醼♂€溼€€€♂€溼€会€贬€€€醼?,
++    qualityUltra: "醼♂€欋€坚€勧€丰€横€嗎€€夺€?,
+     qualityHigh: "醼欋€坚€勧€丰€?,
+     qualityMedium: "醼♂€溼€愥€?,
+     qualityLow: "醼斸€€欋€丰€?,
++    fxEffects: "醼♂€戓€搬€羔€曖€坚€€溼€€曖€横€佱€会€€醼?,
++    fxOn: "醼栣€结€勧€丰€?,
++    fxOff: "醼曖€€愥€?,
++    animalAnim: "醼愥€€涐€呩€贯€嗎€€斸€?醼♂€斸€横€斸€€欋€贬€羔€涐€踞€勧€横€?,
++    animalFull: "醼曖€坚€娽€丰€横€呩€€?,
++    animalSimple: "醼涐€€€羔€涐€踞€勧€横€?,
++    fpsTarget: "FPS",
++    fpsAuto: "醼♂€溼€€€♂€溼€会€贬€€€醼?,
++    fps30: "30",
++    fps60: "60",
+     settings: "醼嗎€€醼横€愥€勧€?,
++    back: "醼曖€坚€斸€横€炨€结€€羔€涐€斸€?,
+     tapToContinue: "醼嗎€€醼横€溼€€醼横€涐€斸€?醼斸€踞€€曖€横€曖€?,
+     spinning: "醼溼€踞€娽€丰€横€斸€贬€炨€娽€?,
+     goodLuckSpin: "醼€醼夺€€醼贬€€勧€横€羔€曖€€呩€?,
++    /** Near-miss teaser 鈥?never claims a win when payout is 0. Prefer FX-only. */
++    closeCall: "醼斸€€羔€呩€曖€横€炨€结€€羔€曖€坚€?,
++    profile: "醼曖€涐€€€栣€€€勧€?,
++    profilePlayerId: "醼€醼呩€€羔€炨€欋€€?ID",
++    profilePhone: "醼栣€€斸€横€?,
++    profilePhoneNone: "醼欋€佱€会€€愥€横€涐€炨€贬€?,
++    profileCurrency: "醼勧€结€贬€€醼坚€贬€?,
++    profileStatus: "醼♂€佱€坚€贬€♂€斸€?,
++    profileRegistered: "醼欋€踞€愥€横€曖€€夺€愥€勧€横€佱€会€€斸€?,
++    profileLastLogin: "醼斸€贬€€€醼横€嗎€€夺€羔€濁€勧€横€涐€贬€€€醼?,
++    profileNickname: "醼♂€欋€娽€横€濁€踞€€醼?,
++    profileSave: "醼炨€€欋€横€羔€欋€娽€?,
++    profileBindPhone: "醼佱€会€€愥€横€欋€娽€?,
++    profileChooseAvatar: "醼曖€€夺€涐€结€贬€羔€曖€?,
++    profileSaved: "醼炨€€欋€横€羔€曖€坚€€?,
++    profilePhonePending: "醼愥€勧€横€曖€坚€€?(SMS 醼呩€娽€横€羔€欋€会€夅€横€?醼呩€贬€€勧€丰€横€嗎€€€勧€横€?",
++    vip: "VIP",
++    vipCenter: "VIP 醼呩€勧€横€愥€?,
++    vipChests: "醼嗎€€炨€贬€愥€贯€愥€€欋€会€€?,
++    vipUnlocked: "醼栣€结€勧€丰€横€曖€坚€€?,
++    vipLocked: "醼欋€栣€结€勧€丰€横€涐€炨€贬€?,
++    vipConditionsPending: "醼♂€嗎€勧€丰€横€愥€€醼?醼呩€娽€横€羔€欋€会€夅€横€羔€€醼€?醼♂€€醼横€掅€欋€勧€?醼炨€愥€横€欋€踞€愥€?(醼呩€贬€€勧€丰€横€嗎€€€勧€横€?",
++    chestClaim: "醼氠€搬€欋€娽€?,
++    chestClaimed: "醼氠€搬€曖€坚€€?,
++    chestLocked: "醼炨€贬€€丰€佱€愥€?,
++    wallet: "醼曖€€€€醼横€嗎€夺€♂€€愥€?,
++    walletAvailable: "醼涐€斸€€€勧€?,
++    walletFrozen: "醼戓€€斸€横€羔€炨€€欋€横€?,
++    walletStatus: "醼♂€佱€坚€贬€♂€斸€?,
++    walletNoMoves: "醼欋€€醼坚€€炨€贬€羔€欋€?醼溼€踞€€曖€横€涐€踞€€羔€欋€踞€?醼欋€涐€踞€?,
++    walletPending: "醼勧€结€贬€炨€结€勧€横€?醼戓€€愥€?鈥?lobby/hub 醼欋€?醼溼€€曖€横€曖€亱 BUSINESS_RULES_PENDING 醼€醼坚€娽€丰€横€曖€亱",
++    help: "醼♂€€醼搬€♂€娽€?,
++    helpIntro: "Bull Demon King 醼愥€涐€€羔€濁€勧€?醼呩€娽€横€羔€欋€会€夅€横€羔€斸€踞€勧€丰€?醼♂€€醼搬€♂€娽€亱 醼嗎€€佱€会€€羔€欋€坚€踞€勧€丰€横€欋€踞€€€醼€?醼嗎€€椺€€€ 醼嗎€€夺€羔€栣€坚€愥€横€炨€娽€横亱",
++    helpPending: "醼溼€€醼横€欋€踞€愥€?Phase 8 鈥?醼呩€娽€横€羔€欋€会€夅€横€羔€♂€愥€结€€醼?paytable/醼€醼坚€贬€娽€€佱€会€€醼?醼€醼坚€娽€丰€横€曖€亱",
++    overlayWaitSpin: "醼溼€踞€娽€丰€横€佱€坚€勧€横€?醼曖€坚€€羔€炨€娽€横€♂€戓€?醼呩€贬€€勧€丰€横€曖€?,
+     sym_buffalo: "醼€醼坚€结€贬€?,
+     sym_lion: "醼佱€坚€勧€横€贯€炨€贬€?,
+     sym_elephant: "醼嗎€勧€?,

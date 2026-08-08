@@ -1,0 +1,388 @@
+/* Player Center（我的）— scoped mythic black-gold; does not restyle Lobby home/Hub/Play */
+
+.xi-pc {
+  --pc-ink: #0a0d14;
+  --pc-panel: rgba(16, 20, 30, 0.92);
+  --pc-gold: #e8c56a;
+  --pc-gold-dim: rgba(232, 197, 106, 0.22);
+  --pc-mist: rgba(232, 220, 190, 0.9);
+  --pc-muted: rgba(232, 220, 190, 0.55);
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 0.15rem 0 1.25rem;
+  min-width: 0;
+}
+
+.xi-pc-hero {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.9rem 0.95rem;
+  border-radius: 14px;
+  border: 1px solid var(--pc-gold-dim);
+  background:
+    linear-gradient(145deg, rgba(40, 32, 18, 0.55) 0%, transparent 42%),
+    linear-gradient(180deg, rgba(22, 26, 38, 0.95), var(--pc-panel));
+  box-shadow: inset 0 1px 0 rgba(232, 197, 106, 0.12);
+}
+
+.xi-pc-avatar {
+  width: 64px;
+  height: 64px;
+  min-width: 64px;
+  border-radius: 50%;
+  border: 2px solid var(--pc-gold);
+  background:
+    radial-gradient(circle at 35% 30%, #3a455c 0%, #141a26 70%);
+  cursor: pointer;
+  padding: 0;
+}
+
+.xi-pc-id-block {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.28rem;
+  min-width: 0;
+  flex: 1;
+}
+
+.xi-pc-nick {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  color: var(--pc-mist);
+  font-family: var(--xi-font-display, "Cinzel", Georgia, serif);
+  font-size: 1.15rem;
+  letter-spacing: 0.02em;
+  text-align: left;
+  cursor: pointer;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.xi-pc-uid {
+  color: var(--pc-muted);
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.xi-pc-vip {
+  border: 1px solid var(--pc-gold-dim);
+  border-radius: 999px;
+  padding: 0.18rem 0.65rem;
+  background: linear-gradient(180deg, rgba(184, 137, 45, 0.35), rgba(20, 16, 10, 0.55));
+  color: var(--pc-gold);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+}
+
+.xi-pc-hint {
+  width: 100%;
+  margin: 0;
+  color: #e8a090;
+  font-size: 0.78rem;
+}
+
+.xi-pc-wallet,
+.xi-pc-group {
+  border-radius: 14px;
+  border: 1px solid var(--pc-gold-dim);
+  background: var(--pc-panel);
+  padding: 0.8rem 0.85rem;
+}
+
+.xi-pc-wallet-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.35rem 0.75rem;
+  margin-bottom: 0.55rem;
+}
+
+.xi-pc-section-title {
+  margin: 0;
+  font-family: var(--xi-font-display, "Cinzel", Georgia, serif);
+  font-size: 0.95rem;
+  color: var(--pc-gold);
+  font-weight: 600;
+}
+
+.xi-pc-total {
+  color: var(--pc-muted);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.xi-pc-wallet-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+}
+
+.xi-pc-coin {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 0.55rem 0.65rem;
+  border-radius: 10px;
+  border: 1px solid var(--pc-gold-dim);
+  background: linear-gradient(180deg, rgba(30, 36, 50, 0.9), rgba(12, 14, 20, 0.9));
+  min-width: 0;
+}
+
+.xi-pc-coin.is-pending .xi-pc-coin-amt,
+.xi-pc-coin.is-loading .xi-pc-coin-amt,
+.xi-pc-coin.is-error .xi-pc-coin-amt {
+  color: var(--pc-muted);
+  font-weight: 500;
+  font-size: 0.82rem;
+}
+
+.xi-pc-coin-code {
+  color: var(--pc-muted);
+  font-size: 0.7rem;
+  letter-spacing: 0.06em;
+}
+
+.xi-pc-coin-amt {
+  color: var(--pc-mist);
+  font-size: 1.05rem;
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.xi-pc-shortcuts {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.4rem;
+  margin-top: 0.65rem;
+}
+
+.xi-pc-sc {
+  min-height: 40px;
+  border-radius: 10px;
+  border: 1px solid var(--pc-gold-dim);
+  background: linear-gradient(180deg, rgba(48, 40, 22, 0.55), rgba(16, 18, 26, 0.85));
+  color: var(--pc-mist);
+  font-size: 0.72rem;
+  padding: 0.35rem 0.25rem;
+  cursor: pointer;
+}
+
+.xi-pc-sc:active {
+  transform: translateY(1px);
+  filter: brightness(1.08);
+}
+
+.xi-pc-group .xi-pc-section-title {
+  margin-bottom: 0.45rem;
+}
+
+.xi-pc-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.xi-pc-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  width: 100%;
+  min-height: 44px;
+  padding: 0.45rem 0.35rem;
+  border: 0;
+  border-bottom: 1px solid rgba(232, 197, 106, 0.1);
+  background: transparent;
+  color: var(--pc-mist);
+  font-size: 0.88rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.xi-pc-list > .xi-pc-row:last-child {
+  border-bottom: 0;
+}
+
+.xi-pc-row.is-reserved {
+  cursor: default;
+  opacity: 0.85;
+}
+
+.xi-pc-chev {
+  width: 0.45rem;
+  height: 0.45rem;
+  border-right: 1.5px solid var(--pc-gold);
+  border-top: 1.5px solid var(--pc-gold);
+  transform: rotate(45deg);
+  opacity: 0.7;
+  flex-shrink: 0;
+}
+
+.xi-pc-badge,
+.xi-pc-badge-inline {
+  flex-shrink: 0;
+  border: 1px solid var(--pc-gold-dim);
+  border-radius: 999px;
+  padding: 0.12rem 0.45rem;
+  font-size: 0.65rem;
+  color: var(--pc-gold);
+  letter-spacing: 0.02em;
+}
+
+.xi-pc-badge-inline {
+  display: inline-block;
+  margin-top: 0.35rem;
+}
+
+.xi-pc-lang-row {
+  cursor: default;
+}
+
+.xi-pc-lang-toggle {
+  display: inline-flex;
+  gap: 0.25rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.xi-pc-lang-btn {
+  min-height: 32px;
+  min-width: 2.4rem;
+  padding: 0.2rem 0.4rem;
+  border-radius: 8px;
+  border: 1px solid var(--pc-gold-dim);
+  background: rgba(10, 12, 18, 0.65);
+  color: var(--pc-muted);
+  font-size: 0.7rem;
+  cursor: pointer;
+}
+
+.xi-pc-lang-btn.is-active {
+  color: var(--pc-ink);
+  background: linear-gradient(180deg, #f0d78a, #b8892d);
+  border-color: var(--pc-gold);
+  font-weight: 700;
+}
+
+.xi-pc-logout-wrap {
+  padding: 0.35rem 0 0.15rem;
+}
+
+.xi-pc-auth-entry {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+}
+
+.xi-pc-logout {
+  width: 100%;
+  min-height: 46px;
+  border-radius: 12px;
+  border: 1px solid rgba(196, 60, 44, 0.45);
+  background: linear-gradient(180deg, rgba(80, 28, 22, 0.75), rgba(28, 12, 12, 0.92));
+  color: #f0d0c8;
+  font-size: 0.92rem;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+}
+
+.xi-pc-logout.is-secondary {
+  border-color: var(--pc-gold-dim);
+  background: linear-gradient(180deg, rgba(40, 36, 28, 0.7), rgba(16, 18, 26, 0.9));
+  color: var(--pc-mist);
+}
+
+.xi-pc-sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 0.75rem;
+  background: rgba(4, 6, 10, 0.72);
+}
+
+.xi-pc-sheet {
+  width: min(100%, 420px);
+  max-height: min(82vh, 640px);
+  overflow: auto;
+  border-radius: 16px 16px 12px 12px;
+  border: 1px solid var(--pc-gold-dim);
+  background: linear-gradient(180deg, #1a2030, #0c1018);
+  padding: 1rem 0.95rem 0.85rem;
+  color: var(--pc-mist);
+  box-shadow: 0 -8px 28px rgba(0, 0, 0, 0.45);
+}
+
+.xi-pc-sheet h2 {
+  margin: 0 0 0.65rem;
+  font-family: var(--xi-font-display, "Cinzel", Georgia, serif);
+  font-size: 1.05rem;
+  color: var(--pc-gold);
+}
+
+.xi-pc-sheet-hint {
+  margin: 0 0 0.65rem;
+  color: var(--pc-muted);
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+
+.xi-pc-sheet-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 0.85rem;
+}
+
+/* Mobile 320–430 */
+@media (max-width: 430px) {
+  .xi-pc-shortcuts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .xi-pc-avatar {
+    width: 56px;
+    height: 56px;
+    min-width: 56px;
+  }
+
+  .xi-pc-nick {
+    font-size: 1.05rem;
+  }
+
+  .xi-pc-coin-amt {
+    font-size: 0.95rem;
+  }
+}
+
+@media (max-width: 340px) {
+  .xi-pc-wallet-row {
+    grid-template-columns: 1fr;
+  }
+
+  .xi-pc-lang-btn {
+    min-width: 2.1rem;
+    font-size: 0.65rem;
+  }
+}
+
+/* Prefer reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  .xi-pc-sc:active,
+  .xi-pc-logout:active {
+    transform: none;
+  }
+}

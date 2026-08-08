@@ -9,6 +9,13 @@ interface Env {
   AB_ALLOW_TEST_IDENTITY?: string;
   AB_TEST_PLAYER_ID?: string;
   AB_FORCE_FAIL_CLOSED_IDENTITY?: string;
+  /** Auth OTP test mode — fixed code only; never enables live SMS/SMTP. */
+  AB_AUTH_OTP_TEST_MODE?: string;
+  AB_SK_SMS_ENDPOINT?: string;
+  AB_SK_SMS_API_KEY?: string;
+  AB_SMTP_HOST?: string;
+  AB_SMTP_USER?: string;
+  AB_SMTP_PASS?: string;
   IMAGES: {
     input(stream: ReadableStream): {
       transform(options: Record<string, unknown>): {
@@ -33,6 +40,24 @@ function bridgeExplicitIdentityEnv(env: Env): void {
   }
   if (env.AB_FORCE_FAIL_CLOSED_IDENTITY !== undefined) {
     process.env.AB_FORCE_FAIL_CLOSED_IDENTITY = env.AB_FORCE_FAIL_CLOSED_IDENTITY;
+  }
+  if (env.AB_AUTH_OTP_TEST_MODE !== undefined) {
+    process.env.AB_AUTH_OTP_TEST_MODE = env.AB_AUTH_OTP_TEST_MODE;
+  }
+  if (env.AB_SK_SMS_ENDPOINT !== undefined) {
+    process.env.AB_SK_SMS_ENDPOINT = env.AB_SK_SMS_ENDPOINT;
+  }
+  if (env.AB_SK_SMS_API_KEY !== undefined) {
+    process.env.AB_SK_SMS_API_KEY = env.AB_SK_SMS_API_KEY;
+  }
+  if (env.AB_SMTP_HOST !== undefined) {
+    process.env.AB_SMTP_HOST = env.AB_SMTP_HOST;
+  }
+  if (env.AB_SMTP_USER !== undefined) {
+    process.env.AB_SMTP_USER = env.AB_SMTP_USER;
+  }
+  if (env.AB_SMTP_PASS !== undefined) {
+    process.env.AB_SMTP_PASS = env.AB_SMTP_PASS;
   }
 }
 

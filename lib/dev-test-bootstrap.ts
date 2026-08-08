@@ -1,8 +1,7 @@
 /**
  * DEV/TEST bootstrap helpers for local playability.
  * Fail-closed when AB_ALLOW_TEST_IDENTITY is not set.
- * Does not alter Wallet/Ledger/Math implementations — only seeds via
- * existing public adapter methods and player row insert.
+ * Seeds via WalletAdapter public methods only (Test or Db/D1).
  */
 
 import { eq } from "drizzle-orm";
@@ -14,6 +13,15 @@ import type { TestWalletAdapter } from "./wallet-adapter.ts";
 
 const DEFAULT_CURRENCY = "MMK";
 const DEFAULT_SEED_MINOR = 100_000;
+
+type SeedableWallet = {
+  getAvailableBalance(playerId: string, currency: string): Promise<number>;
+  creditAvailable(
+    playerId: string,
+    currency: string,
+    amountMinor: number,
+  ): void | Promise<void>;
+};
 
 export async function ensureDevTestPlayer(
   db: DrizzleD1Database<typeof schema>,
@@ -46,7 +54,6 @@ export function ensureDevTestWalletSeed(
   amountMinor: number = DEFAULT_SEED_MINOR,
 ): void {
   if (!isDevTestIdentityEnabled()) return;
-  // Idempotent enough for module-lifetime adapter: only credit when empty.
   void wallet.getAvailableBalance(playerId, currency).then((bal) => {
     if (bal <= 0) {
       wallet.creditAvailable(playerId, currency, amountMinor);
@@ -54,9 +61,13 @@ export function ensureDevTestWalletSeed(
   });
 }
 
-/** Sync seed for request path (avoid race before first spin). */
+/**
+ * Sync seed for request path (avoid race before first spin).
+ * Only the fixed DevTest player id may receive the harness seed —
+ * Auth-registered players must never get fake balances.
+ */
 export async function seedDevTestWalletIfEmpty(
-  wallet: TestWalletAdapter,
+  wallet: SeedableWallet,
   playerId: string,
   currency: string,
   amountMinor: number = DEFAULT_SEED_MINOR,
@@ -65,8 +76,14 @@ export async function seedDevTestWalletIfEmpty(
     return wallet.getAvailableBalance(playerId, currency);
   }
   const bal = await wallet.getAvailableBalance(playerId, currency);
+  const allowedTestId =
+    (typeof process !== "undefined" && process.env.AB_TEST_PLAYER_ID?.trim()) ||
+    DEV_TEST_PLAYER_ID;
+  if (playerId !== allowedTestId) {
+    return bal;
+  }
   if (bal <= 0) {
-    wallet.creditAvailable(playerId, currency, amountMinor);
+    await wallet.creditAvailable(playerId, currency, amountMinor);
     return amountMinor;
   }
   return bal;
