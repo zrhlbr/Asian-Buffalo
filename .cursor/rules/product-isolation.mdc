@@ -1,0 +1,38 @@
+---
+description: 《西游戏》与《ZRHPay》彻底分离 — 最高优先级产品隔离
+alwaysApply: true
+---
+
+# 产品隔离（最高优先级）
+
+《西游戏》（本仓 / Asian-Buffalo / xibull）与《ZRHPay》是两个完全独立的产品。
+
+## 必须独立
+
+- 品牌、Logo、域名（西游戏：`www.xibull.com`）、前台、后台、菜单、管理中心
+- 数据库、配置、环境变量、Session、Cookie、JWT、管理员、权限
+- SDK、API 命名、主题、页面
+
+## 禁止
+
+- 共品牌 / 共后台 / 共前台 / 共域名 / 共菜单 / 共管理中心
+- 把 ZRHPay Website、Integration Center、Payment SDK、Accounts 产品代码放进本仓
+- 直接跨库读写 Payment DB / Account DB
+- 直接改数据库余额代替支付接口
+- 默认共用登录（若未来需要：仅「绑定 ZRHPay」，非共账号）
+- 在本仓套用 ZRHPay Design System（主色 `#0066FF` 等）作为西游戏 UI 规范
+
+## 唯一允许关系
+
+西游戏把 ZRHPay 当作**第三方支付平台**：游戏平台 → 调用支付接口 → ZRHPay 完成支付。  
+除此之外不得耦合。
+
+## 当前开发指令
+
+- **暂停** ZRHPay Website / Integration Center / Adapter / SDK 开发（勿在本会话继续）。
+- **继续** 《西游戏》游戏域工作。
+- 未经赵总批准：禁止 Commit / Push / Merge / Rebase / Deploy。
+
+## 详版
+
+见 Player 仓：`D:\Asian-Buffalo-R1-M8-Cursor-Clean\PROJECT_ISOLATION_REPORT.md`。

@@ -79,6 +79,10 @@ export class Game {
     return BET_PRESETS[this.betIndex]!;
   }
 
+  getCurrency(): string {
+    return this.provider.getCurrency();
+  }
+
   betUp(): void {
     if (this.busy) return;
     this.betIndex = Math.min(this.betIndex + 1, BET_PRESETS.length - 1);
@@ -123,6 +127,9 @@ export class Game {
       this.hud.showWin(recovered.winMinor);
       this.rig.setGrid(recovered.grid);
       this.highlightWins(recovered);
+      this.world.setFreeSpinMood(
+        recovered.isFreeGame || recovered.freeGamesRemaining > 0,
+      );
     }
   }
 
@@ -141,6 +148,7 @@ export class Game {
     this.hud.setSpinBusy(true);
     this.hud.showWin(0);
     this.rig.clearHighlights();
+    this.buffalo.interrupt();
 
     audio.unlock();
     audio.spinStart();
@@ -167,6 +175,9 @@ export class Game {
     }
 
     this.freeSpins = result.freeGamesRemaining;
+    const inFs =
+      result.isFreeGame || result.freeGamesRemaining > 0 || result.awardedFreeGames > 0;
+    this.world.setFreeSpinMood(inFs);
     await this.rig.spinAll(result.grid, this.turbo);
     audio.stopSpinLoop();
     this.hud.setBalance(result.balanceAfterMinor, true);
@@ -176,7 +187,7 @@ export class Game {
     const tier = winTier(result.winMinor, result.totalBetMinor);
     if (result.winMinor > 0) {
       this.hud.showWin(result.winMinor);
-      this.highlightWins(result);
+      await this.presentPaylines(result);
       if (result.isFreeGame) this.fsTotalWin += result.winMinor;
     }
 
@@ -186,6 +197,7 @@ export class Game {
       this.hud.toastKey("freeSpinsWon");
       this.particles.setPillars(true);
       this.world.setBloom(0.6);
+      this.world.setFreeSpinMood(true);
     }
     if (result.scatterCount >= 3) audio.scatterLand();
 
@@ -207,12 +219,15 @@ export class Game {
     if (result.isFreeGame && this.freeSpins === 0) {
       this.particles.setPillars(false);
       this.world.setBloom(0.38);
+      this.world.setFreeSpinMood(false);
       if (this.fsTotalWin > 0) {
         this.hud.showWin(this.fsTotalWin);
         audio.bigWin();
         await sleep(900);
       }
       this.fsTotalWin = 0;
+    } else if (!inFs && this.freeSpins === 0) {
+      this.world.setFreeSpinMood(false);
     }
 
     this.busy = false;
@@ -229,7 +244,8 @@ export class Game {
     }
   }
 
-  private highlightWins(result: PresentationSpinResult): void {
+  /** Collect winning cells from server payload only — never recompute wins. */
+  private collectWinCells(result: PresentationSpinResult): Array<[number, number]> {
     const cells: Array<[number, number]> = [];
     const seen = new Set<string>();
     const push = (r: number, row: number) => {
@@ -243,7 +259,6 @@ export class Game {
       push(pos.reel, pos.row);
     }
     if (result.winningPositions.length === 0 && result.lineWins.length > 0) {
-      // Fallback: highlight matching symbols on awarded lines count (left-to-right).
       for (const w of result.lineWins) {
         for (let r = 0; r < w.count && r < result.grid.length; r++) {
           for (let row = 0; row < ROWS; row++) {
@@ -260,40 +275,100 @@ export class Game {
         }
       }
     }
-    if (cells.length) this.rig.highlightCells(cells);
+    return cells;
+  }
+
+  private highlightWins(result: PresentationSpinResult): void {
+    const cells = this.collectWinCells(result);
+    if (cells.length) this.rig.highlightCells(cells, result.grid);
+    this.playWinSymbolCues(result, cells);
+  }
+
+  /** One soft cue per winning animal/special — never triggers business IO. */
+  private playWinSymbolCues(
+    result: PresentationSpinResult,
+    cells: Array<[number, number]>,
+  ): void {
+    const heard = new Set<string>();
+    for (const [reel, row] of cells) {
+      const s = result.grid[reel]?.[row];
+      if (!s || heard.has(s)) continue;
+      if (
+        s === "buffalo" ||
+        s === "lion" ||
+        s === "elephant" ||
+        s === "zebra" ||
+        s === "antelope" ||
+        s === "wild" ||
+        s === "scatter"
+      ) {
+        heard.add(s);
+        audio.animalCue(s);
+      }
+    }
+  }
+
+  /** Multi-line sequential highlight (server lineWins order), then settle on all. */
+  private async presentPaylines(result: PresentationSpinResult): Promise<void> {
+    if (result.lineWins.length > 1 && !this.turbo) {
+      for (const w of result.lineWins.slice(0, 6)) {
+        const cells: Array<[number, number]> = [];
+        for (let r = 0; r < w.count && r < result.grid.length; r++) {
+          for (let row = 0; row < ROWS; row++) {
+            const s = result.grid[r]![row];
+            if (s === w.symbol || s === "wild") cells.push([r, row]);
+          }
+        }
+        if (cells.length) {
+          this.rig.highlightCells(cells, result.grid);
+          await sleep(380);
+        }
+      }
+    }
+    this.highlightWins(result);
   }
 
   private fireTierEffects(tier: WinTier): void {
-    const center = new THREE.Vector3(0.9, 2.4, 1.5);
+    const center = new THREE.Vector3(0, 2.4, 1.5);
     switch (tier) {
       case "big":
         audio.bigWin();
-        this.buffalo.run();
-        this.particles.burstSparks(center, 90);
-        this.particles.coinBurst(center, 60);
+        this.buffalo.bigWin();
+        this.world.shake(0.18, 5.2);
+        this.world.punchZoom(0.32);
+        this.particles.burstSparks(center, 140);
+        this.particles.coinBurst(center, 110);
+        this.particles.setPillars(true);
         break;
       case "mega":
         audio.megaWin();
         this.buffalo.run();
-        this.particles.burstSparks(center, 160, 7);
-        this.particles.coinBurst(center, 120);
+        this.world.shake(0.28, 4.4);
+        this.world.punchZoom(0.48);
+        this.particles.burstSparks(center, 210, 7);
+        this.particles.coinBurst(center, 170);
+        this.particles.coinRainActive = true;
         this.particles.setPillars(true);
         break;
       case "ultra":
         audio.ultraWin();
         this.buffalo.victory();
-        this.particles.burstSparks(center, 240, 9);
+        this.world.shake(0.4, 3.5);
+        this.world.punchZoom(0.62);
+        this.particles.burstSparks(center, 300, 9);
         this.particles.coinRainActive = true;
         this.particles.setPillars(true);
-        this.world.setBloom(0.7);
+        this.world.setBloom(0.78);
         break;
       case "jackpot":
         audio.jackpot();
-        this.buffalo.victory();
-        this.particles.burstSparks(center, 320, 11);
+        this.buffalo.jackpot();
+        this.world.shake(0.52, 2.9);
+        this.world.punchZoom(0.78);
+        this.particles.burstSparks(center, 380, 12);
         this.particles.coinRainActive = true;
         this.particles.setPillars(true);
-        this.world.setBloom(0.8);
+        this.world.setBloom(0.9);
         break;
       default:
         break;

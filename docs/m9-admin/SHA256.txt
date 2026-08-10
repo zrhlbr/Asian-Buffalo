@@ -1,0 +1,36 @@
+# m9-admin SHA256 delivery hashes
+# Generated: 2026-08-07 06:07:52
+# Algorithm: SHA256 (Get-FileHash -LiteralPath)
+# Scope: lib/admin/*.ts, app/admin/** (tsx/css), app/api/admin/**, tests/r1-m7-admin.test.mjs, docs/m9-admin/*.md
+
+183e85a2c9dc0fb7a19195eed3d23a9be897ebfc6b4d6d3ae8600431d0092ec6  app/admin/admin.css
+d882c548816535bb3eb2e68cca4c5fa30e6c3ccbe8acf5dc476387d6c8c44b36  app/admin/admin-app.tsx
+570a03d931b0dc86001d125378444f69a0bb7e018b5099a74afc5f1013c9eddb  app/admin/admin-ui.tsx
+92e6d1a386857428f3b9f5da102e3aa3912256d72b2ed2145b6e4709eef3c294  app/admin/icons.tsx
+cf1ffdf8efa807a25c7ef54fbc24e0af232068ffdc4f5c6f42d7488df0b2b50d  app/admin/layout.tsx
+c8152dfd9e6d0bd0bfe63d8c53f5035d2ef6974e7875c3407440a26d587590a7  app/admin/modules/admins.tsx
+88bb0bfcb2a8d8de25b560c4adb62d9ab7abccd0510f2ae40a1ef93f83e56dae  app/admin/modules/dashboard.tsx
+0d9e8be34a4379daeb86c2bdd385b0b03b0ebef1284fd6b6d0a747ae2394888e  app/admin/modules/ledger.tsx
+17bd427f40db7244de0b99893d87894da6077089fb8b3d27c7cb6b8dae0ccd59  app/admin/modules/math.tsx
+628512f8eca5cf51a9006d55a7988ba562b9f8c508ca6014da72ab0785b1b511  app/admin/modules/players.tsx
+2c772c3e3a59adc7bc3b3294744bfe4b9794942287ec0c45174783de1b24e4e0  app/admin/modules/reports.tsx
+9c4726aeafdc8d69a3c73697cbed9cee4c5b2ae822d7ed7ce11ef8c62d52e4b1  app/admin/modules/risk.tsx
+2ff234b7610ec3bf3ed46fd912716a4d8489399692a736becccd1a397ec23be2  app/admin/modules/rounds.tsx
+d2531bf0ebb4ae0d6f01ce0fa7f5afd501167839136b9821636910aaa200fd3b  app/admin/modules/sessions.tsx
+91588b7e93acb191e7515bfbdb15e34e4ce535f5ce68d9df170fd0cd840cdf25  app/admin/modules/spins.tsx
+0d90eb4652f915cfdef37276e60cc637643608c998e4a56a6532f8feba5dce71  app/admin/modules/system.tsx
+bcc38cca85f67799c41f85319ce8fca0792c0479f589130d94a26abd5e403893  app/admin/modules/wallet.tsx
+698b3b2e9265429e979cd0d65cc5c4b398ea8460382077b87686f87de714ed91  app/admin/page.tsx
+b447eab502df049444da86509ac6d6427f43c969a8e100ad7d0dba254d6f8b35  app/api/admin/[...slug]/route.ts
+decaba711f8a653898b7489d63b3c2136a84777d4332fe7b2833ab544fa13f3b  docs/m9-admin/BASELINE_MIGRATION.md
+615b9990872b622cbd0b3ecace544d89340af0c12e608a2e7e41558d37a73715  docs/m9-admin/HANDOFF.md
+c5c44053c6051d7d7c50440156a6e50d2267713806c371077946db4fad9d9f6b  docs/m9-admin/PROGRESS.md
+0f73d7f724fe8f0204ec8fff66968af4b199afa045b6293810d5e046d1cfd322  docs/m9-admin/REVIEW_PATCH.md
+7239383fa7e75b377ef4de4c7f969b4502e96b3830f5e63ea221ef42f28f8e81  docs/m9-admin/RISK.md
+2cd09b12f08ddaa42a3af63358d2a5f2a3472db37bb4e37de58ec0abd0183430  docs/m9-admin/ROLLBACK.md
+42f206f261dee6783b76a8a0c37b1198842c1ecea77191cd3ffd691edf5123e3  lib/admin/admin-api.ts
+c1e5ed28ba093bb6672b3d52ce4928d3f1a94e84ef63a8d6c71e2b624f789c78  lib/admin/admin-auth.ts
+859d2b070804ac5d9ddd14f5e860b463a4586a8702733cd7d634d61a9aa1a4e7  lib/admin/admin-bootstrap.ts
+e9a4811b6763d9891627e928c694d9a2019497ca9a7b0cba0e93cb92c2cc43c5  lib/admin/admin-queries.ts
+e8ea0f78eb9816e6ff1979f045560631c5feabf748ca30997ccf61d9b22b6e1d  lib/admin/i18n.ts
+22b008afca5d117429980e1b684966f275dd7e5fd9d5a5dfc2c539cef4cf622f  tests/r1-m7-admin.test.mjs

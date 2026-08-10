@@ -46,6 +46,10 @@ export class MockProvider implements GameProvider {
     return this.balance;
   }
 
+  getCurrency(): string {
+    return "MMK";
+  }
+
   getFreeGamesRemaining(): number {
     return this.freeGamesRemaining;
   }

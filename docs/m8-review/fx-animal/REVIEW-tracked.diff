@@ -1,0 +1,1943 @@
+﻿diff --git a/client/m5/audio.ts b/client/m5/audio.ts
+index ee57838..7502e4f 100644
+--- a/client/m5/audio.ts
++++ b/client/m5/audio.ts
+@@ -3,33 +3,58 @@
+  * BGM: pentatonic savanna loop. SFX: spin / reel stop / win / tiers / roar / free spins.
+  */
+ 
++const VOLUME_KEY = "ab-m6-volume";
++
+ export class AudioEngine {
+   private ctx: AudioContext | null = null;
+   private master: GainNode | null = null;
+   private bgmGain: GainNode | null = null;
++  private ambientGain: GainNode | null = null;
+   private bgmTimer: number | null = null;
++  private ambientTimer: number | null = null;
+   private bgmStep = 0;
+   private muted = false;
++  private volume = 0.8;
++  private backgroundDimmed = false;
+   private spinNoise: { src: AudioBufferSourceNode; gain: GainNode } | null = null;
+ 
++  constructor() {
++    try {
++      if (typeof localStorage !== "undefined") {
++        const v = Number(localStorage.getItem(VOLUME_KEY));
++        if (Number.isFinite(v) && v >= 0 && v <= 1) this.volume = v;
++      }
++    } catch {
++      /* ignore */
++    }
++  }
++
++  private targetMaster(): number {
++    if (this.muted) return 0;
++    return this.volume * (this.backgroundDimmed ? 0.15 : 1);
++  }
++
+   private ensure(): AudioContext | null {
+     if (this.ctx) return this.ctx;
+     try {
+       const AC = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+       this.ctx = new AC();
+       this.master = this.ctx.createGain();
+-      this.master.gain.value = this.muted ? 0 : 0.8;
++      this.master.gain.value = this.targetMaster();
+       this.master.connect(this.ctx.destination);
+       this.bgmGain = this.ctx.createGain();
+       this.bgmGain.gain.value = 0.32;
+       this.bgmGain.connect(this.master);
++      this.ambientGain = this.ctx.createGain();
++      this.ambientGain.gain.value = 0.12;
++      this.ambientGain.connect(this.master);
+     } catch {
+       return null;
+     }
+     return this.ctx;
+   }
+ 
+-  /** must be called from a user gesture */
++  /** must be called from a user gesture 鈥?never recreates an existing context */
+   unlock(): void {
+     const ctx = this.ensure();
+     if (ctx && ctx.state === "suspended") void ctx.resume();
+@@ -37,16 +62,71 @@ export class AudioEngine {
+ 
+   setMuted(m: boolean): void {
+     this.muted = m;
++    this.applyMaster();
++  }
++  get isMuted(): boolean { return this.muted; }
++
++  setVolume(v: number): void {
++    this.volume = Math.max(0, Math.min(1, v));
++    try {
++      localStorage.setItem(VOLUME_KEY, String(this.volume));
++    } catch {
++      /* ignore */
++    }
++    this.applyMaster();
++  }
++  getVolume(): number {
++    return this.volume;
++  }
++
++  /** Page hidden 鈫?dim; never tears down AudioContext. */
++  setBackgroundDimmed(dim: boolean): void {
++    this.backgroundDimmed = dim;
++    this.applyMaster();
++  }
++
++  private applyMaster(): void {
+     if (this.master && this.ctx) {
+-      this.master.gain.linearRampToValueAtTime(m ? 0 : 0.8, this.ctx.currentTime + 0.15);
++      this.master.gain.cancelScheduledValues(this.ctx.currentTime);
++      this.master.gain.linearRampToValueAtTime(
++        this.targetMaster(),
++        this.ctx.currentTime + 0.15,
++      );
++    }
++  }
++
++  // ---------------- Ambient (wind / birds 鈥?soft procedural) ----------------
++  startAmbient(): void {
++    const ctx = this.ensure();
++    if (!ctx || !this.ambientGain || this.ambientTimer !== null) return;
++    const tick = () => {
++      if (!this.ctx || !this.ambientGain) return;
++      const t0 = this.ctx.currentTime;
++      // soft wind noise puff
++      this.noiseBurst(0.9, 0.04, 400, "lowpass");
++      // occasional bird chirp
++      if (Math.random() < 0.35) {
++        const f = 1800 + Math.random() * 900;
++        this.note(f, t0, 0.12, 0.05, "sine", 0.01, this.ambientGain);
++        this.note(f * 1.25, t0 + 0.08, 0.1, 0.04, "sine", 0.01, this.ambientGain);
++      }
++    };
++    tick();
++    this.ambientTimer = window.setInterval(tick, 2200 + Math.random() * 800);
++  }
++
++  stopAmbient(): void {
++    if (this.ambientTimer !== null) {
++      clearInterval(this.ambientTimer);
++      this.ambientTimer = null;
+     }
+   }
+-  get isMuted(): boolean { return this.muted; }
+ 
+   // ---------------- BGM ----------------
+   startBgm(): void {
+     const ctx = this.ensure();
+     if (!ctx || this.bgmTimer !== null) return;
++    this.startAmbient();
+     // pentatonic flute-ish melody (C major pentatonic), 8 steps per bar
+     const scale = [261.63, 293.66, 329.63, 392.0, 440.0, 523.25, 587.33, 659.25];
+     const melody = [0, 2, 4, 7, 4, 2, 5, 4, 0, 2, 4, 5, 7, 5, 4, 2];
+@@ -71,6 +151,7 @@ export class AudioEngine {
+ 
+   stopBgm(): void {
+     if (this.bgmTimer !== null) { clearInterval(this.bgmTimer); this.bgmTimer = null; }
++    this.stopAmbient();
+   }
+ 
+   private note(freq: number, t0: number, dur: number, vol: number, type: OscillatorType, attack: number, dest?: AudioNode): void {
+@@ -195,6 +276,38 @@ export class AudioEngine {
+   winSmall(): void { this.blip([523, 659, 784, 1047], 0.09, 0.3); }
+   scatterLand(): void { this.blip([1568, 2093], 0.08, 0.3, "sine"); }
+ 
++  /** Soft animal / special SFX 鈥?presentation only, never blocks gameplay. */
++  animalCue(kind: "buffalo" | "lion" | "elephant" | "zebra" | "antelope" | "wild" | "scatter"): void {
++    try {
++      switch (kind) {
++        case "buffalo":
++          this.blip([90, 70], 0.12, 0.22, "sawtooth");
++          this.noiseBurst(0.25, 0.1, 280, "lowpass");
++          break;
++        case "lion":
++          this.blip([120, 85], 0.14, 0.2, "sawtooth");
++          break;
++        case "elephant":
++          this.blip([220, 180, 140], 0.16, 0.22, "sine");
++          break;
++        case "zebra":
++        case "antelope":
++          this.blip([640, 720], 0.06, 0.14, "triangle");
++          break;
++        case "wild":
++          this.blip([880, 1320, 1760], 0.07, 0.22, "sine");
++          break;
++        case "scatter":
++          this.blip([1175, 1568, 2093], 0.09, 0.28, "sine");
++          break;
++        default:
++          break;
++      }
++    } catch {
++      /* audio failure must never block spins */
++    }
++  }
++
+   bigWin(): void {
+     this.blip([523, 659, 784, 1047, 1319, 1568], 0.11, 0.4);
+     setTimeout(() => this.blip([784, 988, 1175, 1568, 2093], 0.11, 0.35), 500);
+diff --git a/client/m5/boot.ts b/client/m5/boot.ts
+index ae6a5d6..c176699 100644
+--- a/client/m5/boot.ts
++++ b/client/m5/boot.ts
+@@ -1,5 +1,5 @@
+ /**
+- * M5 boot 鈥?single formal frontend entry (Three.js + HUD).
++ * M5/M6 boot 鈥?single formal frontend entry (Three.js + HUD).
+  * Uses FormalGameProvider only. Isolated demo providers are never imported here.
+  */
+ import "./styles.css";
+@@ -12,6 +12,18 @@ import { Game } from "./game/game.ts";
+ import { Hud } from "./ui/hud.ts";
+ import { FormalGameProvider } from "./formal-provider.ts";
+ import { validateDicts, getLang, setLang, type Lang } from "./i18n.ts";
++import { preloadSymbolArt } from "./game/symbols.ts";
++import {
++  allowDebugHooks,
++  FpsGovernor,
++  profileFor,
++  readStoredQualityMode,
++  resolveTier,
++  storeQualityMode,
++  type QualityMode,
++  type QualityTier,
++} from "./quality.ts";
++import { audio } from "./audio.ts";
+ import type { SymbolId } from "./adapter.ts";
+ 
+ export type M5Handle = {
+@@ -26,21 +38,81 @@ export function bootM5(root: HTMLElement): M5Handle {
+   const canvas = root.querySelector<HTMLCanvasElement>("#gl");
+   if (!canvas) throw new Error("M5 canvas #gl missing");
+ 
+-  const world = new World(canvas);
++  let qualityMode = readStoredQualityMode();
++  let activeTier = resolveTier(qualityMode);
++  let profile = profileFor(activeTier);
++
++  const world = new World(canvas, profile);
+   const particles = new Particles(world.scene);
+-  const buffalo = new Buffalo();
++  particles.setBudgets(profile.coinBudget, profile.particleBudget);
++  const buffalo = new Buffalo(profile.furShells);
+   buffalo.setParticles(particles);
+   world.scene.add(buffalo.group);
+ 
+   const rig = new ReelRig();
+   world.scene.add(rig.group);
+-  const applyAspect = () =>
+-    rig.setAspect(root.clientWidth / Math.max(root.clientHeight, 1));
++  /** Read CSS safe-area insets (notch / home indicator) when available. */
++  const readSidePadPx = (): number => {
++    const probe = document.createElement("div");
++    probe.style.cssText =
++      "position:fixed;left:0;top:0;width:env(safe-area-inset-left,0px);height:0;visibility:hidden;pointer-events:none";
++    document.body.appendChild(probe);
++    const left = probe.getBoundingClientRect().width;
++    probe.style.width = "env(safe-area-inset-right,0px)";
++    const right = probe.getBoundingClientRect().width;
++    probe.remove();
++    // Minimum 2px optical gutter; expand for real notches
++    return Math.max(2, left, right, 2);
++  };
++
++  /** M8 P0: reels full-bleed; buffalo becomes background atmosphere. */
++  const applyAspect = () => {
++    const w = root.clientWidth;
++    const h = Math.max(root.clientHeight, 1);
++    const aspect = w / h;
++    const sidePad = readSidePadPx();
++    const fov = world.applyCommercialFov(aspect, w, h);
++    // Iterate so camera z and reel scale converge on near-edge fill
++    for (let i = 0; i < 4; i++) {
++      rig.setAspect(aspect, world.getCameraZ(), fov, sidePad, w, h);
++      world.setFrameHalfWidth(rig.scaledFrameHalfWidth());
++    }
++    // Buffalo deep background 鈥?never compete with reel width
++    if (aspect < 1.05) {
++      buffalo.setHomeLayout(-3.8, 0, -4.2, 0.55);
++    } else if (aspect <= 2.55) {
++      buffalo.setHomeLayout(-10.5, 0, -5.2, 0.5);
++    } else {
++      buffalo.setHomeLayout(-9.0, 0, -3.2, 0.78);
++    }
++  };
+   applyAspect();
+ 
++  const artReady = Promise.race([
++    preloadSymbolArt(),
++    new Promise<void>((r) => setTimeout(r, 2800)),
++  ]);
++
+   const provider = new FormalGameProvider();
+   const game = new Game(provider, rig, buffalo, particles, world);
+-  const hud = new Hud(game);
++  const hud = new Hud(game, {
++    getQualityMode: () => qualityMode,
++    setQualityMode: (mode: QualityMode) => {
++      qualityMode = mode;
++      storeQualityMode(mode);
++      activeTier = resolveTier(mode);
++      profile = profileFor(activeTier);
++      world.applyQuality(profile);
++      buffalo.setFurShells(profile.furShells);
++      particles.setBudgets(profile.coinBudget, profile.particleBudget);
++      rig.setSymbolAnimIntensity(profile.symbolAnimIntensity);
++      if (qualityMode === "auto") {
++        governor.setAutoCeiling(activeTier);
++      } else {
++        governor.setManual(activeTier);
++      }
++    },
++  });
+   void hud;
+ 
+   void game.bootstrap().catch((err) => {
+@@ -49,40 +121,84 @@ export function bootM5(root: HTMLElement): M5Handle {
+     if (loading) loading.textContent = String(err?.message ?? err);
+   });
+ 
+-  const debug = {
+-    game,
+-    setLang: (l: Lang) => setLang(l),
+-    getLang,
+-    spin: () => void game.spin(),
+-    state: () => ({
+-      lang: getLang(),
+-      busy: game.busy,
+-      freeSpins: game.freeSpins,
+-      balance: provider.getBalance(),
+-      bet: game.bet,
+-      sessionId: provider.getSessionId(),
+-      mathVersionId: provider.getMathVersionId(),
+-      auto: game.autoMode,
+-      turbo: game.turbo,
+-    }),
+-  };
+-  (window as unknown as { __game: typeof debug }).__game = debug;
++  if (allowDebugHooks()) {
++    const debug = {
++      game,
++      rig,
++      buffalo,
++      world,
++      setLang: (l: Lang) => setLang(l),
++      getLang,
++      spin: () => void game.spin(),
++      setQuality: (mode: QualityMode) => hud.setQualityMode?.(mode),
++      state: () => ({
++        lang: getLang(),
++        busy: game.busy,
++        freeSpins: game.freeSpins,
++        balance: provider.getBalance(),
++        bet: game.bet,
++        sessionId: provider.getSessionId(),
++        mathVersionId: provider.getMathVersionId(),
++        auto: game.autoMode,
++        turbo: game.turbo,
++        qualityMode,
++        qualityTier: activeTier,
++        reelScale: rig.scaleFactor,
++        reelX: rig.group.position.x,
++        camZ: world.getCameraZ(),
++        fov: world.camera.fov,
++        edge: rig.measureScreenFill(world.camera),
++      }),
++    };
++    (window as unknown as { __game: typeof debug }).__game = debug;
++  } else {
++    try {
++      delete (window as unknown as { __game?: unknown }).__game;
++    } catch {
++      /* ignore */
++    }
++  }
+ 
+   const clock = new THREE.Clock();
+-  let slowFrames = 0;
+-  let degraded = false;
+   let raf = 0;
+   let alive = true;
++  let pageVisible = !document.hidden;
++
++  const governor = new FpsGovernor(activeTier, (tier: QualityTier) => {
++    if (qualityMode !== "auto") return;
++    activeTier = tier;
++    profile = profileFor(tier);
++    world.applyQuality(profile);
++    buffalo.setFurShells(profile.furShells);
++    particles.setBudgets(profile.coinBudget, profile.particleBudget);
++    rig.setSymbolAnimIntensity(profile.symbolAnimIntensity);
++  });
++
++  // Initial symbol-life LOD from quality profile
++  rig.setSymbolAnimIntensity(profile.symbolAnimIntensity);
+ 
+   const onResize = () => {
+-    applyAspect();
+     world.resize();
++    applyAspect();
+   };
+   window.addEventListener("resize", onResize);
+ 
++  const onVisibility = () => {
++    pageVisible = !document.hidden;
++    if (document.hidden) {
++      audio.setBackgroundDimmed(true);
++      clock.getDelta(); // discard large dt on resume
++    } else {
++      audio.setBackgroundDimmed(false);
++      clock.getDelta();
++    }
++  };
++  document.addEventListener("visibilitychange", onVisibility);
++
+   function frame(): void {
+     if (!alive) return;
+     raf = requestAnimationFrame(frame);
++    if (!pageVisible) return;
+     const dt = Math.min(clock.getDelta(), 0.05);
+     const time = clock.elapsedTime;
+     world.update(dt);
+@@ -90,20 +206,16 @@ export function bootM5(root: HTMLElement): M5Handle {
+     buffalo.update(dt, time);
+     particles.update(dt, time);
+     world.render();
+-    if (!degraded) {
+-      if (dt > 0.024) slowFrames++;
+-      else slowFrames = Math.max(0, slowFrames - 2);
+-      if (slowFrames > 90) {
+-        degraded = true;
+-        world.renderer.setPixelRatio(1);
+-        world.resize();
+-      }
++    if (qualityMode === "auto") {
++      governor.tick(performance.now());
+     }
+   }
+   frame();
+ 
+   const loading = root.querySelector("#loading");
+-  window.setTimeout(() => loading?.classList.add("done"), 500);
++  void artReady.finally(() => {
++    window.setTimeout(() => loading?.classList.add("done"), 200);
++  });
+ 
+   return {
+     game,
+@@ -111,8 +223,14 @@ export function bootM5(root: HTMLElement): M5Handle {
+       alive = false;
+       cancelAnimationFrame(raf);
+       window.removeEventListener("resize", onResize);
++      document.removeEventListener("visibilitychange", onVisibility);
++      try {
++        delete (window as unknown as { __game?: unknown }).__game;
++      } catch {
++        /* ignore */
++      }
+       try {
+-        world.renderer.dispose();
++        world.dispose();
+       } catch {
+         /* ignore */
+       }
+diff --git a/client/m5/game/game.ts b/client/m5/game/game.ts
+index d1afb55..66389ae 100644
+--- a/client/m5/game/game.ts
++++ b/client/m5/game/game.ts
+@@ -79,6 +79,10 @@ export class Game {
+     return BET_PRESETS[this.betIndex]!;
+   }
+ 
++  getCurrency(): string {
++    return this.provider.getCurrency();
++  }
++
+   betUp(): void {
+     if (this.busy) return;
+     this.betIndex = Math.min(this.betIndex + 1, BET_PRESETS.length - 1);
+@@ -123,6 +127,9 @@ export class Game {
+       this.hud.showWin(recovered.winMinor);
+       this.rig.setGrid(recovered.grid);
+       this.highlightWins(recovered);
++      this.world.setFreeSpinMood(
++        recovered.isFreeGame || recovered.freeGamesRemaining > 0,
++      );
+     }
+   }
+ 
+@@ -141,6 +148,7 @@ export class Game {
+     this.hud.setSpinBusy(true);
+     this.hud.showWin(0);
+     this.rig.clearHighlights();
++    this.buffalo.interrupt();
+ 
+     audio.unlock();
+     audio.spinStart();
+@@ -167,6 +175,9 @@ export class Game {
+     }
+ 
+     this.freeSpins = result.freeGamesRemaining;
++    const inFs =
++      result.isFreeGame || result.freeGamesRemaining > 0 || result.awardedFreeGames > 0;
++    this.world.setFreeSpinMood(inFs);
+     await this.rig.spinAll(result.grid, this.turbo);
+     audio.stopSpinLoop();
+     this.hud.setBalance(result.balanceAfterMinor, true);
+@@ -176,7 +187,7 @@ export class Game {
+     const tier = winTier(result.winMinor, result.totalBetMinor);
+     if (result.winMinor > 0) {
+       this.hud.showWin(result.winMinor);
+-      this.highlightWins(result);
++      await this.presentPaylines(result);
+       if (result.isFreeGame) this.fsTotalWin += result.winMinor;
+     }
+ 
+@@ -186,6 +197,7 @@ export class Game {
+       this.hud.toastKey("freeSpinsWon");
+       this.particles.setPillars(true);
+       this.world.setBloom(0.6);
++      this.world.setFreeSpinMood(true);
+     }
+     if (result.scatterCount >= 3) audio.scatterLand();
+ 
+@@ -207,12 +219,15 @@ export class Game {
+     if (result.isFreeGame && this.freeSpins === 0) {
+       this.particles.setPillars(false);
+       this.world.setBloom(0.38);
++      this.world.setFreeSpinMood(false);
+       if (this.fsTotalWin > 0) {
+         this.hud.showWin(this.fsTotalWin);
+         audio.bigWin();
+         await sleep(900);
+       }
+       this.fsTotalWin = 0;
++    } else if (!inFs && this.freeSpins === 0) {
++      this.world.setFreeSpinMood(false);
+     }
+ 
+     this.busy = false;
+@@ -229,7 +244,8 @@ export class Game {
+     }
+   }
+ 
+-  private highlightWins(result: PresentationSpinResult): void {
++  /** Collect winning cells from server payload only 鈥?never recompute wins. */
++  private collectWinCells(result: PresentationSpinResult): Array<[number, number]> {
+     const cells: Array<[number, number]> = [];
+     const seen = new Set<string>();
+     const push = (r: number, row: number) => {
+@@ -243,7 +259,6 @@ export class Game {
+       push(pos.reel, pos.row);
+     }
+     if (result.winningPositions.length === 0 && result.lineWins.length > 0) {
+-      // Fallback: highlight matching symbols on awarded lines count (left-to-right).
+       for (const w of result.lineWins) {
+         for (let r = 0; r < w.count && r < result.grid.length; r++) {
+           for (let row = 0; row < ROWS; row++) {
+@@ -260,40 +275,100 @@ export class Game {
+         }
+       }
+     }
+-    if (cells.length) this.rig.highlightCells(cells);
++    return cells;
++  }
++
++  private highlightWins(result: PresentationSpinResult): void {
++    const cells = this.collectWinCells(result);
++    if (cells.length) this.rig.highlightCells(cells, result.grid);
++    this.playWinSymbolCues(result, cells);
++  }
++
++  /** One soft cue per winning animal/special 鈥?never triggers business IO. */
++  private playWinSymbolCues(
++    result: PresentationSpinResult,
++    cells: Array<[number, number]>,
++  ): void {
++    const heard = new Set<string>();
++    for (const [reel, row] of cells) {
++      const s = result.grid[reel]?.[row];
++      if (!s || heard.has(s)) continue;
++      if (
++        s === "buffalo" ||
++        s === "lion" ||
++        s === "elephant" ||
++        s === "zebra" ||
++        s === "antelope" ||
++        s === "wild" ||
++        s === "scatter"
++      ) {
++        heard.add(s);
++        audio.animalCue(s);
++      }
++    }
++  }
++
++  /** Multi-line sequential highlight (server lineWins order), then settle on all. */
++  private async presentPaylines(result: PresentationSpinResult): Promise<void> {
++    if (result.lineWins.length > 1 && !this.turbo) {
++      for (const w of result.lineWins.slice(0, 6)) {
++        const cells: Array<[number, number]> = [];
++        for (let r = 0; r < w.count && r < result.grid.length; r++) {
++          for (let row = 0; row < ROWS; row++) {
++            const s = result.grid[r]![row];
++            if (s === w.symbol || s === "wild") cells.push([r, row]);
++          }
++        }
++        if (cells.length) {
++          this.rig.highlightCells(cells, result.grid);
++          await sleep(380);
++        }
++      }
++    }
++    this.highlightWins(result);
+   }
+ 
+   private fireTierEffects(tier: WinTier): void {
+-    const center = new THREE.Vector3(0.9, 2.4, 1.5);
++    const center = new THREE.Vector3(0, 2.4, 1.5);
+     switch (tier) {
+       case "big":
+         audio.bigWin();
+-        this.buffalo.run();
+-        this.particles.burstSparks(center, 90);
+-        this.particles.coinBurst(center, 60);
++        this.buffalo.bigWin();
++        this.world.shake(0.18, 5.2);
++        this.world.punchZoom(0.32);
++        this.particles.burstSparks(center, 140);
++        this.particles.coinBurst(center, 110);
++        this.particles.setPillars(true);
+         break;
+       case "mega":
+         audio.megaWin();
+         this.buffalo.run();
+-        this.particles.burstSparks(center, 160, 7);
+-        this.particles.coinBurst(center, 120);
++        this.world.shake(0.28, 4.4);
++        this.world.punchZoom(0.48);
++        this.particles.burstSparks(center, 210, 7);
++        this.particles.coinBurst(center, 170);
++        this.particles.coinRainActive = true;
+         this.particles.setPillars(true);
+         break;
+       case "ultra":
+         audio.ultraWin();
+         this.buffalo.victory();
+-        this.particles.burstSparks(center, 240, 9);
++        this.world.shake(0.4, 3.5);
++        this.world.punchZoom(0.62);
++        this.particles.burstSparks(center, 300, 9);
+         this.particles.coinRainActive = true;
+         this.particles.setPillars(true);
+-        this.world.setBloom(0.7);
++        this.world.setBloom(0.78);
+         break;
+       case "jackpot":
+         audio.jackpot();
+-        this.buffalo.victory();
+-        this.particles.burstSparks(center, 320, 11);
++        this.buffalo.jackpot();
++        this.world.shake(0.52, 2.9);
++        this.world.punchZoom(0.78);
++        this.particles.burstSparks(center, 380, 12);
+         this.particles.coinRainActive = true;
+         this.particles.setPillars(true);
+-        this.world.setBloom(0.8);
++        this.world.setBloom(0.9);
+         break;
+       default:
+         break;
+diff --git a/client/m5/game/reels.ts b/client/m5/game/reels.ts
+index b410875..05a9a27 100644
+--- a/client/m5/game/reels.ts
++++ b/client/m5/game/reels.ts
+@@ -1,16 +1,64 @@
+ /**
+- * Reels 鈥?5脳4 reel rig rendered as textured planes inside a gold 3D frame.
+- * Spin: staggered ease-out per reel, texture cycling, speed stretch, landing bounce.
++ * Reels 鈥?5脳4 commercial rig (M8).
++ * P0: full-bleed mobile width 鈥?frame left/right near screen edges.
++ * Spin direction (mandatory): TOP 鈫?BOTTOM (symbols enter from above, exit below).
++ * Spin: staggered ease-out, texture cycling, speed stretch, landing bounce.
+  */
+ import * as THREE from "three";
+ import { REELS, ROWS, type SymbolId } from "../adapter.ts";
+ import { symbolTexture, ALL_SYMBOLS } from "./symbols.ts";
++import {
++  createSymbolMaterial,
++  setSymbolMap,
++  symbolAnimKind,
++  symbolPhase,
++  updateSymbolLife,
++  type SymbolAnimIntensity,
++} from "./symbol-life.ts";
+ 
+ const CELL = 1.12;
+ const GAP = 0.02;
++const FRAME_PAD = 0.28;
++/** Slim edge trim 鈥?thick rails are misread as side gutters on phones. */
++const OUTER_RAIL = 0.14;
+ 
+-function cellY(r: number, frac: number): number {
+-  return (ROWS / 2 - 0.5 - r + frac) * (CELL + GAP);
++/** Visual spin axis 鈥?always downward for normal / turbo / auto / free spin. */
++export const REEL_SPIN_DIRECTION = "down" as const;
++
++/** Unscaled half-width of the commercial metal frame (world units). */
++export function reelFrameHalfWidth(): number {
++  return (REELS * (CELL + GAP) + FRAME_PAD) / 2 + OUTER_RAIL;
++}
++
++/**
++ * Row r=0 is top (max Y). Positive `frac` shifts symbols downward (鈭扽)
++ * so increasing spin position reads as top鈫抌ottom motion.
++ */
++export function cellY(r: number, frac: number): number {
++  return (ROWS / 2 - 0.5 - r - frac) * (CELL + GAP);
++}
++
++/**
++ * Strip index for downward scroll.
++ * As `base` increases, new symbols enter at the top; final window shows
++ * `seq` stored with the visible column reversed (see `toSpinSeq`).
++ */
++export function stripIndex(base: number, r: number): number {
++  return base - r + (ROWS - 1);
++}
++
++/** Store column reversed so stripIndex + downward frac keeps server row0 at top when stopped. */
++export function toSpinSeq(col: SymbolId[]): SymbolId[] {
++  return col.slice().reverse();
++}
++
++/** Read back server-facing column (row0 top) from a spin strip window at rest. */
++export function fromSpinSeqWindow(seq: SymbolId[], base: number): SymbolId[] {
++  const out: SymbolId[] = [];
++  for (let r = 0; r < ROWS; r++) {
++    out.push(seq[stripIndex(base, r)]!);
++  }
++  return out;
+ }
+ 
+ class Reel {
+@@ -18,13 +66,16 @@ class Reel {
+   readonly group = new THREE.Group();
+   private cells: THREE.Mesh[] = [];
+   private seq: SymbolId[] = [];
+-  private pos = 0;           // absolute position in cells
++  private pos = 0;
+   private distance = 0;
+   private t = 0;
+   private duration = 1;
+   private spinning = false;
+   private bounceT = -1;
+   private lastTex: THREE.Texture[] = [];
++  private winMask: boolean[] = [];
++  private lifeTime = 0;
++  private animIntensity: SymbolAnimIntensity = 2;
+   private resolver: (() => void) | null = null;
+   onStop: ((index: number) => void) | null = null;
+ 
+@@ -32,24 +83,31 @@ class Reel {
+     this.index = index;
+     const geo = new THREE.PlaneGeometry(CELL, CELL);
+     for (let k = 0; k < ROWS + 2; k++) {
+-      const mat = new THREE.MeshBasicMaterial({ map: symbolTexture("buffalo") });
++      const tex = symbolTexture("buffalo");
++      const mat = createSymbolMaterial(tex, "animal", symbolPhase(index, k));
+       const m = new THREE.Mesh(geo, mat);
+       this.cells.push(m);
+-      this.lastTex.push(mat.map!);
++      this.lastTex.push(tex);
++      this.winMask.push(false);
+       this.group.add(m);
+     }
+-    // idle grid
+     const idle: SymbolId[] = [];
+     for (let r = 0; r < ROWS; r++) idle.push(ALL_SYMBOLS[Math.floor(Math.random() * 10)]);
+     this.setGrid(idle);
+   }
+ 
++  setAnimIntensity(intensity: SymbolAnimIntensity): void {
++    this.animIntensity = intensity;
++  }
++
+   setGrid(col: SymbolId[]): void {
+     this.spinning = false;
+-    this.seq = [...col];
++    // Same strip encoding as spin stop 鈥?row0 (top) stays server order
++    this.seq = toSpinSeq(col);
+     this.pos = 0;
+     this.distance = 0;
+     this.t = 0;
++    this.bounceT = -1;
+     this.layout();
+   }
+ 
+@@ -59,21 +117,33 @@ class Reel {
+     const prefixLen = 6 + this.index * 2;
+     for (let i = 0; i < prefixLen; i++) prefix.push(rnd());
+     this.distance = prefixLen;
+-    this.seq = [...prefix, ...target];
++    // Prefix then reversed target 鈥?stripIndex maps stop window back to server rows
++    this.seq = [...prefix, ...toSpinSeq(target)];
+     this.pos = 0;
+     this.t = 0;
+     this.duration = duration;
+     this.spinning = true;
+     this.bounceT = -1;
+-    return new Promise((res) => { this.resolver = res; });
++    return new Promise((res) => {
++      this.resolver = res;
++    });
+   }
+ 
+-  get isSpinning(): boolean { return this.spinning; }
++  get isSpinning(): boolean {
++    return this.spinning;
++  }
+ 
+-  update(dt: number): void {
++  /** Test/helper: server-facing column currently shown (row0 = top). */
++  visibleColumn(): SymbolId[] {
++    const base = Math.floor(this.pos);
++    return fromSpinSeqWindow(this.seq, base);
++  }
++
++  update(dt: number, time = 0): void {
++    this.lifeTime = time;
+     if (this.spinning) {
+       this.t = Math.min(this.t + dt / this.duration, 1);
+-      // ease-out quart: fast spin, smooth landing
++      // Ease-out: accelerate then settle 鈥?position only increases (downward strip)
+       const e = 1 - Math.pow(1 - this.t, 4);
+       this.pos = e * this.distance;
+       if (this.t >= 1) {
+@@ -88,13 +158,18 @@ class Reel {
+       this.layout();
+     } else if (this.bounceT >= 0) {
+       this.bounceT += dt;
+-      const p = this.bounceT / 0.28;
++      const p = this.bounceT / 0.38;
+       if (p >= 1) {
+         this.bounceT = -1;
+         this.layout(0);
+       } else {
+-        this.layout(-0.16 * Math.sin(p * Math.PI));
++        // Downward overshoot then short upward settle (not a reverse spin)
++        const elastic = Math.sin(p * Math.PI) * Math.exp(-1.9 * p);
++        this.layout(0.22 * elastic);
+       }
++    } else {
++      // Idle life 鈥?refresh shader uniforms without changing strip positions
++      this.layout();
+     }
+   }
+ 
+@@ -102,32 +177,44 @@ class Reel {
+     const base = Math.floor(this.pos);
+     const frac = this.pos - base + extraFrac;
+     const speedStretch = this.spinning ? 1 + Math.sin(Math.min(this.t * 3, Math.PI)) * 0.22 : 1;
+-    const halfWindow = (ROWS * (CELL + GAP)) / 2; // cells outside the gold frame fade out
++    const halfWindow = (ROWS * (CELL + GAP)) / 2;
++    const maxIdx = Math.max(0, this.seq.length - 1);
+     for (let k = 0; k < ROWS + 2; k++) {
+-      const r = k - 1; // display row (-1..ROWS)
+-      const idx = Math.min(Math.max(base + r, 0), this.seq.length - 1);
+-      const sym = this.seq[idx];
+-      const mesh = this.cells[k];
++      const r = k - 1;
++      const idx = Math.min(Math.max(stripIndex(base, r), 0), maxIdx);
++      const sym = this.seq[idx]!;
++      const mesh = this.cells[k]!;
++      // Positive frac 鈫?lower Y 鈫?top-to-bottom scroll
+       mesh.position.y = cellY(r, frac);
+-      mesh.scale.y = speedStretch;
++      const win = this.winMask[k] === true;
++      const pop = win && !this.spinning ? 1.08 : 1;
++      mesh.scale.set(pop, speedStretch * pop, 1);
++      mesh.position.z = win && !this.spinning ? 0.045 : 0;
+       const fade = Math.min(Math.max((halfWindow + 0.42 - Math.abs(mesh.position.y)) / 0.6, 0), 1);
+-      const mat = mesh.material as THREE.MeshBasicMaterial;
+-      mat.transparent = true;
+-      mat.opacity = fade;
+       mesh.visible = fade > 0.02;
+       const tex = symbolTexture(sym);
++      const mat = mesh.material as THREE.ShaderMaterial;
+       if (this.lastTex[k] !== tex) {
+-        mat.map = tex;
++        setSymbolMap(mat, tex, symbolAnimKind(sym));
+         this.lastTex[k] = tex;
+       }
++      updateSymbolLife(mat, {
++        time: this.lifeTime,
++        opacity: fade,
++        win,
++        intensity: this.animIntensity,
++        spinning: this.spinning,
++        tint: win ? 1.55 : 1,
++      });
+     }
+   }
+ 
+-  /** pulse the cell at display row r */
+   setCellHighlight(r: number, on: boolean): void {
+-    const mesh = this.cells[r + 1];
+-    const mat = mesh.material as THREE.MeshBasicMaterial;
+-    mat.color.setScalar(on ? 1.6 : 1);
++    const k = r + 1;
++    if (k < 0 || k >= this.winMask.length) return;
++    this.winMask[k] = on;
++    // Apply immediately so sequential payline presentation feels snappy
++    this.layout();
+   }
+ }
+ 
+@@ -135,60 +222,169 @@ export class ReelRig {
+   readonly group = new THREE.Group();
+   private reels: Reel[] = [];
+   private highlights: THREE.Mesh[] = [];
++  private glowPlane: THREE.Mesh | null = null;
++  private frameHalfW = reelFrameHalfWidth();
++  private animIntensity: SymbolAnimIntensity = 2;
++  /** Current commercial scale (full-bleed). */
++  scaleFactor = 1;
+   onReelStop: ((index: number) => void) | null = null;
+ 
++  /** Quality LOD for symbol life shaders (presentation only). */
++  setSymbolAnimIntensity(intensity: SymbolAnimIntensity): void {
++    this.animIntensity = intensity;
++    for (const reel of this.reels) reel.setAnimIntensity(intensity);
++  }
++
+   constructor() {
+-    const W = REELS * (CELL + GAP) + 0.35;
+-    const H = ROWS * (CELL + GAP) + 0.35;
++    const W = REELS * (CELL + GAP) + FRAME_PAD;
++    const H = ROWS * (CELL + GAP) + FRAME_PAD;
+ 
+-    // backdrop
+     const backdrop = new THREE.Mesh(
+       new THREE.PlaneGeometry(W, H),
+       new THREE.MeshStandardMaterial({
+-        color: 0x140d05,
+-        roughness: 0.85,
++        color: 0x100a04,
++        roughness: 0.9,
++        metalness: 0.15,
+         transparent: true,
+-        opacity: 0.92,
++        opacity: 0.96,
+       }),
+     );
+-    backdrop.position.z = -0.12;
++    backdrop.position.z = -0.14;
+     backdrop.receiveShadow = true;
+     this.group.add(backdrop);
+ 
+-    // gold frame
++    // Inner AO plate (contact shadow feel)
++    const ao = new THREE.Mesh(
++      new THREE.PlaneGeometry(W * 0.995, H * 0.995),
++      new THREE.MeshBasicMaterial({
++        color: 0x000000,
++        transparent: true,
++        opacity: 0.35,
++        depthWrite: false,
++      }),
++    );
++    ao.position.z = -0.11;
++    this.group.add(ao);
++
+     const goldMat = new THREE.MeshStandardMaterial({
+-      color: 0xd4af37,
+-      metalness: 0.85,
+-      roughness: 0.3,
+-      emissive: 0x6a4d10,
+-      emissiveIntensity: 0.55,
++      color: 0xf4d88a,
++      metalness: 0.99,
++      roughness: 0.16,
++      emissive: 0xb07820,
++      emissiveIntensity: 0.95,
++    });
++    const midMetal = new THREE.MeshStandardMaterial({
++      color: 0xc09438,
++      metalness: 0.94,
++      roughness: 0.26,
++      emissive: 0x6a4214,
++      emissiveIntensity: 0.42,
++    });
++    const darkMetal = new THREE.MeshStandardMaterial({
++      color: 0x2a1a08,
++      metalness: 0.88,
++      roughness: 0.38,
++      emissive: 0x140e06,
++      emissiveIntensity: 0.3,
+     });
+-    const mk = (w: number, h: number, x: number, y: number) => {
+-      const b = new THREE.Mesh(new THREE.BoxGeometry(w, h, 0.22), goldMat);
+-      b.position.set(x, y, -0.05);
++
++    const mk = (
++      w: number,
++      h: number,
++      x: number,
++      y: number,
++      z = -0.05,
++      d = 0.34,
++      mat: THREE.Material = goldMat,
++    ) => {
++      const b = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
++      b.position.set(x, y, z);
+       b.castShadow = true;
++      b.receiveShadow = true;
+       this.group.add(b);
++      return b;
+     };
+-    const th = 0.16;
+-    mk(W + th * 2, th, 0, H / 2 + th / 2);
+-    mk(W + th * 2, th, 0, -H / 2 - th / 2);
+-    mk(th, H, -W / 2 - th / 2, 0);
+-    mk(th, H, W / 2 + th / 2, 0);
+-    // reel dividers
++
++    const th = 0.12;
++    // Dual-layer rails: slim outer gold + mid bevel (mobile must not look like side gutters)
++    mk(W + th * 2.0, th * 1.0, 0, H / 2 + th * 0.65, -0.01, 0.28, goldMat);
++    mk(W + th * 2.0, th * 1.0, 0, -H / 2 - th * 0.65, -0.01, 0.28, goldMat);
++    mk(th * 1.0, H + th * 0.45, -W / 2 - th * 0.65, 0, -0.01, 0.28, goldMat);
++    mk(th * 1.0, H + th * 0.45, W / 2 + th * 0.65, 0, -0.01, 0.28, goldMat);
++    // Mid bevel (AO / thickness read)
++    mk(W + th * 1.4, 0.07, 0, H / 2 + 0.03, 0.04, 0.16, midMetal);
++    mk(W + th * 1.4, 0.07, 0, -H / 2 - 0.03, 0.04, 0.16, midMetal);
++    mk(0.07, H + 0.04, -W / 2 - 0.01, 0, 0.04, 0.16, midMetal);
++    mk(0.07, H + 0.04, W / 2 + 0.01, 0, 0.04, 0.16, midMetal);
++    // Inner dark lip
++    mk(W + th * 0.8, 0.04, 0, H / 2 - 0.015, 0.08, 0.09, darkMetal);
++    mk(W + th * 0.8, 0.04, 0, -H / 2 + 0.015, 0.08, 0.09, darkMetal);
++
+     for (let i = 1; i < REELS; i++) {
+-      const x = -W / 2 + 0.175 + i * (CELL + GAP) - GAP / 2;
+-      const d = new THREE.Mesh(new THREE.BoxGeometry(0.045, H, 0.1), goldMat);
+-      d.position.set(x, 0, -0.06);
+-      this.group.add(d);
++      const x = -W / 2 + FRAME_PAD / 2 + i * (CELL + GAP) - GAP / 2;
++      mk(0.07, H * 0.98, x, 0, -0.03, 0.2, midMetal);
++      mk(0.03, H * 0.98, x, 0, 0.06, 0.08, goldMat);
+     }
+-    // corner ornaments
+-    for (const [sx, sy] of [[-1, -1], [-1, 1], [1, -1], [1, 1]] as const) {
+-      const orb = new THREE.Mesh(new THREE.SphereGeometry(0.14, 12, 8), goldMat);
+-      orb.position.set(sx * (W / 2 + th / 2), sy * (H / 2 + th / 2), 0.02);
++
++    for (const [sx, sy] of [
++      [-1, -1],
++      [-1, 1],
++      [1, -1],
++      [1, 1],
++    ] as const) {
++      const orb = new THREE.Mesh(new THREE.SphereGeometry(0.14, 16, 12), goldMat);
++      orb.position.set(sx * (W / 2 + th * 0.7), sy * (H / 2 + th * 0.7), 0.1);
++      orb.castShadow = true;
+       this.group.add(orb);
+     }
+ 
+-    // reels
++    // Tight glow 鈥?must not create perceived side gutters beyond the frame
++    this.glowPlane = new THREE.Mesh(
++      new THREE.PlaneGeometry(W + 0.35, H + 0.35),
++      new THREE.MeshBasicMaterial({
++        color: 0xffe29a,
++        transparent: true,
++        opacity: 0.14,
++        blending: THREE.AdditiveBlending,
++        depthWrite: false,
++      }),
++    );
++    this.glowPlane.position.z = -0.22;
++    this.group.add(this.glowPlane);
++
++    // Glass specular strip (commercial reflection, does not cover symbols)
++    const glass = new THREE.Mesh(
++      new THREE.PlaneGeometry(W * 0.98, H * 0.14),
++      new THREE.MeshBasicMaterial({
++        color: 0xfff6d0,
++        transparent: true,
++        opacity: 0.08,
++        blending: THREE.AdditiveBlending,
++        depthWrite: false,
++      }),
++    );
++    glass.position.set(0, H * 0.28, 0.09);
++    this.group.add(glass);
++
++    // Top/bottom scroll masks (vignette inside frame)
++    for (const [sy, y] of [
++      [1, H / 2 - 0.08],
++      [-1, -H / 2 + 0.08],
++    ] as const) {
++      const mask = new THREE.Mesh(
++        new THREE.PlaneGeometry(W * 0.99, 0.55),
++        new THREE.MeshBasicMaterial({
++          color: 0x050302,
++          transparent: true,
++          opacity: 0.55,
++          depthWrite: false,
++        }),
++      );
++      mask.position.set(0, y, 0.05);
++      mask.scale.y = sy;
++      this.group.add(mask);
++    }
++
+     for (let i = 0; i < REELS; i++) {
+       const reel = new Reel(i);
+       reel.group.position.x = (i - (REELS - 1) / 2) * (CELL + GAP);
+@@ -197,23 +393,88 @@ export class ReelRig {
+       this.group.add(reel.group);
+     }
+ 
+-    this.group.position.set(0.9, 2.62, 0);
++    // M8 default: centered 鈥?buffalo lives in background layer
++    this.group.position.set(0, 2.4, 0);
+   }
+ 
+-  /** landscape: rig right-of-center beside the buffalo; portrait: centered */
+-  setAspect(aspect: number): void {
+-    this.group.position.x = aspect >= 1.15 ? 0.9 : 0;
++  /**
++   * Mobile-first full-bleed layout.
++   * Scales the rig so left/right rails sit near the screen edges.
++   * Phone landscape fills hardest; PC fills less aggressively.
++   */
++  /**
++   * M8 P0 full-bleed.
++   * @param sidePadPx left+right safe padding in CSS pixels (notch / home indicator)
++   */
++  setAspect(
++    aspect: number,
++    cameraZ = 11.2,
++    fovYDeg = 46,
++    sidePadPx = 8,
++    viewportW = typeof window !== "undefined" ? window.innerWidth : 844,
++    viewportH = typeof window !== "undefined" ? window.innerHeight : 390,
++  ): void {
++    // Convert safe pads to fill ratio 鈥?only necessary gutter, never large background wings
++    const padRatio = Math.min(0.04, Math.max(0.006, (sidePadPx * 2) / Math.max(viewportW, 1)));
++    const shortSide = Math.min(viewportW, viewportH);
++    // Phone landscape (= short side 鈮?520): rails kiss edges. PC/tablet keep breathing room.
++    const phoneLandscape = aspect >= 1.05 && shortSide <= 520;
++    const phonePortrait = aspect < 1.05 && viewportW <= 500;
++    const fill = phoneLandscape
++      ? Math.min(0.998, 1 - Math.min(padRatio, 0.01)) // P0: rails kiss edges
++      : phonePortrait
++        ? 1 - Math.max(padRatio, 0.06)
++        : aspect < 1.05
++          ? 0.9
++          : 0.88;
++
++    const halfFov = THREE.MathUtils.degToRad(fovYDeg * 0.5);
++    // Use real aspect 鈥?clamping to 0.5 over-scales portrait phones and clips rails
++    const visibleHalfW = cameraZ * Math.tan(halfFov) * Math.max(aspect, 0.01);
++    const targetHalfW = visibleHalfW * fill;
++    const minScale = phonePortrait ? 0.72 : phoneLandscape ? 1.05 : 0.95;
++    const scale = THREE.MathUtils.clamp(targetHalfW / this.frameHalfW, minScale, 3.35);
++    this.scaleFactor = scale;
++    this.group.scale.setScalar(scale);
++
++    // Always center 鈥?game is the visual subject (not side panel)
++    this.group.position.x = 0;
++    // Phone landscape: lift slightly so bottom console does not bury the last row
++    this.group.position.y = aspect < 1.05 ? 2.55 : phoneLandscape ? 2.42 : 2.32;
++  }
++
++  /** World-space half-width after commercial scale (for camera fit). */
++  scaledFrameHalfWidth(): number {
++    return this.frameHalfW * this.scaleFactor;
++  }
++
++  /**
++   * Project frame left/right rails to NDC for multi-size verification.
++   * Returns fill 鈭?[0,1] = fraction of screen width covered by the frame.
++   */
++  measureScreenFill(camera: THREE.Camera): {
++    leftNdc: number;
++    rightNdc: number;
++    fill: number;
++    scale: number;
++  } {
++    const half = this.scaledFrameHalfWidth();
++    const y = this.group.position.y;
++    const z = this.group.position.z;
++    const left = new THREE.Vector3(-half, y, z).project(camera);
++    const right = new THREE.Vector3(half, y, z).project(camera);
++    const fill = Math.max(0, Math.min(1, (right.x - left.x) / 2));
++    return { leftNdc: left.x, rightNdc: right.x, fill, scale: this.scaleFactor };
+   }
+ 
+   setGrid(grid: SymbolId[][]): void {
+-    for (let i = 0; i < REELS; i++) this.reels[i].setGrid(grid[i]);
++    for (let i = 0; i < REELS; i++) this.reels[i]!.setGrid(grid[i]!);
+   }
+ 
+-  /** spin all reels; resolves when the last reel lands */
+   spinAll(grid: SymbolId[][], turbo: boolean): Promise<void> {
+-    const base = turbo ? 0.45 : 1.15;
+-    const step = turbo ? 0.14 : 0.38;
+-    const jobs = this.reels.map((reel, i) => reel.spin(grid[i], base + i * step));
++    const base = turbo ? 0.38 : 1.05;
++    const step = turbo ? 0.12 : 0.34;
++    const jobs = this.reels.map((reel, i) => reel.spin(grid[i]!, base + i * step));
+     return Promise.all(jobs).then(() => undefined);
+   }
+ 
+@@ -221,28 +482,47 @@ export class ReelRig {
+     return this.reels.some((r) => r.isSpinning);
+   }
+ 
+-  highlightCells(cells: Array<[number, number]>): void {
++  highlightCells(cells: Array<[number, number]>, grid?: SymbolId[][]): void {
+     this.clearHighlights();
+     for (const [reel, row] of cells) {
+-      if (this.reels[reel]) this.reels[reel].setCellHighlight(row, true);
++      if (this.reels[reel]) this.reels[reel]!.setCellHighlight(row, true);
++      const sym = grid?.[reel]?.[row];
++      const kind = sym ? symbolAnimKind(sym) : "letter";
++      const color =
++        kind === "wild" ? 0x6eb6ff : kind === "scatter" ? 0xffb040 : 0xffd970;
+       const glow = new THREE.Mesh(
+-        new THREE.PlaneGeometry(CELL * 1.05, CELL * 1.05),
++        new THREE.PlaneGeometry(CELL * 1.12, CELL * 1.12),
+         new THREE.MeshBasicMaterial({
+-          color: 0xffd970,
++          color,
+           transparent: true,
+           opacity: 0.0,
+           blending: THREE.AdditiveBlending,
+           depthWrite: false,
+         }),
+       );
+-      glow.position.set(
+-        (reel - (REELS - 1) / 2) * (CELL + GAP),
+-        cellY(row, 0),
+-        -0.08,
+-      );
++      glow.position.set((reel - (REELS - 1) / 2) * (CELL + GAP), cellY(row, 0), 0.025);
+       glow.userData.pulse = true;
++      glow.userData.kind = kind;
+       this.highlights.push(glow);
+       this.group.add(glow);
++
++      // Expanding ring (does not cover neighbors permanently)
++      const ring = new THREE.Mesh(
++        new THREE.RingGeometry(CELL * 0.42, CELL * 0.52, 32),
++        new THREE.MeshBasicMaterial({
++          color,
++          transparent: true,
++          opacity: 0.0,
++          blending: THREE.AdditiveBlending,
++          depthWrite: false,
++          side: THREE.DoubleSide,
++        }),
++      );
++      ring.position.copy(glow.position);
++      ring.position.z = 0.03;
++      ring.userData.ring = true;
++      this.highlights.push(ring);
++      this.group.add(ring);
+     }
+   }
+ 
+@@ -250,15 +530,30 @@ export class ReelRig {
+     for (const reel of this.reels) {
+       for (let r = 0; r < ROWS; r++) reel.setCellHighlight(r, false);
+     }
+-    for (const h of this.highlights) this.group.remove(h);
++    for (const h of this.highlights) {
++      this.group.remove(h);
++      const mat = h.material as THREE.Material;
++      mat.dispose();
++    }
+     this.highlights = [];
+   }
+ 
+   update(dt: number, time: number): void {
+-    for (const reel of this.reels) reel.update(dt);
++    for (const reel of this.reels) reel.update(dt, time);
+     for (const h of this.highlights) {
+       const mat = h.material as THREE.MeshBasicMaterial;
+-      mat.opacity = 0.18 + 0.14 * Math.sin(time * 7);
++      if (h.userData.ring) {
++        const pulse = 0.55 + 0.45 * Math.sin(time * 7);
++        mat.opacity = 0.22 * pulse;
++        const s = 1 + 0.12 * Math.sin(time * 6);
++        h.scale.set(s, s, 1);
++      } else {
++        mat.opacity = 0.3 + 0.24 * Math.sin(time * 8);
++      }
++    }
++    if (this.glowPlane) {
++      const mat = this.glowPlane.material as THREE.MeshBasicMaterial;
++      mat.opacity = 0.12 + 0.06 * Math.sin(time * 1.8);
+     }
+   }
+ }
+diff --git a/client/m5/quality.ts b/client/m5/quality.ts
+new file mode 100644
+index 0000000..23d7c43
+--- /dev/null
++++ b/client/m5/quality.ts
+@@ -0,0 +1,224 @@
++/**
++ * M6 quality LOD 鈥?presentation only.
++ * Adopted from Kimi M6 quality.ts; wired into formal client/m5 World/boot.
++ * Never touches Session / Spin / Round / Balance / Math.
++ */
++
++export type QualityTier = "high" | "medium" | "low";
++export type QualityMode = QualityTier | "auto";
++
++export interface QualityProfile {
++  tier: QualityTier;
++  pixelRatio: number;
++  grassCount: number;
++  treeCount: number;
++  furShells: number;
++  cloudCount: number;
++  enableBloom: boolean;
++  enableGodRays: boolean;
++  enableDof: boolean;
++  enableGroundFog: boolean;
++  coinBudget: number;
++  particleBudget: number;
++  shadowMapSize: number;
++  /** Symbol life shader intensity: 2 full / 1 reduced / 0 blink+breath+win only */
++  symbolAnimIntensity: 0 | 1 | 2;
++}
++
++/**
++ * Phase3 clarity: never tank canvas DPR for "performance".
++ * Mid/low only cut shadows / particles / post 鈥?Symbol sharpness stays high.
++ */
++const PROFILES: Record<QualityTier, Omit<QualityProfile, "tier">> = {
++  high: {
++    pixelRatio: 3,
++    grassCount: 9000,
++    treeCount: 3,
++    furShells: 8,
++    cloudCount: 9,
++    enableBloom: true,
++    enableGodRays: true,
++    // DOF softens the reel board 鈥?off for commercial sharpness
++    enableDof: false,
++    enableGroundFog: true,
++    coinBudget: 220,
++    particleBudget: 400,
++    shadowMapSize: 2048,
++    symbolAnimIntensity: 2,
++  },
++  medium: {
++    pixelRatio: 2,
++    grassCount: 2500,
++    treeCount: 2,
++    furShells: 4,
++    cloudCount: 6,
++    enableBloom: true,
++    enableGodRays: false,
++    enableDof: false,
++    enableGroundFog: true,
++    coinBudget: 140,
++    particleBudget: 220,
++    shadowMapSize: 1024,
++    symbolAnimIntensity: 1,
++  },
++  low: {
++    // Keep 鈮? when device DPR allows 鈥?Symbol clarity is non-negotiable
++    pixelRatio: 2,
++    grassCount: 600,
++    treeCount: 1,
++    furShells: 0,
++    cloudCount: 3,
++    enableBloom: false,
++    enableGodRays: false,
++    enableDof: false,
++    enableGroundFog: false,
++    coinBudget: 70,
++    particleBudget: 100,
++    shadowMapSize: 512,
++    // Keep blink / breath / win 鈥?cut exotic sheen via intensity gate in shader
++    symbolAnimIntensity: 1,
++  },
++};
++
++export function profileFor(tier: QualityTier): QualityProfile {
++  return { tier, ...PROFILES[tier] };
++}
++
++/** Device capability probe: phones / weak devices start lower. */
++export function detectInitialTier(): QualityTier {
++  if (typeof navigator === "undefined") return "medium";
++  const ua = navigator.userAgent ?? "";
++  const mobile = /Android|iPhone|iPad|iPod|Mobile/i.test(ua);
++  const smallScreen =
++    typeof window !== "undefined" &&
++    Math.min(window.innerWidth, window.innerHeight) < 620;
++  const cores = navigator.hardwareConcurrency ?? 4;
++  const memory =
++    (navigator as Navigator & { deviceMemory?: number }).deviceMemory ?? 4;
++  if ((mobile || smallScreen) && (cores <= 4 || memory <= 3)) return "low";
++  if (mobile || smallScreen) return "medium";
++  if (cores <= 4 || memory <= 4) return "medium";
++  return "high";
++}
++
++export const QUALITY_STORAGE_KEY = "ab-m6-quality";
++
++export function readStoredQualityMode(): QualityMode {
++  if (typeof window === "undefined") return "auto";
++  try {
++    const v = window.localStorage.getItem(QUALITY_STORAGE_KEY);
++    return v === "high" || v === "medium" || v === "low" || v === "auto"
++      ? v
++      : "auto";
++  } catch {
++    return "auto";
++  }
++}
++
++export function storeQualityMode(mode: QualityMode): void {
++  if (typeof window === "undefined") return;
++  try {
++    window.localStorage.setItem(QUALITY_STORAGE_KEY, mode);
++  } catch {
++    /* ignore */
++  }
++}
++
++export function resolveTier(mode: QualityMode): QualityTier {
++  return mode === "auto" ? detectInitialTier() : mode;
++}
++
++const ORDER: QualityTier[] = ["low", "medium", "high"];
++
++/**
++ * Rolling FPS governor:
++ * - ~2s below lowMark 鈫?drop one tier
++ * - ~8s above highMark 鈫?raise one tier (capped by ceiling)
++ */
++export class FpsGovernor {
++  private samples: number[] = [];
++  private lastTime = 0;
++  private ceiling: QualityTier;
++  private cooldownUntil = 0;
++  private tier: QualityTier;
++  private readonly onChange: (tier: QualityTier) => void;
++  private readonly lowMark: number;
++  private readonly highMark: number;
++
++  constructor(
++    tier: QualityTier,
++    onChange: (tier: QualityTier) => void,
++    lowMark = 42,
++    highMark = 55,
++  ) {
++    this.tier = tier;
++    this.onChange = onChange;
++    this.lowMark = lowMark;
++    this.highMark = highMark;
++    this.ceiling = tier;
++  }
++
++  get current(): QualityTier {
++    return this.tier;
++  }
++
++  setManual(tier: QualityTier): void {
++    this.tier = tier;
++    this.ceiling = tier;
++    this.samples = [];
++  }
++
++  setAutoCeiling(ceiling: QualityTier): void {
++    this.ceiling = ceiling;
++    if (ORDER.indexOf(this.tier) > ORDER.indexOf(ceiling)) {
++      this.tier = ceiling;
++      this.onChange(this.tier);
++    }
++  }
++
++  tick(now: number): void {
++    if (this.lastTime > 0) {
++      const dt = now - this.lastTime;
++      if (dt > 0 && dt < 500) {
++        this.samples.push(1000 / dt);
++        if (this.samples.length > 120) this.samples.shift();
++      }
++    }
++    this.lastTime = now;
++    if (this.samples.length < 60 || now < this.cooldownUntil) return;
++
++    const avg =
++      this.samples.reduce((a, b) => a + b, 0) / this.samples.length;
++    const idx = ORDER.indexOf(this.tier);
++    if (avg < this.lowMark && idx > 0) {
++      this.tier = ORDER[idx - 1]!;
++      this.samples = [];
++      this.cooldownUntil = now + 2000;
++      this.onChange(this.tier);
++    } else if (avg > this.highMark && idx < ORDER.indexOf(this.ceiling)) {
++      this.tier = ORDER[idx + 1]!;
++      this.samples = [];
++      this.cooldownUntil = now + 8000;
++      this.onChange(this.tier);
++    }
++  }
++}
++
++/** Debug hook gate 鈥?never open in production without explicit allow. */
++export function allowDebugHooks(): boolean {
++  if (typeof process !== "undefined" && process.env?.NODE_ENV === "production") {
++    return process.env.AB_ALLOW_TEST_IDENTITY === "1";
++  }
++  // Browser / Vite: only when explicitly allowed via runtime flag or DEV + allow.
++  try {
++    const g = globalThis as { process?: { env?: Record<string, string | undefined> } };
++    const env = g.process?.env;
++    if (env?.AB_ALLOW_TEST_IDENTITY === "1") return true;
++    if (env?.NODE_ENV === "production") return false;
++  } catch {
++    /* ignore */
++  }
++  // Local DEV default: allow for QA; production builds must set NODE_ENV=production.
++  return typeof import.meta !== "undefined" &&
++    Boolean((import.meta as ImportMeta & { env?: { DEV?: boolean } }).env?.DEV);
++}
+diff --git a/client/m5/scene/buffalo.ts b/client/m5/scene/buffalo.ts
+index 9b1bc6a..d35270b 100644
+--- a/client/m5/scene/buffalo.ts
++++ b/client/m5/scene/buffalo.ts
+@@ -1,17 +1,72 @@
+ /**
+  * Buffalo 鈥?procedural low-poly hero character.
+- * Animations: breathing, blinking, run, roar, victory rear-up.
++ * Animations: breathing, blinking, ear/tail sway, head turn, run, roar, victory.
++ * M6: optional shell-fur LOD (from Kimi M6 buffalo.ts), interruptible actions.
+  * Built entirely from Three.js primitives (no external model).
+  */
+ import * as THREE from "three";
+ import type { Particles } from "./particles";
+ 
+-type BuffaloState = "idle" | "roar" | "run" | "victory";
++type BuffaloState = "idle" | "roar" | "run" | "victory" | "bigWin" | "jackpot";
+ 
+ const HIDE = 0x4a3820;
+ const HIDE_DARK = 0x35270f;
+ const HORN = 0xd9c27a;
+ const MUZZLE = 0x1c1108;
++const FUR_DARK = new THREE.Color("#241a12");
++const FUR_LIGHT = new THREE.Color("#6b5138");
++
++function makeFurMaterial(shellIndex: number, shellCount: number): THREE.ShaderMaterial {
++  return new THREE.ShaderMaterial({
++    transparent: true,
++    depthWrite: shellIndex === 0,
++    uniforms: {
++      uShell: { value: shellIndex / Math.max(1, shellCount) },
++      uTime: { value: 0 },
++      uDark: { value: FUR_DARK },
++      uLight: { value: FUR_LIGHT },
++    },
++    vertexShader: /* glsl */ `
++      uniform float uShell;
++      uniform float uTime;
++      varying vec2 vUv;
++      varying float vShell;
++      void main() {
++        vUv = uv * 22.0;
++        vShell = uShell;
++        vec3 p = position + normal * (uShell * 0.07);
++        p += normal * sin(uTime * 1.7 + position.y * 2.0) * 0.004;
++        gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
++      }`,
++    fragmentShader: /* glsl */ `
++      uniform vec3 uDark;
++      uniform vec3 uLight;
++      varying vec2 vUv;
++      varying float vShell;
++      float hash(vec2 p) {
++        return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
++      }
++      float valueNoise(vec2 p) {
++        vec2 i = floor(p);
++        vec2 f = fract(p);
++        float a = hash(i);
++        float b = hash(i + vec2(1.0, 0.0));
++        float c = hash(i + vec2(0.0, 1.0));
++        float d = hash(i + vec2(1.0, 1.0));
++        vec2 u = f * f * (3.0 - 2.0 * f);
++        return mix(a, b, u.x) + (c - a) * u.y * (1.0 - u.x) + (d - b) * u.x * u.y;
++      }
++      void main() {
++        // soft strand field 鈥?avoid hard checker cells
++        float n = valueNoise(vUv * 1.35);
++        float strand = valueNoise(vUv * vec2(2.4, 9.5));
++        float mask = smoothstep(vShell * 0.55, vShell * 0.55 + 0.22, n * 0.65 + strand * 0.55);
++        if (mask < 0.08) discard;
++        vec3 col = mix(uDark, uLight, strand * (1.0 - vShell * 0.55));
++        gl_FragColor = vec4(col, mask * (1.0 - vShell * 0.75));
++      }`,
++  });
++}
+ 
+ export class Buffalo {
+   readonly group = new THREE.Group();
+@@ -20,24 +75,34 @@ export class Buffalo {
+   private jaw!: THREE.Mesh;
+   private eyelidL!: THREE.Mesh;
+   private eyelidR!: THREE.Mesh;
++  private earL!: THREE.Mesh;
++  private earR!: THREE.Mesh;
+   private legs: THREE.Group[] = [];
+   private tail!: THREE.Mesh;
+   private nostrilL = new THREE.Object3D();
+   private nostrilR = new THREE.Object3D();
++  private furShells: THREE.Mesh[] = [];
++  private furMats: THREE.ShaderMaterial[] = [];
++  private furTarget = 0;
+ 
+   private state: BuffaloState = "idle";
+   private stateT = 0;
+   private blinkTimer = 2.5;
+   private blinkPhase = -1;
+   private breatheT = 0;
++  private headTurnT = 0;
+   private runDir = 1;
+   private homePos = new THREE.Vector3(-6.4, 0, -1.2);
++  private homeScale = 1.12;
+   private particles: Particles | null = null;
+   private roarSmokeDone = false;
++  private breathMistT = 0;
++  private gazeTarget = 0;
+   onRoarSound: (() => void) | null = null;
+ 
+-  constructor() {
++  constructor(furShells = 0) {
+     this.build();
++    this.setFurShells(furShells);
+     this.group.position.copy(this.homePos);
+     this.group.rotation.y = 0.95;
+   }
+@@ -99,13 +164,27 @@ export class Buffalo {
+     };
+     this.head.add(hornCurve(1), hornCurve(-1));
+ 
+-    // ears
++    // ears (animated)
+     const earGeo = new THREE.SphereGeometry(0.16, 8, 6);
+-    for (const side of [1, -1]) {
+-      const ear = new THREE.Mesh(earGeo, this.mat(HIDE_DARK));
+-      ear.position.set(-0.18, 0.12, side * 0.5);
+-      ear.scale.set(1, 0.6, 1.4);
+-      this.head.add(ear);
++    this.earR = new THREE.Mesh(earGeo, this.mat(HIDE_DARK));
++    this.earR.position.set(-0.18, 0.12, 0.5);
++    this.earR.scale.set(1, 0.6, 1.4);
++    this.head.add(this.earR);
++    this.earL = new THREE.Mesh(earGeo, this.mat(HIDE_DARK));
++    this.earL.position.set(-0.18, 0.12, -0.5);
++    this.earL.scale.set(1, 0.6, 1.4);
++    this.head.add(this.earL);
++
++    // shell fur on torso (LOD; 0 = off)
++    const furGeo = new THREE.SphereGeometry(1.05, 16, 12);
++    for (let i = 0; i < 10; i++) {
++      const mat = makeFurMaterial(i, 10);
++      const shell = new THREE.Mesh(furGeo, mat);
++      shell.scale.set(1.55, 1.05, 0.95);
++      shell.visible = false;
++      this.body.add(shell);
++      this.furShells.push(shell);
++      this.furMats.push(mat);
+     }
+ 
+     // eyes + eyelids
+@@ -173,13 +252,49 @@ export class Buffalo {
+ 
+     this.group.add(this.body);
+     this.body.position.y = 1.75;
+-    this.group.scale.setScalar(1.12);
+-    this.group.traverse((o) => { if (o instanceof THREE.Mesh) o.castShadow = true; });
++    this.group.scale.setScalar(this.homeScale);
++    this.group.traverse((o: THREE.Object3D) => {
++      if (o instanceof THREE.Mesh) o.castShadow = true;
++    });
++  }
++
++  /** M8 layout 鈥?keep buffalo as atmosphere behind full-bleed reels. */
++  setHomeLayout(x: number, y: number, z: number, scale: number): void {
++    this.homePos.set(x, y, z);
++    this.homeScale = scale;
++    if (this.state === "idle") {
++      this.group.position.copy(this.homePos);
++      this.group.scale.setScalar(this.homeScale);
++    }
++  }
++
++  /** LOD fur shells 鈥?0 disables. Never blocks reels / never triggers spin. */
++  setFurShells(count: number): void {
++    this.furTarget = Math.max(0, Math.min(this.furShells.length, Math.floor(count)));
++    for (let i = 0; i < this.furShells.length; i++) {
++      this.furShells[i]!.visible = i < this.furTarget;
++    }
++  }
++
++  /** Interrupt current action and return to idle pose (safe for spin start). */
++  interrupt(): void {
++    this.state = "idle";
++    this.stateT = 0;
++    this.roarSmokeDone = false;
++    this.body.rotation.z = 0;
++    this.body.position.y = 1.75;
++    this.head.rotation.set(0, 0, 0);
++    this.jaw.position.y = -0.34;
++    this.group.position.copy(this.homePos);
++    this.group.position.z = this.homePos.z;
++    this.group.scale.setScalar(this.homeScale);
++    this.group.rotation.y = 0.95;
++    for (const leg of this.legs) leg.rotation.z = 0;
+   }
+ 
+   // ---------------- public actions ----------------
+   roar(): void {
+-    if (this.state !== "idle") return;
++    if (this.state !== "idle") this.interrupt();
+     this.state = "roar";
+     this.stateT = 0;
+     this.roarSmokeDone = false;
+@@ -187,7 +302,7 @@ export class Buffalo {
+   }
+ 
+   run(): void {
+-    if (this.state !== "idle") return;
++    if (this.state !== "idle") this.interrupt();
+     this.state = "run";
+     this.stateT = 0;
+     this.runDir = 1;
+@@ -195,48 +310,118 @@ export class Buffalo {
+   }
+ 
+   victory(): void {
+-    if (this.state !== "idle") return;
++    if (this.state !== "idle") this.interrupt();
+     this.state = "victory";
+     this.stateT = 0;
+     this.onRoarSound?.();
+   }
+ 
++  /** Big Win UI linkage 鈥?presentation only, never spins. */
++  bigWin(): void {
++    if (this.state !== "idle") this.interrupt();
++    this.state = "bigWin";
++    this.stateT = 0;
++    this.onRoarSound?.();
++  }
++
++  /** Jackpot approach 鈥?camera pressure, presentation only. */
++  jackpot(): void {
++    if (this.state !== "idle") this.interrupt();
++    this.state = "jackpot";
++    this.stateT = 0;
++    this.roarSmokeDone = false;
++    this.onRoarSound?.();
++  }
++
+   get isBusy(): boolean {
+     return this.state !== "idle";
+   }
+ 
++  /** Exposed for contract tests 鈥?idle life always runs in update(). */
++  get animationContract(): string[] {
++    return [
++      "breath",
++      "blink",
++      "gaze",
++      "ears",
++      "tail",
++      "nostril",
++      "breathMist",
++      "roar",
++      "run",
++      "victory",
++      "bigWin",
++      "jackpot",
++    ];
++  }
++
+   // ---------------- update ----------------
+   update(dt: number, time: number): void {
+-    // breathing 鈥?always
++    // breathing 鈥?always (also drives nostril scale cue)
+     this.breatheT += dt;
+     const breath = Math.sin(this.breatheT * 1.9) * 0.02;
+     this.body.scale.set(1 + breath, 1 + breath * 1.4, 1 + breath);
++    const nosePulse = 1 + Math.sin(this.breatheT * 1.9) * 0.08;
++    this.nostrilL.scale.setScalar(nosePulse);
++    this.nostrilR.scale.setScalar(nosePulse);
++
++    for (const mat of this.furMats) {
++      mat.uniforms.uTime.value = time;
++    }
+ 
+     // blinking
+     this.blinkTimer -= dt;
+-    if (this.blinkTimer <= 0 && this.blinkPhase < 0) {
++    if (this.blinkTimer <= 0 && this.blinkPhase < 0 && this.state === "idle") {
+       this.blinkPhase = 0;
+       this.blinkTimer = 1.6 + Math.random() * 3.2;
+     }
+     if (this.blinkPhase >= 0) {
+       this.blinkPhase += dt;
+-      const p = this.blinkPhase / 0.18;
++      const p = this.blinkPhase / 0.16;
+       const close = p < 0.5 ? p * 2 : (1 - p) * 2;
+-      const s = 0.15 + 0.85 * Math.max(0, close);
++      const s = 0.12 + 0.88 * Math.max(0, close);
+       this.eyelidL.scale.y = s;
+       this.eyelidR.scale.y = s;
+       if (p >= 1) this.blinkPhase = -1;
+     }
+ 
+-    // tail swish
+-    this.tail.rotation.x = Math.sin(time * 2.3) * 0.35;
++    // tail + ear sway (stronger on idle)
++    const sway = this.state === "idle" ? 1 : 0.45;
++    this.tail.rotation.x = Math.sin(time * 2.3) * 0.38 * sway;
++    this.tail.rotation.z = 0.7 + Math.sin(time * 1.7) * 0.14 * sway;
++    this.earL.rotation.z = Math.sin(time * 2.1) * 0.22 * sway;
++    this.earR.rotation.z = Math.sin(time * 2.1 + 0.4) * 0.22 * sway;
++
++    // Soft breath mist (idle only) 鈥?particles only, never business IO
++    this.breathMistT += dt;
++    if (this.state === "idle" && this.particles && this.breathMistT > 2.8) {
++      this.breathMistT = 0;
++      const wl = new THREE.Vector3();
++      this.nostrilL.getWorldPosition(wl);
++      this.particles.puffSmoke(wl, 3);
++      const wr = new THREE.Vector3();
++      this.nostrilR.getWorldPosition(wr);
++      this.particles.puffSmoke(wr, 3);
++    }
+ 
+     this.stateT += dt;
+     switch (this.state) {
+       case "idle": {
+-        // gentle head sway
++        // gentle head sway + occasional look-around toward reels
++        this.headTurnT += dt;
++        if (this.headTurnT > 4.5) {
++          this.headTurnT = 0;
++          this.gazeTarget = (Math.random() - 0.35) * 0.35;
++        }
++        const look = THREE.MathUtils.damp(
++          this.head.rotation.y,
++          this.gazeTarget + Math.sin(time * 0.45) * 0.08,
++          2.2,
++          dt,
++        );
++        this.head.rotation.y = look;
+         this.head.rotation.z = Math.sin(time * 0.7) * 0.05;
+-        this.head.rotation.y = Math.sin(time * 0.45) * 0.1;
++        this.head.rotation.x = Math.sin(this.breatheT * 1.9) * 0.03;
+         this.body.position.y = 1.75;
+         for (const leg of this.legs) leg.rotation.z = 0;
+         this.jaw.position.y = -0.34;
+@@ -288,13 +473,14 @@ export class Buffalo {
+       case "victory": {
+         const T = 2.2;
+         const p = Math.min(this.stateT / T, 1);
+-        // rear up then slam down
++        // rear up then slam down 鈥?stay left of reels (home X)
+         const rear = Math.sin(Math.min(p * 1.6, 1) * Math.PI);
+         this.body.rotation.z = rear * 0.55;
+         this.body.position.y = 1.75 + rear * 0.5;
+-        this.legs[0].rotation.z = -rear * 1.1;
+-        this.legs[1].rotation.z = -rear * 1.1;
++        this.legs[0]!.rotation.z = -rear * 1.1;
++        this.legs[1]!.rotation.z = -rear * 1.1;
+         this.head.rotation.z = -rear * 0.3;
++        this.group.position.x = this.homePos.x;
+         if (p > 0.62 && p < 0.72 && this.particles) {
+           const foot = new THREE.Vector3(this.group.position.x, 0.2, this.group.position.z);
+           this.particles.puffSmoke(foot, 10);
+@@ -305,6 +491,61 @@ export class Buffalo {
+         }
+         break;
+       }
++      case "bigWin": {
++        const T = 1.85;
++        const p = Math.min(this.stateT / T, 1);
++        const nod = Math.sin(p * Math.PI * 2) * (1 - p);
++        this.head.rotation.x = -nod * 0.35;
++        this.head.rotation.z = nod * 0.2;
++        this.jaw.position.y = -0.34 - Math.abs(nod) * 0.1;
++        this.body.position.y = 1.75 + Math.abs(nod) * 0.12;
++        this.group.position.x = this.homePos.x;
++        if (p > 0.2 && p < 0.35 && this.particles && !this.roarSmokeDone) {
++          this.roarSmokeDone = true;
++          const wl = new THREE.Vector3();
++          this.nostrilL.getWorldPosition(wl);
++          this.particles.puffSmoke(wl, 10);
++        }
++        if (p >= 1) {
++          this.head.rotation.set(0, 0, 0);
++          this.jaw.position.y = -0.34;
++          this.state = "idle";
++          this.roarSmokeDone = false;
++        }
++        break;
++      }
++      case "jackpot": {
++        // Approach lens + roar pressure 鈥?stay left of reels (never cross board)
++        const T = 2.6;
++        const p = Math.min(this.stateT / T, 1);
++        const surge = Math.sin(Math.min(p * 1.35, 1) * Math.PI);
++        this.group.position.x = this.homePos.x + surge * 1.1;
++        this.group.position.z = this.homePos.z + surge * 1.6;
++        this.group.scale.setScalar(this.homeScale * (1 + surge * 0.28));
++        this.head.rotation.z = surge * 0.62;
++        this.head.rotation.x = -surge * 0.18;
++        this.jaw.position.y = -0.34 - surge * 0.2;
++        this.body.position.y = 1.75 + surge * 0.25;
++        if (!this.roarSmokeDone && p > 0.18 && this.particles) {
++          this.roarSmokeDone = true;
++          const wl = new THREE.Vector3();
++          this.nostrilL.getWorldPosition(wl);
++          this.particles.puffSmoke(wl, 18);
++          const wr = new THREE.Vector3();
++          this.nostrilR.getWorldPosition(wr);
++          this.particles.puffSmoke(wr, 18);
++        }
++        if (p >= 1) {
++          this.group.position.copy(this.homePos);
++          this.group.scale.setScalar(this.homeScale);
++          this.head.rotation.set(0, 0, 0);
++          this.jaw.position.y = -0.34;
++          this.body.position.y = 1.75;
++          this.state = "idle";
++          this.roarSmokeDone = false;
++        }
++        break;
++      }
+     }
+   }
+ }

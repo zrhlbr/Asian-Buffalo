@@ -1,17 +1,72 @@
 /**
  * Buffalo — procedural low-poly hero character.
- * Animations: breathing, blinking, run, roar, victory rear-up.
+ * Animations: breathing, blinking, ear/tail sway, head turn, run, roar, victory.
+ * M6: optional shell-fur LOD (from Kimi M6 buffalo.ts), interruptible actions.
  * Built entirely from Three.js primitives (no external model).
  */
 import * as THREE from "three";
 import type { Particles } from "./particles";
 
-type BuffaloState = "idle" | "roar" | "run" | "victory";
+type BuffaloState = "idle" | "roar" | "run" | "victory" | "bigWin" | "jackpot";
 
 const HIDE = 0x4a3820;
 const HIDE_DARK = 0x35270f;
 const HORN = 0xd9c27a;
 const MUZZLE = 0x1c1108;
+const FUR_DARK = new THREE.Color("#241a12");
+const FUR_LIGHT = new THREE.Color("#6b5138");
+
+function makeFurMaterial(shellIndex: number, shellCount: number): THREE.ShaderMaterial {
+  return new THREE.ShaderMaterial({
+    transparent: true,
+    depthWrite: shellIndex === 0,
+    uniforms: {
+      uShell: { value: shellIndex / Math.max(1, shellCount) },
+      uTime: { value: 0 },
+      uDark: { value: FUR_DARK },
+      uLight: { value: FUR_LIGHT },
+    },
+    vertexShader: /* glsl */ `
+      uniform float uShell;
+      uniform float uTime;
+      varying vec2 vUv;
+      varying float vShell;
+      void main() {
+        vUv = uv * 22.0;
+        vShell = uShell;
+        vec3 p = position + normal * (uShell * 0.07);
+        p += normal * sin(uTime * 1.7 + position.y * 2.0) * 0.004;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
+      }`,
+    fragmentShader: /* glsl */ `
+      uniform vec3 uDark;
+      uniform vec3 uLight;
+      varying vec2 vUv;
+      varying float vShell;
+      float hash(vec2 p) {
+        return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+      }
+      float valueNoise(vec2 p) {
+        vec2 i = floor(p);
+        vec2 f = fract(p);
+        float a = hash(i);
+        float b = hash(i + vec2(1.0, 0.0));
+        float c = hash(i + vec2(0.0, 1.0));
+        float d = hash(i + vec2(1.0, 1.0));
+        vec2 u = f * f * (3.0 - 2.0 * f);
+        return mix(a, b, u.x) + (c - a) * u.y * (1.0 - u.x) + (d - b) * u.x * u.y;
+      }
+      void main() {
+        // soft strand field — avoid hard checker cells
+        float n = valueNoise(vUv * 1.35);
+        float strand = valueNoise(vUv * vec2(2.4, 9.5));
+        float mask = smoothstep(vShell * 0.55, vShell * 0.55 + 0.22, n * 0.65 + strand * 0.55);
+        if (mask < 0.08) discard;
+        vec3 col = mix(uDark, uLight, strand * (1.0 - vShell * 0.55));
+        gl_FragColor = vec4(col, mask * (1.0 - vShell * 0.75));
+      }`,
+  });
+}
 
 export class Buffalo {
   readonly group = new THREE.Group();
@@ -20,24 +75,34 @@ export class Buffalo {
   private jaw!: THREE.Mesh;
   private eyelidL!: THREE.Mesh;
   private eyelidR!: THREE.Mesh;
+  private earL!: THREE.Mesh;
+  private earR!: THREE.Mesh;
   private legs: THREE.Group[] = [];
   private tail!: THREE.Mesh;
   private nostrilL = new THREE.Object3D();
   private nostrilR = new THREE.Object3D();
+  private furShells: THREE.Mesh[] = [];
+  private furMats: THREE.ShaderMaterial[] = [];
+  private furTarget = 0;
 
   private state: BuffaloState = "idle";
   private stateT = 0;
   private blinkTimer = 2.5;
   private blinkPhase = -1;
   private breatheT = 0;
+  private headTurnT = 0;
   private runDir = 1;
   private homePos = new THREE.Vector3(-6.4, 0, -1.2);
+  private homeScale = 1.12;
   private particles: Particles | null = null;
   private roarSmokeDone = false;
+  private breathMistT = 0;
+  private gazeTarget = 0;
   onRoarSound: (() => void) | null = null;
 
-  constructor() {
+  constructor(furShells = 0) {
     this.build();
+    this.setFurShells(furShells);
     this.group.position.copy(this.homePos);
     this.group.rotation.y = 0.95;
   }
@@ -99,13 +164,27 @@ export class Buffalo {
     };
     this.head.add(hornCurve(1), hornCurve(-1));
 
-    // ears
+    // ears (animated)
     const earGeo = new THREE.SphereGeometry(0.16, 8, 6);
-    for (const side of [1, -1]) {
-      const ear = new THREE.Mesh(earGeo, this.mat(HIDE_DARK));
-      ear.position.set(-0.18, 0.12, side * 0.5);
-      ear.scale.set(1, 0.6, 1.4);
-      this.head.add(ear);
+    this.earR = new THREE.Mesh(earGeo, this.mat(HIDE_DARK));
+    this.earR.position.set(-0.18, 0.12, 0.5);
+    this.earR.scale.set(1, 0.6, 1.4);
+    this.head.add(this.earR);
+    this.earL = new THREE.Mesh(earGeo, this.mat(HIDE_DARK));
+    this.earL.position.set(-0.18, 0.12, -0.5);
+    this.earL.scale.set(1, 0.6, 1.4);
+    this.head.add(this.earL);
+
+    // shell fur on torso (LOD; 0 = off)
+    const furGeo = new THREE.SphereGeometry(1.05, 16, 12);
+    for (let i = 0; i < 10; i++) {
+      const mat = makeFurMaterial(i, 10);
+      const shell = new THREE.Mesh(furGeo, mat);
+      shell.scale.set(1.55, 1.05, 0.95);
+      shell.visible = false;
+      this.body.add(shell);
+      this.furShells.push(shell);
+      this.furMats.push(mat);
     }
 
     // eyes + eyelids
@@ -173,13 +252,49 @@ export class Buffalo {
 
     this.group.add(this.body);
     this.body.position.y = 1.75;
-    this.group.scale.setScalar(1.12);
-    this.group.traverse((o) => { if (o instanceof THREE.Mesh) o.castShadow = true; });
+    this.group.scale.setScalar(this.homeScale);
+    this.group.traverse((o: THREE.Object3D) => {
+      if (o instanceof THREE.Mesh) o.castShadow = true;
+    });
+  }
+
+  /** M8 layout — keep buffalo as atmosphere behind full-bleed reels. */
+  setHomeLayout(x: number, y: number, z: number, scale: number): void {
+    this.homePos.set(x, y, z);
+    this.homeScale = scale;
+    if (this.state === "idle") {
+      this.group.position.copy(this.homePos);
+      this.group.scale.setScalar(this.homeScale);
+    }
+  }
+
+  /** LOD fur shells — 0 disables. Never blocks reels / never triggers spin. */
+  setFurShells(count: number): void {
+    this.furTarget = Math.max(0, Math.min(this.furShells.length, Math.floor(count)));
+    for (let i = 0; i < this.furShells.length; i++) {
+      this.furShells[i]!.visible = i < this.furTarget;
+    }
+  }
+
+  /** Interrupt current action and return to idle pose (safe for spin start). */
+  interrupt(): void {
+    this.state = "idle";
+    this.stateT = 0;
+    this.roarSmokeDone = false;
+    this.body.rotation.z = 0;
+    this.body.position.y = 1.75;
+    this.head.rotation.set(0, 0, 0);
+    this.jaw.position.y = -0.34;
+    this.group.position.copy(this.homePos);
+    this.group.position.z = this.homePos.z;
+    this.group.scale.setScalar(this.homeScale);
+    this.group.rotation.y = 0.95;
+    for (const leg of this.legs) leg.rotation.z = 0;
   }
 
   // ---------------- public actions ----------------
   roar(): void {
-    if (this.state !== "idle") return;
+    if (this.state !== "idle") this.interrupt();
     this.state = "roar";
     this.stateT = 0;
     this.roarSmokeDone = false;
@@ -187,7 +302,7 @@ export class Buffalo {
   }
 
   run(): void {
-    if (this.state !== "idle") return;
+    if (this.state !== "idle") this.interrupt();
     this.state = "run";
     this.stateT = 0;
     this.runDir = 1;
@@ -195,9 +310,26 @@ export class Buffalo {
   }
 
   victory(): void {
-    if (this.state !== "idle") return;
+    if (this.state !== "idle") this.interrupt();
     this.state = "victory";
     this.stateT = 0;
+    this.onRoarSound?.();
+  }
+
+  /** Big Win UI linkage — presentation only, never spins. */
+  bigWin(): void {
+    if (this.state !== "idle") this.interrupt();
+    this.state = "bigWin";
+    this.stateT = 0;
+    this.onRoarSound?.();
+  }
+
+  /** Jackpot approach — camera pressure, presentation only. */
+  jackpot(): void {
+    if (this.state !== "idle") this.interrupt();
+    this.state = "jackpot";
+    this.stateT = 0;
+    this.roarSmokeDone = false;
     this.onRoarSound?.();
   }
 
@@ -205,38 +337,91 @@ export class Buffalo {
     return this.state !== "idle";
   }
 
+  /** Exposed for contract tests — idle life always runs in update(). */
+  get animationContract(): string[] {
+    return [
+      "breath",
+      "blink",
+      "gaze",
+      "ears",
+      "tail",
+      "nostril",
+      "breathMist",
+      "roar",
+      "run",
+      "victory",
+      "bigWin",
+      "jackpot",
+    ];
+  }
+
   // ---------------- update ----------------
   update(dt: number, time: number): void {
-    // breathing — always
+    // breathing — always (also drives nostril scale cue)
     this.breatheT += dt;
     const breath = Math.sin(this.breatheT * 1.9) * 0.02;
     this.body.scale.set(1 + breath, 1 + breath * 1.4, 1 + breath);
+    const nosePulse = 1 + Math.sin(this.breatheT * 1.9) * 0.08;
+    this.nostrilL.scale.setScalar(nosePulse);
+    this.nostrilR.scale.setScalar(nosePulse);
+
+    for (const mat of this.furMats) {
+      mat.uniforms.uTime.value = time;
+    }
 
     // blinking
     this.blinkTimer -= dt;
-    if (this.blinkTimer <= 0 && this.blinkPhase < 0) {
+    if (this.blinkTimer <= 0 && this.blinkPhase < 0 && this.state === "idle") {
       this.blinkPhase = 0;
       this.blinkTimer = 1.6 + Math.random() * 3.2;
     }
     if (this.blinkPhase >= 0) {
       this.blinkPhase += dt;
-      const p = this.blinkPhase / 0.18;
+      const p = this.blinkPhase / 0.16;
       const close = p < 0.5 ? p * 2 : (1 - p) * 2;
-      const s = 0.15 + 0.85 * Math.max(0, close);
+      const s = 0.12 + 0.88 * Math.max(0, close);
       this.eyelidL.scale.y = s;
       this.eyelidR.scale.y = s;
       if (p >= 1) this.blinkPhase = -1;
     }
 
-    // tail swish
-    this.tail.rotation.x = Math.sin(time * 2.3) * 0.35;
+    // tail + ear sway (stronger on idle)
+    const sway = this.state === "idle" ? 1 : 0.45;
+    this.tail.rotation.x = Math.sin(time * 2.3) * 0.38 * sway;
+    this.tail.rotation.z = 0.7 + Math.sin(time * 1.7) * 0.14 * sway;
+    this.earL.rotation.z = Math.sin(time * 2.1) * 0.22 * sway;
+    this.earR.rotation.z = Math.sin(time * 2.1 + 0.4) * 0.22 * sway;
+
+    // Soft breath mist (idle only) — particles only, never business IO
+    this.breathMistT += dt;
+    if (this.state === "idle" && this.particles && this.breathMistT > 2.8) {
+      this.breathMistT = 0;
+      const wl = new THREE.Vector3();
+      this.nostrilL.getWorldPosition(wl);
+      this.particles.puffSmoke(wl, 3);
+      const wr = new THREE.Vector3();
+      this.nostrilR.getWorldPosition(wr);
+      this.particles.puffSmoke(wr, 3);
+    }
 
     this.stateT += dt;
     switch (this.state) {
       case "idle": {
-        // gentle head sway
+        // gentle head sway + occasional look-around toward reels
+        this.headTurnT += dt;
+        if (this.headTurnT > 4.5) {
+          this.headTurnT = 0;
+          this.gazeTarget = (Math.random() - 0.35) * 0.35;
+        }
+        const look = THREE.MathUtils.damp(
+          this.head.rotation.y,
+          this.gazeTarget + Math.sin(time * 0.45) * 0.08,
+          2.2,
+          dt,
+        );
+        this.head.rotation.y = look;
         this.head.rotation.z = Math.sin(time * 0.7) * 0.05;
-        this.head.rotation.y = Math.sin(time * 0.45) * 0.1;
+        this.head.rotation.x = Math.sin(this.breatheT * 1.9) * 0.03;
         this.body.position.y = 1.75;
         for (const leg of this.legs) leg.rotation.z = 0;
         this.jaw.position.y = -0.34;
@@ -288,13 +473,14 @@ export class Buffalo {
       case "victory": {
         const T = 2.2;
         const p = Math.min(this.stateT / T, 1);
-        // rear up then slam down
+        // rear up then slam down — stay left of reels (home X)
         const rear = Math.sin(Math.min(p * 1.6, 1) * Math.PI);
         this.body.rotation.z = rear * 0.55;
         this.body.position.y = 1.75 + rear * 0.5;
-        this.legs[0].rotation.z = -rear * 1.1;
-        this.legs[1].rotation.z = -rear * 1.1;
+        this.legs[0]!.rotation.z = -rear * 1.1;
+        this.legs[1]!.rotation.z = -rear * 1.1;
         this.head.rotation.z = -rear * 0.3;
+        this.group.position.x = this.homePos.x;
         if (p > 0.62 && p < 0.72 && this.particles) {
           const foot = new THREE.Vector3(this.group.position.x, 0.2, this.group.position.z);
           this.particles.puffSmoke(foot, 10);
@@ -302,6 +488,61 @@ export class Buffalo {
         if (p >= 1) {
           this.body.rotation.z = 0;
           this.state = "idle";
+        }
+        break;
+      }
+      case "bigWin": {
+        const T = 1.85;
+        const p = Math.min(this.stateT / T, 1);
+        const nod = Math.sin(p * Math.PI * 2) * (1 - p);
+        this.head.rotation.x = -nod * 0.35;
+        this.head.rotation.z = nod * 0.2;
+        this.jaw.position.y = -0.34 - Math.abs(nod) * 0.1;
+        this.body.position.y = 1.75 + Math.abs(nod) * 0.12;
+        this.group.position.x = this.homePos.x;
+        if (p > 0.2 && p < 0.35 && this.particles && !this.roarSmokeDone) {
+          this.roarSmokeDone = true;
+          const wl = new THREE.Vector3();
+          this.nostrilL.getWorldPosition(wl);
+          this.particles.puffSmoke(wl, 10);
+        }
+        if (p >= 1) {
+          this.head.rotation.set(0, 0, 0);
+          this.jaw.position.y = -0.34;
+          this.state = "idle";
+          this.roarSmokeDone = false;
+        }
+        break;
+      }
+      case "jackpot": {
+        // Approach lens + roar pressure — stay left of reels (never cross board)
+        const T = 2.6;
+        const p = Math.min(this.stateT / T, 1);
+        const surge = Math.sin(Math.min(p * 1.35, 1) * Math.PI);
+        this.group.position.x = this.homePos.x + surge * 1.1;
+        this.group.position.z = this.homePos.z + surge * 1.6;
+        this.group.scale.setScalar(this.homeScale * (1 + surge * 0.28));
+        this.head.rotation.z = surge * 0.62;
+        this.head.rotation.x = -surge * 0.18;
+        this.jaw.position.y = -0.34 - surge * 0.2;
+        this.body.position.y = 1.75 + surge * 0.25;
+        if (!this.roarSmokeDone && p > 0.18 && this.particles) {
+          this.roarSmokeDone = true;
+          const wl = new THREE.Vector3();
+          this.nostrilL.getWorldPosition(wl);
+          this.particles.puffSmoke(wl, 18);
+          const wr = new THREE.Vector3();
+          this.nostrilR.getWorldPosition(wr);
+          this.particles.puffSmoke(wr, 18);
+        }
+        if (p >= 1) {
+          this.group.position.copy(this.homePos);
+          this.group.scale.setScalar(this.homeScale);
+          this.head.rotation.set(0, 0, 0);
+          this.jaw.position.y = -0.34;
+          this.body.position.y = 1.75;
+          this.state = "idle";
+          this.roarSmokeDone = false;
         }
         break;
       }

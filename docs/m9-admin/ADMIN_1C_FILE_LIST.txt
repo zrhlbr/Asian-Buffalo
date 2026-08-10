@@ -1,0 +1,10 @@
+﻿lib/admin/admin-queries.ts
+lib/admin/admin-api.ts
+lib/admin/i18n.ts
+app/admin/modules/games.tsx
+app/admin/modules/game-ops.tsx
+app/admin/modules/rounds.tsx
+app/admin/modules/spins.tsx
+app/admin/modules/players.tsx
+tests/r1-m9-admin-1c.test.mjs
+docs/m9-admin/ADMIN_1C_BASELINE.md

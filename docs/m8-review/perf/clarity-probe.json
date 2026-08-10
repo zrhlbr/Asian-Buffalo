@@ -1,0 +1,35 @@
+{
+  "at": "2026-08-06T20:24:00.848Z",
+  "probes": {
+    "phone": {
+      "dpr": 3,
+      "canvasW": 2532,
+      "canvasH": 1170,
+      "cssW": 844,
+      "cssH": 390,
+      "qualityTier": "high",
+      "reelScale": 1.940464004897832,
+      "plateHint": "runtime SIZE=1024"
+    },
+    "pc": {
+      "dpr": 2,
+      "canvasW": 2560,
+      "canvasH": 1440,
+      "cssW": 1280,
+      "cssH": 720,
+      "qualityTier": "high",
+      "reelScale": 1.95189101144932,
+      "plateHint": "runtime SIZE=1024"
+    },
+    "tablet": {
+      "dpr": 2,
+      "canvasW": 2048,
+      "canvasH": 1536,
+      "cssW": 1024,
+      "cssH": 768,
+      "qualityTier": "high",
+      "reelScale": 1.4639182585869899,
+      "plateHint": "runtime SIZE=1024"
+    }
+  }
+}

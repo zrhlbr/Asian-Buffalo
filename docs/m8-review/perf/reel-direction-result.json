@@ -1,0 +1,52 @@
+{
+  "at": "2026-08-06T19:43:39.940Z",
+  "base": "http://127.0.0.1:5174/",
+  "expected": "down",
+  "results": [
+    {
+      "name": "normal-spin",
+      "probe": {
+        "ok": true,
+        "reelSpinDirection": "down",
+        "className": "m5-root m7-commercial m8-commercial",
+        "note": "See unit tests for cellY/stripIndex; this capture is visual evidence",
+        "reelsMod": true,
+        "dir": null
+      }
+    },
+    {
+      "name": "turbo-spin",
+      "probe": {
+        "ok": true,
+        "reelSpinDirection": "down",
+        "className": "m5-root m7-commercial m8-commercial",
+        "note": "See unit tests for cellY/stripIndex; this capture is visual evidence",
+        "reelsMod": true,
+        "dir": null
+      }
+    },
+    {
+      "name": "phone-landscape-spin",
+      "probe": {
+        "ok": true,
+        "reelSpinDirection": "down",
+        "className": "m5-root m7-commercial m8-commercial",
+        "note": "See unit tests for cellY/stripIndex; this capture is visual evidence",
+        "reelsMod": true,
+        "dir": null
+      }
+    },
+    {
+      "name": "freespin-attempt",
+      "probe": {
+        "ok": true,
+        "reelSpinDirection": "down",
+        "className": "m5-root m7-commercial m8-commercial",
+        "note": "See unit tests for cellY/stripIndex; this capture is visual evidence",
+        "reelsMod": true,
+        "dir": null
+      }
+    }
+  ],
+  "unitTests": "tests/r1-m8-reel-direction.test.mjs"
+}

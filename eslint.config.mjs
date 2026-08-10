@@ -11,7 +11,12 @@ const eslintConfig = defineConfig([
     ".next/**",
     "out/**",
     "build/**",
+    "dist/**",
     "next-env.d.ts",
+    // Read-only Kimi M6 handoff archive — not part of formal runtime.
+    "docs/m6-handoff/**",
+    // Local review deliverables (screenshots/video/reports) — not lint targets.
+    "docs/m6-review/**",
   ]),
 ]);
 

@@ -12,21 +12,19 @@ import {
   DEV_TEST_PLAYER_ID,
 } from "../../../../../lib/runtime-identity.ts";
 import {
-  routeTestRoundStore,
-  routeTestWalletAdapter,
-} from "../../../../../lib/route-test-services.ts";
+  createRouteDbWalletAdapter,
+  routeRoundStore,
+} from "../../../../../lib/route-money-services.ts";
 
 /**
- * Local/TEST wallet for playable spins when identity gate is explicitly open.
+ * Formal spin route: server-authoritative outcome + D1 wallet/ledger settle.
  * allowRealMoney stays false. Identity fail-closed unless AB_ALLOW_TEST_IDENTITY=1.
  */
-const walletAdapter = routeTestWalletAdapter;
-const roundStore = routeTestRoundStore;
-
 export async function POST(request: Request) {
   void createProductionIdentityProvider;
   const db = await getDb();
   const identityProvider = createRuntimeIdentityProvider();
+  const walletAdapter = createRouteDbWalletAdapter(db);
   const player = await ensureDevTestPlayer(db, DEV_TEST_PLAYER_ID);
   if (player) {
     await seedDevTestWalletIfEmpty(walletAdapter, player.playerId, player.currency);
@@ -35,7 +33,7 @@ export async function POST(request: Request) {
   return handleSpin(
     db,
     { identityProvider, request },
-    { walletAdapter, roundStore, allowRealMoney: false },
+    { walletAdapter, roundStore: routeRoundStore, allowRealMoney: false },
     payload,
   );
 }

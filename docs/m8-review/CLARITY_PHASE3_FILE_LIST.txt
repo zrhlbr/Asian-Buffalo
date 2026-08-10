@@ -1,0 +1,16 @@
+client/m5/game/symbols.ts
+client/m5/scene/world.ts
+client/m5/quality.ts
+client/m5/styles.css
+tests/r1-m8-clarity.test.mjs
+docs/m8-review/RENDERER_CONFIG.md
+docs/m8-review/TEXTURE_CONFIG.md
+docs/m8-review/PERF_CLARITY_IMPACT.md
+docs/m8-review/CLARITY_PHASE3_DELIVERY.md
+docs/m8-review/AB-K1-R1-M8-clarity.patch
+docs/m8-review/CLARITY_PHASE3_SHA256.txt
+docs/m8-review/perf/clarity-probe.json
+docs/m8-review/screenshots/p3-clarity-before-phone.png
+docs/m8-review/screenshots/p3-clarity-after-phone.png
+docs/m8-review/screenshots/p3-clarity-after-pc.png
+docs/m8-review/screenshots/p3-clarity-after-tablet.png

@@ -1,0 +1,32 @@
+---
+description: 《西游戏》M8 前台 / M9 后台开发线强制拆分
+alwaysApply: true
+---
+
+# 前台 / 后台开发线拆分（强制）
+
+权威文档：仓库根目录 `XI_GAME_FRONTEND_BACKEND_SPLIT.md`
+
+## 本工作区 = M9（仅后台）
+
+路径：`D:\Asian-Buffalo-R1-M9-Cursor-Clean`
+
+**只做：** `/admin`、Admin API、RBAC、Dashboard、Players、Wallet/Ledger Admin、Deposit/Withdrawal Admin、Sessions/Rounds/Spins、Games/牛魔王运营、VIP/Activity/Announcement/Ranking/CS Admin、Audit、Risk、System Health。
+
+**禁止修改：** Lobby、Hub、Play、Reel、Spin 表现、Animal Animation、WebGL、Math、RTP、RNG、玩家前台视觉与性能。
+
+## 对端
+
+前台线：`D:\Asian-Buffalo-R1-M8-Cursor-Clean`（M8）。后台任务不得发到 M8；前台视觉任务不得在本仓执行。
+
+## 跨线
+
+必须先说明：为何必须改、影响范围、回归风险。未经赵总批准不得跨线。误入则停笔报告。
+
+## 资金
+
+禁止 Admin 直接 UPDATE 余额；须经 Wallet Service + Ledger + Audit。Production Money Gate 保持关闭。
+
+## Git / 发布
+
+禁止 M8/M9 Patch 混入。未经批准：禁止 Commit / Push / Merge / Rebase / Deploy。

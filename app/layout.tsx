@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Asian Buffalo · 亚洲水牛",
-  description: "Asian Buffalo 5×4、50线正式前端（Session/Spin/Round/Rules）。",
+  title: "Bull Demon King · 牛魔王",
+  description: "Bull Demon King（牛魔王）5×4、50线正式前端（Session/Spin/Round/Rules）。",
   other: {
     "codex-preview": "development",
   },

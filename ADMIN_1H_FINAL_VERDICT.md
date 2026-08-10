@@ -7,9 +7,9 @@
 
 | Item | Value |
 |---|---|
-| M9 SOURCE COMMIT | `8c5b9a529e866a735b7e22d591e51108935e4adb`（tag tip；含 docs freeze） |
+| M9 SOURCE COMMIT | `0d1f194e6f16ffccfd0a96650b0bdd7898c3c84f`（annotated tag tip） |
 | M9 CODE COMMIT | `d1c6f3e3b3f5981af24371f8bdfbebdec6744043`（Admin/API runtime allowlist） |
-| M9 RELEASE TAG | `xigame-admin-prod-20260810` → tip `8c5b9a5…` |
+| M9 RELEASE TAG | `xigame-admin-prod-20260810` → `0d1f194e6f16ffccfd0a96650b0bdd7898c3c84f` |
 | M8 SOURCE COMMIT | `01c4a83380d1408f1b0e4ce6aa44686c43562075` |
 | M8 RELEASE TAG | `xigame-admin-prod-20260810-lobby` |
 | PRODUCTION IMAGE | `sha256:99c9e35443378313b13602cfdf43636fa04d2ae3835caab6153b2b75490cdb59` |

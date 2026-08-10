@@ -1,37 +1,86 @@
 /**
- * Symbol textures — hand-drawn on canvas (no external art assets).
- * One texture per symbol; shared by reel cells and paytable UI.
+ * Symbol textures — commercial illustrated PNGs + premium canvas fallbacks.
+ * Formal SymbolId set unchanged (math/server authoritative).
  */
 import * as THREE from "three";
 import type { SymbolId } from "../adapter.ts";
 
-const SIZE = 256;
+// Explicit ?url — vinext/RSC may otherwise hand back module objects → "/[object Object]" 404s
+import buffaloArt from "../assets/symbols/buffalo.png?url";
+import lionArt from "../assets/symbols/lion.png?url";
+import elephantArt from "../assets/symbols/elephant.png?url";
+import antelopeArt from "../assets/symbols/antelope.png?url";
+import zebraArt from "../assets/symbols/zebra.png?url";
+import wildArt from "../assets/symbols/wild.png?url";
+import scatterArt from "../assets/symbols/scatter.png?url";
+import aArt from "../assets/symbols/a.png?url";
+import kArt from "../assets/symbols/k.png?url";
+import qArt from "../assets/symbols/q.png?url";
+import jArt from "../assets/symbols/j.png?url";
+import tenArt from "../assets/symbols/ten.png?url";
+import nineArt from "../assets/symbols/nine.png?url";
+
+/** Runtime plate resolution — M8 Phase3: 1024 minimum (never downscale commercial PNGs to 512). */
+const SIZE = 1024;
+/** Logical size for procedural fallback painters (scaled up onto SIZE). */
+const LOGIC = 512;
+
+function asAssetUrl(mod: unknown): string {
+  if (typeof mod === "string") return mod;
+  if (mod && typeof mod === "object" && "default" in (mod as object)) {
+    const d = (mod as { default: unknown }).default;
+    if (typeof d === "string") return d;
+  }
+  return String(mod ?? "");
+}
+
+const ART_URL: Partial<Record<SymbolId, string>> = {
+  buffalo: asAssetUrl(buffaloArt),
+  lion: asAssetUrl(lionArt),
+  elephant: asAssetUrl(elephantArt),
+  antelope: asAssetUrl(antelopeArt),
+  zebra: asAssetUrl(zebraArt),
+  wild: asAssetUrl(wildArt),
+  scatter: asAssetUrl(scatterArt),
+  a: asAssetUrl(aArt),
+  k: asAssetUrl(kArt),
+  q: asAssetUrl(qArt),
+  j: asAssetUrl(jArt),
+  ten: asAssetUrl(tenArt),
+  nine: asAssetUrl(nineArt),
+};
 
 function makeCanvas(): [HTMLCanvasElement, CanvasRenderingContext2D] {
   const c = document.createElement("canvas");
   c.width = c.height = SIZE;
-  return [c, c.getContext("2d")!];
+  const g = c.getContext("2d", { alpha: true })!;
+  g.imageSmoothingEnabled = true;
+  g.imageSmoothingQuality = "high";
+  return [c, g];
 }
 
-function baseTile(g: CanvasRenderingContext2D, top: string, bottom: string): void {
-  const grad = g.createLinearGradient(0, 0, 0, SIZE);
-  grad.addColorStop(0, top);
-  grad.addColorStop(1, bottom);
-  g.fillStyle = grad;
-  roundRect(g, 6, 6, SIZE - 12, SIZE - 12, 26);
-  g.fill();
-  // inner gold frame
-  g.strokeStyle = "rgba(249,224,138,.85)";
-  g.lineWidth = 5;
-  roundRect(g, 10, 10, SIZE - 20, SIZE - 20, 22);
-  g.stroke();
-  g.strokeStyle = "rgba(90,60,10,.9)";
-  g.lineWidth = 2;
-  roundRect(g, 18, 18, SIZE - 36, SIZE - 36, 16);
-  g.stroke();
+/** Shared crisp sampling — anisotropy follows GPU cap; mipmaps on. */
+export function configureSymbolTexture(
+  tex: THREE.Texture,
+  maxAniso = 16,
+): THREE.Texture {
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.generateMipmaps = true;
+  tex.minFilter = THREE.LinearMipmapLinearFilter;
+  tex.magFilter = THREE.LinearFilter;
+  tex.anisotropy = maxAniso;
+  tex.needsUpdate = true;
+  return tex;
 }
 
-function roundRect(g: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number): void {
+function roundRect(
+  g: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  r: number,
+): void {
   g.beginPath();
   g.moveTo(x + r, y);
   g.arcTo(x + w, y, x + w, y + h, r);
@@ -41,267 +90,278 @@ function roundRect(g: CanvasRenderingContext2D, x: number, y: number, w: number,
   g.closePath();
 }
 
-function letter(g: CanvasRenderingContext2D, ch: string, color1: string, color2: string): void {
-  baseTile(g, "#3a2a12", "#1c1206");
-  g.font = `900 ${ch.length > 1 ? 110 : 150}px Georgia, serif`;
+function jewelTile(g: CanvasRenderingContext2D, top: string, bottom: string): void {
+  const grad = g.createLinearGradient(0, 0, 0, LOGIC);
+  grad.addColorStop(0, top);
+  grad.addColorStop(0.55, bottom);
+  grad.addColorStop(1, "#0a0602");
+  g.fillStyle = grad;
+  roundRect(g, 10, 10, LOGIC - 20, LOGIC - 20, 42);
+  g.fill();
+  // metal rim
+  const rim = g.createLinearGradient(0, 0, LOGIC, LOGIC);
+  rim.addColorStop(0, "rgba(255,240,180,.95)");
+  rim.addColorStop(0.45, "rgba(224,179,74,.9)");
+  rim.addColorStop(1, "rgba(90,60,16,.95)");
+  g.strokeStyle = rim;
+  g.lineWidth = 14;
+  roundRect(g, 18, 18, LOGIC - 36, LOGIC - 36, 36);
+  g.stroke();
+  g.strokeStyle = "rgba(255,255,255,.18)";
+  g.lineWidth = 3;
+  roundRect(g, 34, 34, LOGIC - 68, LOGIC - 68, 28);
+  g.stroke();
+}
+
+function letter(g: CanvasRenderingContext2D, ch: string, c1: string, c2: string): void {
+  jewelTile(g, "#3b2810", "#140c05");
+  g.font = `900 ${ch.length > 1 ? 210 : 280}px Cinzel, Georgia, serif`;
   g.textAlign = "center";
   g.textBaseline = "middle";
-  const grad = g.createLinearGradient(0, 50, 0, 210);
-  grad.addColorStop(0, color1);
-  grad.addColorStop(1, color2);
+  const grad = g.createLinearGradient(0, 90, 0, 400);
+  grad.addColorStop(0, "#fff8df");
+  grad.addColorStop(0.35, c1);
+  grad.addColorStop(1, c2);
   g.fillStyle = grad;
-  g.shadowColor = "rgba(0,0,0,.6)";
-  g.shadowBlur = 10;
-  g.shadowOffsetY = 6;
-  g.fillText(ch, SIZE / 2, SIZE / 2 + 8);
-}
-
-function drawBuffalo(g: CanvasRenderingContext2D): void {
-  baseTile(g, "#4a3413", "#211405");
-  g.save();
-  g.translate(SIZE / 2, SIZE / 2 + 14);
-  // body silhouette
-  g.fillStyle = "#2b1c0d";
+  g.shadowColor = "rgba(0,0,0,.65)";
+  g.shadowBlur = 18;
+  g.shadowOffsetY = 10;
+  g.fillText(ch, LOGIC / 2, LOGIC / 2 + 12);
+  g.shadowBlur = 0;
+  // specular slash
+  g.strokeStyle = "rgba(255,255,255,.22)";
+  g.lineWidth = 6;
   g.beginPath();
-  g.ellipse(0, 26, 74, 44, 0, 0, Math.PI * 2);
-  g.fill();
-  // hump
+  g.moveTo(120, 110);
+  g.lineTo(200, 90);
+  g.stroke();
+}
+
+function drawZebraFallback(g: CanvasRenderingContext2D): void {
+  jewelTile(g, "#2a2118", "#0e0a06");
+  g.save();
+  g.translate(LOGIC / 2, LOGIC / 2 + 10);
+  g.fillStyle = "#f2e6cf";
   g.beginPath();
-  g.ellipse(-8, -2, 52, 34, 0, Math.PI, 0);
+  g.ellipse(0, 20, 120, 100, 0, 0, Math.PI * 2);
   g.fill();
-  // head
-  g.fillStyle = "#33220f";
-  g.beginPath();
-  g.ellipse(0, -34, 34, 30, 0, 0, Math.PI * 2);
-  g.fill();
-  // horns
-  g.strokeStyle = "#d9c27a";
-  g.lineWidth = 11;
-  g.lineCap = "round";
-  g.beginPath(); g.arc(-32, -48, 26, Math.PI * 0.9, Math.PI * 1.9); g.stroke();
-  g.beginPath(); g.arc(32, -48, 26, Math.PI * 1.1, Math.PI * 0.1, true); g.stroke();
-  // boss (horn base)
-  g.fillStyle = "#c9ad5e";
-  g.beginPath(); g.ellipse(0, -52, 24, 12, 0, 0, Math.PI * 2); g.fill();
-  // eyes
-  g.fillStyle = "#ffd970";
-  g.beginPath(); g.arc(-13, -36, 5, 0, Math.PI * 2); g.fill();
-  g.beginPath(); g.arc(13, -36, 5, 0, Math.PI * 2); g.fill();
-  // muzzle
-  g.fillStyle = "#1c1108";
-  g.beginPath(); g.ellipse(0, -16, 20, 12, 0, 0, Math.PI * 2); g.fill();
-  g.restore();
-  // rim light
-  g.strokeStyle = "rgba(255,214,110,.55)";
-  g.lineWidth = 4;
-  g.beginPath(); g.ellipse(SIZE / 2, SIZE / 2 + 12, 82, 58, 0, Math.PI * 1.05, Math.PI * 1.95); g.stroke();
-}
-
-function drawEagle(g: CanvasRenderingContext2D): void {
-  baseTile(g, "#3d2f16", "#191006");
-  g.save();
-  g.translate(SIZE / 2, SIZE / 2);
-  g.fillStyle = "#c99b3f";
-  // wings
-  g.beginPath();
-  g.moveTo(0, -10);
-  g.quadraticCurveTo(-60, -70, -96, -46);
-  g.quadraticCurveTo(-58, -30, -52, 6);
-  g.quadraticCurveTo(-26, -6, 0, 4);
-  g.quadraticCurveTo(26, -6, 52, 6);
-  g.quadraticCurveTo(58, -30, 96, -46);
-  g.quadraticCurveTo(60, -70, 0, -10);
-  g.fill();
-  // body/head
-  g.fillStyle = "#e8c26a";
-  g.beginPath(); g.ellipse(0, 8, 20, 30, 0, 0, Math.PI * 2); g.fill();
-  g.fillStyle = "#fff3c4";
-  g.beginPath(); g.arc(0, -22, 14, 0, Math.PI * 2); g.fill();
-  // beak
-  g.fillStyle = "#f39c2b";
-  g.beginPath(); g.moveTo(-6, -22); g.lineTo(10, -18); g.lineTo(-4, -12); g.closePath(); g.fill();
-  // eye
-  g.fillStyle = "#241503";
-  g.beginPath(); g.arc(-4, -26, 3.4, 0, Math.PI * 2); g.fill();
-  g.restore();
-}
-
-function drawTiger(g: CanvasRenderingContext2D): void {
-  baseTile(g, "#43300f", "#1d1204");
-  g.save();
-  g.translate(SIZE / 2, SIZE / 2);
-  g.fillStyle = "#e08b2d";
-  g.beginPath(); g.ellipse(0, 0, 62, 54, 0, 0, Math.PI * 2); g.fill();
-  // ears
-  g.beginPath(); g.arc(-42, -40, 16, 0, Math.PI * 2); g.fill();
-  g.beginPath(); g.arc(42, -40, 16, 0, Math.PI * 2); g.fill();
-  // stripes
-  g.strokeStyle = "#2b1603";
-  g.lineWidth = 7; g.lineCap = "round";
-  for (const [x1, y1, x2, y2] of [[-30, -46, -18, -30], [30, -46, 18, -30], [0, -52, 0, -34], [-56, -8, -38, 0], [56, -8, 38, 0]] as const) {
-    g.beginPath(); g.moveTo(x1, y1); g.lineTo(x2, y2); g.stroke();
-  }
-  // muzzle
-  g.fillStyle = "#f6d9a0";
-  g.beginPath(); g.ellipse(0, 20, 30, 20, 0, 0, Math.PI * 2); g.fill();
-  // eyes
-  g.fillStyle = "#ffd970";
-  g.beginPath(); g.ellipse(-22, -8, 9, 11, 0, 0, Math.PI * 2); g.fill();
-  g.beginPath(); g.ellipse(22, -8, 9, 11, 0, 0, Math.PI * 2); g.fill();
-  g.fillStyle = "#201203";
-  g.beginPath(); g.ellipse(-22, -8, 3.4, 8, 0, 0, Math.PI * 2); g.fill();
-  g.beginPath(); g.ellipse(22, -8, 3.4, 8, 0, 0, Math.PI * 2); g.fill();
-  // nose
-  g.fillStyle = "#8a3b1e";
-  g.beginPath(); g.moveTo(-7, 10); g.lineTo(7, 10); g.lineTo(0, 19); g.closePath(); g.fill();
-  g.restore();
-}
-
-function drawDeer(g: CanvasRenderingContext2D): void {
-  baseTile(g, "#3b2c14", "#1a1106");
-  g.save();
-  g.translate(SIZE / 2, SIZE / 2 + 6);
-  g.fillStyle = "#b07f3e";
-  g.beginPath(); g.ellipse(0, 10, 38, 46, 0, 0, Math.PI * 2); g.fill();
-  // antlers
-  g.strokeStyle = "#e6cf9a"; g.lineWidth = 8; g.lineCap = "round";
-  const antler = (sx: number) => {
-    g.beginPath(); g.moveTo(sx * 14, -40);
-    g.quadraticCurveTo(sx * 34, -72, sx * 22, -92); g.stroke();
-    g.beginPath(); g.moveTo(sx * 26, -62); g.lineTo(sx * 48, -74); g.stroke();
-    g.beginPath(); g.moveTo(sx * 20, -78); g.lineTo(sx * 38, -96); g.stroke();
-  };
-  antler(-1); antler(1);
-  // ears
-  g.fillStyle = "#96662a";
-  g.beginPath(); g.ellipse(-30, -22, 14, 8, -0.7, 0, Math.PI * 2); g.fill();
-  g.beginPath(); g.ellipse(30, -22, 14, 8, 0.7, 0, Math.PI * 2); g.fill();
-  // eyes
-  g.fillStyle = "#241503";
-  g.beginPath(); g.arc(-14, -6, 5, 0, Math.PI * 2); g.fill();
-  g.beginPath(); g.arc(14, -6, 5, 0, Math.PI * 2); g.fill();
-  // muzzle
-  g.fillStyle = "#8a5f27";
-  g.beginPath(); g.ellipse(0, 30, 16, 14, 0, 0, Math.PI * 2); g.fill();
-  g.fillStyle = "#2b1a08";
-  g.beginPath(); g.ellipse(0, 24, 7, 5, 0, 0, Math.PI * 2); g.fill();
-  g.restore();
-}
-
-function drawLotus(g: CanvasRenderingContext2D): void {
-  baseTile(g, "#3a2b14", "#191006");
-  g.save();
-  g.translate(SIZE / 2, SIZE / 2 + 16);
-  const petal = (rot: number, len: number, w: number, col: string) => {
-    g.save(); g.rotate(rot);
-    g.fillStyle = col;
+  g.fillStyle = "#1a120c";
+  for (let i = -4; i <= 4; i++) {
     g.beginPath();
-    g.moveTo(0, 0);
-    g.quadraticCurveTo(-w, -len * 0.55, 0, -len);
-    g.quadraticCurveTo(w, -len * 0.55, 0, 0);
-    g.fill(); g.restore();
-  };
-  for (let i = -2; i <= 2; i++) petal(i * 0.5, 78 - Math.abs(i) * 16, 26, i % 2 === 0 ? "#f2c94c" : "#d4af37");
-  petal(0, 92, 22, "#ffe98a");
-  // base leaves
-  g.fillStyle = "#7a8a3a";
-  g.beginPath(); g.ellipse(-34, 18, 26, 10, -0.3, 0, Math.PI * 2); g.fill();
-  g.beginPath(); g.ellipse(34, 18, 26, 10, 0.3, 0, Math.PI * 2); g.fill();
-  // glow center
-  g.fillStyle = "#fff3c4";
-  g.beginPath(); g.arc(0, -6, 10, 0, Math.PI * 2); g.fill();
+    g.ellipse(i * 22, -10, 10, 70, i * 0.08, 0, Math.PI * 2);
+    g.fill();
+  }
+  g.fillStyle = "#120c08";
+  g.beginPath();
+  g.ellipse(0, -70, 70, 55, 0, 0, Math.PI * 2);
+  g.fill();
   g.restore();
 }
 
-function drawWild(g: CanvasRenderingContext2D): void {
-  baseTile(g, "#6b2f0e", "#2a1004");
-  const cx = SIZE / 2, cy = SIZE / 2 - 20;
-  // sunset
-  const sun = g.createRadialGradient(cx, cy, 8, cx, cy, 74);
-  sun.addColorStop(0, "#fff3c4");
-  sun.addColorStop(0.5, "#f9b84a");
-  sun.addColorStop(1, "rgba(230,110,30,0)");
-  g.fillStyle = sun;
-  g.beginPath(); g.arc(cx, cy, 74, 0, Math.PI * 2); g.fill();
-  // horizon line
-  g.fillStyle = "rgba(40,16,4,.85)";
-  g.fillRect(20, cy + 34, SIZE - 40, 6);
-  g.font = "900 62px Georgia, serif";
-  g.textAlign = "center";
-  const grad = g.createLinearGradient(0, SIZE - 92, 0, SIZE - 30);
-  grad.addColorStop(0, "#fff6d8"); grad.addColorStop(1, "#f9b84a");
-  g.fillStyle = grad;
-  g.shadowColor = "rgba(255,180,60,.9)"; g.shadowBlur = 16;
-  g.fillText("WILD", cx, SIZE - 42);
-  g.shadowBlur = 0;
+/** Commercial buffalo plate — no logo text; warm key from upper-left. */
+function drawBuffaloSymbol(g: CanvasRenderingContext2D): void {
+  jewelTile(g, "#4a2a0c", "#120804");
+  const sky = g.createRadialGradient(340, 160, 20, 256, 220, 280);
+  sky.addColorStop(0, "#ffb040");
+  sky.addColorStop(0.45, "#c45a18");
+  sky.addColorStop(1, "#1a0c04");
+  g.fillStyle = sky;
+  roundRect(g, 28, 28, LOGIC - 56, LOGIC - 56, 36);
+  g.fill();
+
+  g.save();
+  g.translate(LOGIC / 2, LOGIC / 2 + 18);
+  // Crescent horns (Asian water buffalo silhouette)
+  const horn = (dir: 1 | -1) => {
+    g.fillStyle = "#1a120c";
+    g.beginPath();
+    g.moveTo(dir * 40, -40);
+    g.bezierCurveTo(dir * 150, -120, dir * 210, -40, dir * 170, 30);
+    g.bezierCurveTo(dir * 150, -10, dir * 110, -50, dir * 48, -28);
+    g.closePath();
+    g.fill();
+    g.strokeStyle = "rgba(255, 210, 120, 0.35)";
+    g.lineWidth = 4;
+    g.stroke();
+  };
+  horn(-1);
+  horn(1);
+  // Head mass
+  const head = g.createLinearGradient(-80, -60, 80, 120);
+  head.addColorStop(0, "#5a3a22");
+  head.addColorStop(0.45, "#2a1810");
+  head.addColorStop(1, "#120a06");
+  g.fillStyle = head;
+  g.beginPath();
+  g.ellipse(0, 20, 118, 128, 0, 0, Math.PI * 2);
+  g.fill();
+  // Muzzle
+  g.fillStyle = "#1c120c";
+  g.beginPath();
+  g.ellipse(0, 88, 72, 48, 0, 0, Math.PI * 2);
+  g.fill();
+  g.fillStyle = "#0a0604";
+  g.beginPath();
+  g.ellipse(-22, 78, 16, 12, 0, 0, Math.PI * 2);
+  g.ellipse(22, 78, 16, 12, 0, 0, Math.PI * 2);
+  g.fill();
+  // Eyes + catchlight (upper-left key)
+  for (const ex of [-38, 38]) {
+    g.fillStyle = "#3a2414";
+    g.beginPath();
+    g.ellipse(ex, -10, 18, 14, 0, 0, Math.PI * 2);
+    g.fill();
+    g.fillStyle = "#f0c070";
+    g.beginPath();
+    g.ellipse(ex - 3, -12, 5, 5, 0, 0, Math.PI * 2);
+    g.fill();
+  }
+  // Ear tips
+  g.fillStyle = "#2a1810";
+  g.beginPath();
+  g.ellipse(-95, -20, 28, 40, -0.4, 0, Math.PI * 2);
+  g.ellipse(95, -20, 28, 40, 0.4, 0, Math.PI * 2);
+  g.fill();
+  g.restore();
 }
 
-function drawScatter(g: CanvasRenderingContext2D): void {
-  baseTile(g, "#4a3413", "#201404");
-  const cx = SIZE / 2, cy = SIZE / 2 - 8;
-  // gold coin
-  const coin = g.createRadialGradient(cx - 18, cy - 22, 10, cx, cy, 70);
-  coin.addColorStop(0, "#fff6d8");
-  coin.addColorStop(0.55, "#f2c94c");
-  coin.addColorStop(1, "#9a7418");
-  g.fillStyle = coin;
-  g.beginPath(); g.arc(cx, cy, 66, 0, Math.PI * 2); g.fill();
-  g.strokeStyle = "#7a5a10"; g.lineWidth = 6;
-  g.beginPath(); g.arc(cx, cy, 54, 0, Math.PI * 2); g.stroke();
-  // buffalo head stamp
-  g.fillStyle = "#5c430e";
-  g.beginPath(); g.ellipse(cx, cy + 4, 26, 22, 0, 0, Math.PI * 2); g.fill();
-  g.strokeStyle = "#5c430e"; g.lineWidth = 7; g.lineCap = "round";
-  g.beginPath(); g.arc(cx - 18, cy - 12, 14, Math.PI * 0.9, Math.PI * 1.9); g.stroke();
-  g.beginPath(); g.arc(cx + 18, cy - 12, 14, Math.PI * 1.1, Math.PI * 0.1, true); g.stroke();
-  g.font = "900 34px Georgia, serif";
-  g.textAlign = "center";
-  g.fillStyle = "#ffe98a";
-  g.shadowColor = "rgba(0,0,0,.5)"; g.shadowBlur = 6;
-  g.fillText("SCATTER", cx, SIZE - 36);
-  g.shadowBlur = 0;
-}
-
-/** Formal SymbolId painters (5×4 / 50-line set). Legacy prototype art remapped. */
+/** Formal SymbolId painters (fallback when PNG missing/unloadable). */
 const PAINTERS: Record<SymbolId, (g: CanvasRenderingContext2D) => void> = {
-  buffalo: drawBuffalo,
-  lion: drawTiger,
-  elephant: drawDeer,
-  zebra: drawEagle,
-  antelope: drawLotus,
+  buffalo: drawBuffaloSymbol,
+  lion: (g) => jewelTile(g, "#5a2e10", "#1c1006"),
+  elephant: (g) => jewelTile(g, "#3a3a48", "#14141c"),
+  zebra: drawZebraFallback,
+  antelope: (g) => jewelTile(g, "#3a4a28", "#12180c"),
   a: (g) => letter(g, "A", "#ffe98a", "#c98f1f"),
   k: (g) => letter(g, "K", "#ffd2a0", "#c26a1f"),
   q: (g) => letter(g, "Q", "#e8c0ff", "#8a4fc2"),
   j: (g) => letter(g, "J", "#a0d8ff", "#2f6ec2"),
   ten: (g) => letter(g, "10", "#b0f0c0", "#2f9e5a"),
   nine: (g) => letter(g, "9", "#c0e8ff", "#3a7a9e"),
-  wild: drawWild,
-  scatter: drawScatter,
+  wild: (g) => letter(g, "WILD", "#ffe98a", "#c98f1f"),
+  scatter: (g) => letter(g, "SC", "#ffe98a", "#c98f1f"),
 };
 
-const textureCache = new Map<SymbolId, THREE.CanvasTexture>();
+const textureCache = new Map<SymbolId, THREE.Texture>();
 const canvasCache = new Map<SymbolId, HTMLCanvasElement>();
+const pending = new Map<SymbolId, Promise<void>>();
 
-export function symbolCanvas(id: SymbolId): HTMLCanvasElement {
+function paintFallback(id: SymbolId): HTMLCanvasElement {
   let c = canvasCache.get(id);
   if (!c) {
     const [canvas, g] = makeCanvas();
+    g.save();
+    g.scale(SIZE / LOGIC, SIZE / LOGIC);
     PAINTERS[id](g);
+    g.restore();
     canvasCache.set(id, canvas);
     c = canvas;
   }
   return c;
 }
 
-export function symbolTexture(id: SymbolId): THREE.CanvasTexture {
+async function ensureArt(id: SymbolId): Promise<void> {
+  const url = ART_URL[id];
+  if (!url || canvasCache.has(id)) return;
+  let job = pending.get(id);
+  if (!job) {
+    job = new Promise<void>((resolve) => {
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.onload = () => {
+        const [canvas, g] = makeCanvas();
+        // M8 commercial 3D symbols already include metal frames — keep plate light
+        g.fillStyle = "#0a0603";
+        g.fillRect(0, 0, SIZE, SIZE);
+        const pad = 10;
+        g.save();
+        roundRect(g, pad, pad, SIZE - pad * 2, SIZE - pad * 2, 28);
+        g.clip();
+        g.drawImage(img, pad, pad, SIZE - pad * 2, SIZE - pad * 2);
+        // warm key-light wash (unify light direction across the set)
+        const wash = g.createLinearGradient(0, pad, 0, SIZE - pad);
+        wash.addColorStop(0, "rgba(255, 230, 160, 0.10)");
+        wash.addColorStop(0.5, "rgba(180, 120, 255, 0.03)");
+        wash.addColorStop(1, "rgba(20, 8, 0, 0.18)");
+        g.fillStyle = wash;
+        g.fillRect(pad, pad, SIZE - pad * 2, SIZE - pad * 2);
+        // subtle contact AO at bottom edge (thickness read)
+        const ao = g.createLinearGradient(0, SIZE * 0.72, 0, SIZE - pad);
+        ao.addColorStop(0, "rgba(0,0,0,0)");
+        ao.addColorStop(1, "rgba(0,0,0,0.28)");
+        g.fillStyle = ao;
+        g.fillRect(pad, SIZE * 0.72, SIZE - pad * 2, SIZE * 0.28 - pad);
+        g.restore();
+        // outer specular rim — black-gold unify
+        const rim = g.createLinearGradient(0, 0, SIZE, SIZE);
+        rim.addColorStop(0, "rgba(255, 245, 200, 0.9)");
+        rim.addColorStop(0.45, "rgba(224, 179, 74, 0.75)");
+        rim.addColorStop(1, "rgba(40, 24, 8, 0.95)");
+        g.strokeStyle = rim;
+        g.lineWidth = 8;
+        roundRect(g, 8, 8, SIZE - 16, SIZE - 16, 30);
+        g.stroke();
+        canvasCache.set(id, canvas);
+        // refresh texture if already created from fallback
+        const existing = textureCache.get(id);
+        if (existing instanceof THREE.CanvasTexture) {
+          existing.image = canvas;
+          existing.needsUpdate = true;
+        }
+        resolve();
+      };
+      img.onerror = () => {
+        paintFallback(id);
+        resolve();
+      };
+      img.src = url;
+    });
+    pending.set(id, job);
+  }
+  await job;
+}
+
+/** Kick off commercial art preload; resolves when all PNG slots settle (or fail). */
+export function preloadSymbolArt(): Promise<void> {
+  const ids = Object.keys(ART_URL) as SymbolId[];
+  return Promise.all(ids.map((id) => ensureArt(id))).then(() => undefined);
+}
+
+export function symbolCanvas(id: SymbolId): HTMLCanvasElement {
+  void ensureArt(id);
+  return canvasCache.get(id) ?? paintFallback(id);
+}
+
+let maxAnisotropy = 16;
+
+/** Call once from World with renderer.capabilities.getMaxAnisotropy(). */
+export function setSymbolMaxAnisotropy(n: number): void {
+  maxAnisotropy = Math.max(1, Math.min(16, Math.floor(n) || 8));
+  for (const tex of textureCache.values()) {
+    tex.anisotropy = maxAnisotropy;
+    tex.needsUpdate = true;
+  }
+}
+
+export function symbolTexture(id: SymbolId): THREE.Texture {
   let tex = textureCache.get(id);
   if (!tex) {
     tex = new THREE.CanvasTexture(symbolCanvas(id));
-    tex.colorSpace = THREE.SRGBColorSpace;
-    tex.anisotropy = 4;
+    configureSymbolTexture(tex, maxAnisotropy);
     textureCache.set(id, tex);
+    void ensureArt(id).then(() => {
+      const c = canvasCache.get(id);
+      if (c && tex instanceof THREE.CanvasTexture) {
+        tex.image = c;
+        configureSymbolTexture(tex, maxAnisotropy);
+      }
+    });
   }
   return tex;
+}
+
+export function symbolPlateSize(): number {
+  return SIZE;
 }
 
 export const ALL_SYMBOLS: SymbolId[] = [

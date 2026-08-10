@@ -87,11 +87,16 @@ export class FormalGameProvider implements GameProvider {
   private sessionId: string | null = null;
   private mathVersionId: string | null = null;
   private balanceMinor = 0;
+  private currency = "MMK";
   private freeGamesRemaining = 0;
   private ready = false;
 
   getBalance(): number {
     return this.balanceMinor;
+  }
+
+  getCurrency(): string {
+    return this.currency;
   }
 
   getFreeGamesRemaining(): number {
@@ -139,6 +144,7 @@ export class FormalGameProvider implements GameProvider {
     const balRes = await fetch("/api/v1/game/wallet/balance");
     const bal = await readJson<BalanceResponse>(balRes);
     this.balanceMinor = bal.balanceMinor;
+    if (bal.currency) this.currency = bal.currency;
     this.ready = true;
   }
 

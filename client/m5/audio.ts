@@ -3,14 +3,36 @@
  * BGM: pentatonic savanna loop. SFX: spin / reel stop / win / tiers / roar / free spins.
  */
 
+const VOLUME_KEY = "ab-m6-volume";
+
 export class AudioEngine {
   private ctx: AudioContext | null = null;
   private master: GainNode | null = null;
   private bgmGain: GainNode | null = null;
+  private ambientGain: GainNode | null = null;
   private bgmTimer: number | null = null;
+  private ambientTimer: number | null = null;
   private bgmStep = 0;
   private muted = false;
+  private volume = 0.8;
+  private backgroundDimmed = false;
   private spinNoise: { src: AudioBufferSourceNode; gain: GainNode } | null = null;
+
+  constructor() {
+    try {
+      if (typeof localStorage !== "undefined") {
+        const v = Number(localStorage.getItem(VOLUME_KEY));
+        if (Number.isFinite(v) && v >= 0 && v <= 1) this.volume = v;
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+
+  private targetMaster(): number {
+    if (this.muted) return 0;
+    return this.volume * (this.backgroundDimmed ? 0.15 : 1);
+  }
 
   private ensure(): AudioContext | null {
     if (this.ctx) return this.ctx;
@@ -18,18 +40,21 @@ export class AudioEngine {
       const AC = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
       this.ctx = new AC();
       this.master = this.ctx.createGain();
-      this.master.gain.value = this.muted ? 0 : 0.8;
+      this.master.gain.value = this.targetMaster();
       this.master.connect(this.ctx.destination);
       this.bgmGain = this.ctx.createGain();
       this.bgmGain.gain.value = 0.32;
       this.bgmGain.connect(this.master);
+      this.ambientGain = this.ctx.createGain();
+      this.ambientGain.gain.value = 0.12;
+      this.ambientGain.connect(this.master);
     } catch {
       return null;
     }
     return this.ctx;
   }
 
-  /** must be called from a user gesture */
+  /** must be called from a user gesture — never recreates an existing context */
   unlock(): void {
     const ctx = this.ensure();
     if (ctx && ctx.state === "suspended") void ctx.resume();
@@ -37,16 +62,71 @@ export class AudioEngine {
 
   setMuted(m: boolean): void {
     this.muted = m;
-    if (this.master && this.ctx) {
-      this.master.gain.linearRampToValueAtTime(m ? 0 : 0.8, this.ctx.currentTime + 0.15);
-    }
+    this.applyMaster();
   }
   get isMuted(): boolean { return this.muted; }
+
+  setVolume(v: number): void {
+    this.volume = Math.max(0, Math.min(1, v));
+    try {
+      localStorage.setItem(VOLUME_KEY, String(this.volume));
+    } catch {
+      /* ignore */
+    }
+    this.applyMaster();
+  }
+  getVolume(): number {
+    return this.volume;
+  }
+
+  /** Page hidden → dim; never tears down AudioContext. */
+  setBackgroundDimmed(dim: boolean): void {
+    this.backgroundDimmed = dim;
+    this.applyMaster();
+  }
+
+  private applyMaster(): void {
+    if (this.master && this.ctx) {
+      this.master.gain.cancelScheduledValues(this.ctx.currentTime);
+      this.master.gain.linearRampToValueAtTime(
+        this.targetMaster(),
+        this.ctx.currentTime + 0.15,
+      );
+    }
+  }
+
+  // ---------------- Ambient (wind / birds — soft procedural) ----------------
+  startAmbient(): void {
+    const ctx = this.ensure();
+    if (!ctx || !this.ambientGain || this.ambientTimer !== null) return;
+    const tick = () => {
+      if (!this.ctx || !this.ambientGain) return;
+      const t0 = this.ctx.currentTime;
+      // soft wind noise puff
+      this.noiseBurst(0.9, 0.04, 400, "lowpass");
+      // occasional bird chirp
+      if (Math.random() < 0.35) {
+        const f = 1800 + Math.random() * 900;
+        this.note(f, t0, 0.12, 0.05, "sine", 0.01, this.ambientGain);
+        this.note(f * 1.25, t0 + 0.08, 0.1, 0.04, "sine", 0.01, this.ambientGain);
+      }
+    };
+    tick();
+    this.ambientTimer = window.setInterval(tick, 2200 + Math.random() * 800);
+  }
+
+  stopAmbient(): void {
+    if (this.ambientTimer !== null) {
+      clearInterval(this.ambientTimer);
+      this.ambientTimer = null;
+    }
+  }
 
   // ---------------- BGM ----------------
   startBgm(): void {
     const ctx = this.ensure();
     if (!ctx || this.bgmTimer !== null) return;
+    this.startAmbient();
     // pentatonic flute-ish melody (C major pentatonic), 8 steps per bar
     const scale = [261.63, 293.66, 329.63, 392.0, 440.0, 523.25, 587.33, 659.25];
     const melody = [0, 2, 4, 7, 4, 2, 5, 4, 0, 2, 4, 5, 7, 5, 4, 2];
@@ -71,6 +151,7 @@ export class AudioEngine {
 
   stopBgm(): void {
     if (this.bgmTimer !== null) { clearInterval(this.bgmTimer); this.bgmTimer = null; }
+    this.stopAmbient();
   }
 
   private note(freq: number, t0: number, dur: number, vol: number, type: OscillatorType, attack: number, dest?: AudioNode): void {
@@ -194,6 +275,38 @@ export class AudioEngine {
 
   winSmall(): void { this.blip([523, 659, 784, 1047], 0.09, 0.3); }
   scatterLand(): void { this.blip([1568, 2093], 0.08, 0.3, "sine"); }
+
+  /** Soft animal / special SFX — presentation only, never blocks gameplay. */
+  animalCue(kind: "buffalo" | "lion" | "elephant" | "zebra" | "antelope" | "wild" | "scatter"): void {
+    try {
+      switch (kind) {
+        case "buffalo":
+          this.blip([90, 70], 0.12, 0.22, "sawtooth");
+          this.noiseBurst(0.25, 0.1, 280, "lowpass");
+          break;
+        case "lion":
+          this.blip([120, 85], 0.14, 0.2, "sawtooth");
+          break;
+        case "elephant":
+          this.blip([220, 180, 140], 0.16, 0.22, "sine");
+          break;
+        case "zebra":
+        case "antelope":
+          this.blip([640, 720], 0.06, 0.14, "triangle");
+          break;
+        case "wild":
+          this.blip([880, 1320, 1760], 0.07, 0.22, "sine");
+          break;
+        case "scatter":
+          this.blip([1175, 1568, 2093], 0.09, 0.28, "sine");
+          break;
+        default:
+          break;
+      }
+    } catch {
+      /* audio failure must never block spins */
+    }
+  }
 
   bigWin(): void {
     this.blip([523, 659, 784, 1047, 1319, 1568], 0.11, 0.4);

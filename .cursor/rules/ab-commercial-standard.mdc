@@ -1,0 +1,36 @@
+---
+description: Asian Buffalo commercial quality bar (African Buffalo V1.0) — M8/M9/M10
+alwaysApply: true
+---
+
+# Asian Buffalo Commercial Standard (V1.0)
+
+Canonical full text: `docs/commercial/AB-COMMERCIAL-SPEC-V1.md`  
+(Source: African Buffalo commercial deep-dive — design/experience bar only. Never copy third-party source, art, or audio.)
+
+## Dual acceptance (both required for final验收)
+
+1. **Engineering:** server-authoritative Session/Spin/Round; Wallet/Ledger safety; frozen RTP/math; i18n; PC/tablet/phone; stable performance. Do not break these for visuals.
+2. **Commercial:** first-glance mature commercial slot quality; mobile UX at international commercial level; overall completion ≥ African Buffalo bar.
+
+## Hard visual rules
+
+- **Reel is the #1 subject.** Background serves the game; never shrink reels to show more background.
+- **Reel P0:** left/right near screen edges; fill horizontal width; keep safe margins only; mobile-first.
+- **Forbidden:** large side gutters; PC layout scaled down for phone.
+- **HUD:** metal / glass / specular / shadow; top = balance/settings/menu/lang; bottom = Bet/Win/Balance/Auto/Spin (Spin = primary CTA); press feedback; animated meters.
+- **Symbols:** unified commercial illustration (Asian buffalo, elephant, tiger, deer, phoenix, Wild, Scatter, A/K/Q/J/10) — original or licensed only.
+- **Scene life:** god rays, clouds, wind grass, birds, dust, volumetric light, depth.
+- **Buffalo:** breathe, turn head, ears, tail, roar, victory — natural motion.
+- **Win FX:** Big/Mega/Ultra/Jackpot — coin rain, light pillars, camera shake, HUD sync, number roll.
+- **Perf:** high/medium/low + auto downgrade; headed device FPS evidence for commercial claims.
+
+## Delivery / acceptance gates
+
+- Milestone packages: Review Patch, SHA-256, file list, test/perf/risk/rollback, PC/tablet/phone shots, recording.
+- Commercial score average **&lt; 90** → do not request final验收.
+- No new gameplay math / wallet / ledger / RTP / API / DB features in pure commercial milestones unless explicitly ordered.
+
+## IP
+
+Do not copy African Buffalo (or any third-party) source, art, audio, or other copyrighted assets. Match or exceed quality with original/licensed work only.

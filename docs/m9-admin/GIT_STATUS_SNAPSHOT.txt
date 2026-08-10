@@ -1,0 +1,19 @@
+Date: 2026-08-08
+HEAD: 9654d4194d2db801467af34cef1ddc5650fd310f
+Branch: (detached/feature worktree — see git branch locally)
+Commit/Push/Merge/Rebase: NOT performed (awaiting 赵总批准)
+
+Admin-focused deltas this round (non-exhaustive):
+- lib/admin/admin-api.ts
+- lib/admin/admin-queries.ts
+- lib/admin/i18n.ts
+- app/admin/admin-app.tsx
+- app/admin/admin-ui.tsx
+- app/admin/login/page.tsx (new)
+- app/admin/modules/{games,game-ops,announcements,rankings,support,audit}.tsx (new)
+- app/admin/modules/{dashboard,players,sessions}.tsx
+- ADMIN_*.md / FINAL_ADMIN_VERDICT.md / ISSUE_LIST.md / MODULE_IMPACT_ANALYSIS.md
+- docs/m9-admin/ADMIN_ROUND_REVIEW.patch
+- docs/m9-admin/ADMIN_ROUND_SHA256.txt
+
+Note: worktree also contains many pre-existing M8/commercial uncommitted files unrelated to this Admin round — do not stage with git add -A.

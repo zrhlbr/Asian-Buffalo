@@ -158,6 +158,8 @@ export class Particles {
   private pillars: THREE.Mesh[] = [];
   private scene: THREE.Scene;
   private coinTimer = 0;
+  private coinBudget = 220;
+  private particleBudget = 400;
   coinRainActive = false;
 
   constructor(scene: THREE.Scene) {
@@ -188,11 +190,19 @@ export class Particles {
     }
   }
 
+  /** LOD budgets — presentation only; does not rebuild pools. */
+  setBudgets(coinBudget: number, particleBudget: number): void {
+    this.coinBudget = coinBudget;
+    this.particleBudget = particleBudget;
+  }
+
   /** continuous coin rain over the reel area */
   private emitCoins(dt: number): void {
     this.coinTimer += dt;
-    while (this.coinTimer > 0.03) {
-      this.coinTimer -= 0.03;
+    const interval = this.coinBudget >= 200 ? 0.03 : this.coinBudget >= 120 ? 0.05 : 0.08;
+    while (this.coinTimer > interval) {
+      this.coinTimer -= interval;
+      if (this.coins.activeCount >= this.coinBudget) break;
       const origin = new THREE.Vector3((Math.random() - 0.5) * 10, 8.5 + Math.random() * 2, -1 + Math.random() * 2);
       const vel = new THREE.Vector3((Math.random() - 0.5) * 0.8, -1 - Math.random() * 1.5, (Math.random() - 0.5) * 0.4);
       this.coins.spawn(origin, vel, 3.2, 0.55 + Math.random() * 0.5);
@@ -200,7 +210,8 @@ export class Particles {
   }
 
   burstSparks(center: THREE.Vector3, count: number, speed = 5): void {
-    for (let i = 0; i < count; i++) {
+    const n = Math.min(count, Math.max(8, Math.floor(this.particleBudget / 20)));
+    for (let i = 0; i < n; i++) {
       const a = Math.random() * Math.PI * 2;
       const up = Math.random() * 0.9 + 0.3;
       const vel = new THREE.Vector3(Math.cos(a) * speed * Math.random(), up * speed, Math.sin(a) * speed * Math.random() * 0.5);

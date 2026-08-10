@@ -4,7 +4,12 @@
  */
 
 import { buildSpinPostings } from "./ledger.ts";
-import { MemoryLedger, seedTestAvailable } from "./db-ledger.ts";
+import {
+  MemoryLedger,
+  seedTestAvailable,
+  wrapMemoryLedger,
+  type LedgerPort,
+} from "./db-ledger.ts";
 import {
   createWalletIntent,
   MemoryIntentStore,
@@ -39,7 +44,7 @@ export type MoneyOpResult = {
 };
 
 export class MoneyService {
-  readonly ledger: MemoryLedger;
+  readonly ledger: LedgerPort;
   readonly intents: IntentStore;
   readonly providers: ProviderStore;
   readonly provider: LocalTestWalletProvider;
@@ -52,24 +57,26 @@ export class MoneyService {
 
   constructor(options?: {
     mode?: WalletMode;
-    ledger?: MemoryLedger;
+    ledger?: MemoryLedger | LedgerPort;
     intents?: IntentStore;
     providers?: ProviderStore;
   }) {
     this.mode = options?.mode ?? "TEST";
-    this.ledger = options?.ledger ?? new MemoryLedger();
+    const ledger = options?.ledger ?? new MemoryLedger();
+    this.ledger =
+      ledger instanceof MemoryLedger ? wrapMemoryLedger(ledger) : ledger;
     this.intents = options?.intents ?? new MemoryIntentStore();
     this.providers = options?.providers ?? new MemoryProviderStore();
     this.provider = new LocalTestWalletProvider(this.providers);
   }
 
-  seed(playerId: string, currency: string, amountMinor: number): void {
+  async seed(playerId: string, currency: string, amountMinor: number): Promise<void> {
     assertTestWalletAllowed(this.mode);
-    seedTestAvailable(this.ledger, playerId, currency, amountMinor);
+    await seedTestAvailable(this.ledger, playerId, currency, amountMinor);
   }
 
   async getAvailableBalance(playerId: string, currency: string): Promise<number> {
-    const { available } = this.ledger.ensurePlayerAccounts(playerId, currency);
+    const { available } = await this.ledger.ensurePlayerAccounts(playerId, currency);
     return this.ledger.getBalance(available.id);
   }
 
@@ -111,6 +118,7 @@ export class MoneyService {
     betMinor: number;
     winMinor: number;
     isFreeGame: boolean;
+    roundId?: string;
   }): Promise<RoundSettlement> {
     const result = await this.runMoneyMove({
       playerId: input.playerId,
@@ -122,6 +130,7 @@ export class MoneyService {
       winMinor: input.winMinor,
       betMinorOverride: input.betMinor,
       isFreeGame: input.isFreeGame,
+      roundId: input.roundId,
     });
     if (!result.settlement) {
       throw new WalletResultUnknownError("Settle completed without settlement payload");
@@ -177,7 +186,7 @@ export class MoneyService {
     intent = await this.intents.transition(intent.id, intent.version, "LOCKED");
     intent = await this.intents.transition(intent.id, intent.version, "PROCESSING");
 
-    const reversal = this.ledger.reverse(
+    const reversal = await this.ledger.reverse(
       `ledger:${input.originalIdempotencyKey}`,
       `ledger:${input.rollbackIdempotencyKey}`,
     );
@@ -261,6 +270,7 @@ export class MoneyService {
     winMinor: number;
     isFreeGame: boolean;
     betMinorOverride?: number;
+    roundId?: string;
   }): Promise<MoneyOpResult> {
     assertTestWalletAllowed(this.mode);
 
@@ -317,12 +327,12 @@ export class MoneyService {
       });
     }
 
-    const { available, clearing } = this.ledger.ensurePlayerAccounts(
+    const { available, clearing } = await this.ledger.ensurePlayerAccounts(
       input.playerId,
       input.currency,
     );
 
-    if (betMinor > 0 && this.ledger.getBalance(available.id) < betMinor) {
+    if (betMinor > 0 && (await this.ledger.getBalance(available.id)) < betMinor) {
       intent = await this.intents.transition(intent.id, intent.version, "FAILED", {
         errorCode: "INSUFFICIENT_BALANCE",
       });
@@ -372,11 +382,12 @@ export class MoneyService {
 
     let ledgerTxId: string | null = null;
     if (postings.length > 0) {
-      const tx = this.ledger.post({
+      const tx = await this.ledger.post({
         idempotencyKey: `ledger:${input.idempotencyKey}`,
         kind: betMinor > 0 ? "GAME_BET" : "GAME_PAYOUT",
         requestHash,
         postings,
+        roundId: input.roundId ?? null,
       });
       ledgerTxId = tx.id;
     }
@@ -398,7 +409,7 @@ export class MoneyService {
       winMinor,
       isFreeGame: input.isFreeGame,
       postedAt: new Date().toISOString(),
-      playerBalanceAfterMinor: this.ledger.getBalance(available.id),
+      playerBalanceAfterMinor: await this.ledger.getBalance(available.id),
       postings,
     };
 
