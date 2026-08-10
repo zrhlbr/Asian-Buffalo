@@ -1,49 +1,41 @@
 # ADMIN_1H_FINAL_VERDICT
 
 **Date (UTC):** 2026-08-10  
+**Status:** FINAL FREEZE  
 
-## 向赵总汇报
+## 向赵总汇报（Clean Release 收口）
 
 | Item | Value |
 |---|---|
+| M9 SOURCE COMMIT | `d1c6f3e3b3f5981af24371f8bdfbebdec6744043` |
+| M9 RELEASE TAG | `xigame-admin-prod-20260810` |
+| M8 SOURCE COMMIT | `01c4a83380d1408f1b0e4ce6aa44686c43562075` |
+| M8 RELEASE TAG | `xigame-admin-prod-20260810-lobby` |
+| PRODUCTION IMAGE | `sha256:99c9e35443378313b13602cfdf43636fa04d2ae3835caab6153b2b75490cdb59` |
+| PRODUCTION HEALTH | **HEALTHY** |
+| FUNCTIONALLY REPRODUCIBLE | **YES** |
 | P0 OPEN | **0** |
 | P1 OPEN | **0** |
 | PLAYER CONTENT SYNC | **PASS** |
-| PRODUCTION SCHEMA CONTRACT | **PASS** |
 | FULL ADMIN E2E | **PASS** |
-| PRODUCTION IMAGE | `sha256:99c9e35443378313b13602cfdf43636fa04d2ae3835caab6153b2b75490cdb59` |
+| CLEAN RELEASE | **YES** |
 | ROLLBACK READY | **YES** |
 | PRODUCTION MONEY | **NO / GATE CLOSED** |
-| CLEAN RELEASE | **YES**（本地 Commit/Tag；NO Push） |
 | ADMIN PRODUCTION READY | **YES** |
 | FINAL FREEZE READY | **YES** |
 
-## Gate table
+## Rollback retained
 
-| Gate | Verdict |
+| Tag | Image |
 |---|---|
-| PLAYER PRODUCTION | PASS |
-| ADMIN PRODUCTION | PASS |
-| FULL ADMIN E2E | PASS |
-| PLAYERS API | PASS |
-| PRODUCTION SCHEMA CONTRACT | PASS |
-| PLAYER CONTENT SYNC | PASS |
-| LOGIN RISK | PARTIAL |
-| DEVICE/IP RISK | PARTIAL |
-| DEPOSIT/WITHDRAW RISK | PARTIAL |
-| WALLET FROZENMINOR | YES |
-| S-18 | CLOSED |
-| RBAC | PASS |
-| PRIVILEGE ESCALATION | PASS |
-| IDOR | PASS |
-| PII | PASS |
-| SECRET LEAKAGE | PASS |
-| AUDIT IMMUTABILITY | PASS |
-| ZH / MY / EN | PASS / PASS / PASS |
-| DESKTOP / TABLET / MOBILE | PASS / PASS / PASS |
-| PRODUCT ISOLATION | PASS |
-| RNG/RTP/MATH/PAYTABLE/SPIN MODIFIED | NO / NO / NO / NO / NO |
+| `xigame-web:prod-pre-admin-1h-20260810-202300` | `sha256:fabe8fc2457c…` |
+| `xigame-web:prod-pre-admin-20260809-232936` | `sha256:dc0884cd2947…` |
+
+## Discipline
+
+- YES Local Commit / Local Annotated Tag  
+- NO Push / Merge / Rebase / Redeploy / Money open / ADMIN-1I  
 
 ## Stop
 
-ADMIN-1H 完成，**停笔**。不进入 1I，不开真实资金，不 Push/Merge/Rebase。
+ADMIN-1H Clean Release 完成，**停笔**。
