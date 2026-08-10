@@ -1,0 +1,28 @@
+# ADMIN-1H Clean Release file list (A/B/C + reports)
+
+## M9 — Admin / Content API / bootstrap
+app/admin/
+app/api/admin/[...slug]/route.ts
+app/api/v1/game/announcements/route.ts
+app/api/v1/game/banners/route.ts
+app/api/v1/game/recommended-games/route.ts
+lib/admin/
+lib/player-content.ts
+lib/player-commerce-bootstrap.ts
+tests/r1-m9-admin-1b.test.mjs
+tests/r1-m9-admin-1c.test.mjs
+tests/r1-m9-admin-1d.test.mjs
+tests/r1-m9-admin-1e.test.mjs
+tests/r1-m9-admin-1f.test.mjs
+tests/r1-m9-admin-1g.test.mjs
+
+## M8 — Lobby content sync only
+client/xi-lobby/api.ts
+client/xi-lobby/lobby-app.tsx
+client/xi-lobby/lobby.css
+
+## Reports
+ADMIN_1H_*.md
+ADMIN_1H_FILE_LIST.txt
+ADMIN_1H_SHA256.txt
+ADMIN_1H_REVIEW.patch
