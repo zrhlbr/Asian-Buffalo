@@ -8,11 +8,12 @@
 ## Release identity chain
 
 ```
-M9 SOURCE COMMIT
-  d1c6f3e3b3f5981af24371f8bdfbebdec6744043
+M9 SOURCE COMMIT (freeze tip)
+  8c5b9a529e866a735b7e22d591e51108935e4adb
+  code parent: d1c6f3e3b3f5981af24371f8bdfbebdec6744043
         ↓
 M9 RELEASE TAG (annotated)
-  xigame-admin-prod-20260810  →  d1c6f3e3b3f5981af24371f8bdfbebdec6744043
+  xigame-admin-prod-20260810  →  8c5b9a529e866a735b7e22d591e51108935e4adb
         ↓
 M8 SOURCE COMMIT (Lobby Content Sync)
   01c4a83380d1408f1b0e4ce6aa44686c43562075
